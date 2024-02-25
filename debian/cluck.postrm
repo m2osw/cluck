@@ -1,0 +1,28 @@
+#!/bin/sh -e
+
+# Source debconf library.
+. /usr/share/debconf/confmodule
+. /usr/lib/snaplogger/inst/manage-log-dirs
+
+if [ "$1" = "purge" ]
+then
+    ENVIRONMENT_NAME=cluck
+    PROJECT_NAME=cluck
+    PACKAGE_NAME=cluck
+    USER_NAME=cluck
+    GROUP_NAME=cluck
+
+    # delete the logs
+    #
+    destroy_log_dirs ${ENVIRONMENT_NAME} ${PACKAGE_NAME}
+
+    # delete the user configuration file
+    #
+    CLUCK_CONFIGURATION_DIR=/etc/${ENVIRONMENT_NAME}/${ENVIRONMENT_NAME}.d
+    CLUCK_CONFIGURATION_FILE=${CLUCK_CONFIGURATION_DIR}/50-${PACKAGE_NAME}.conf
+    rm -f ${CLUCK_CONFIGURATION_FILE}
+fi
+
+#DEBHELPER#
+
+# vim: ts=4 sw=4 et nocindent

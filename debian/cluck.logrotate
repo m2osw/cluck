@@ -1,0 +1,18 @@
+# Cluck
+
+/var/log/cluck/cluck.log {
+    weekly
+    maxsize 10M
+    su cluck cluck
+    missingok
+    rotate 10
+    postrotate
+        if test -x /usr/bin/ed-signal; then /usr/bin/ed-signal cluck/LOG_ROTATE; fi
+    endscript
+    compress
+    delaycompress
+    notifempty
+    create 640 cluck cluck
+}
+
+# vim: ts=4 sw=4 et

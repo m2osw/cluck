@@ -1,0 +1,40 @@
+#!/bin/sh -e
+
+#DEBHELPER#
+
+# Source debconf library.
+. /usr/share/debconf/confmodule
+. /usr/lib/snaplogger/inst/manage-log-dirs
+
+if [ "$1" = "configure" ]
+then
+    ENVIRONMENT_NAME=cluck
+    PROJECT_NAME=cluck
+    PACKAGE_NAME=cluck
+    USER_NAME=cluck
+    GROUP_NAME=cluck
+
+    # Create a default user editable cluck.conf file if it does not
+    # exist yet
+    #
+    CLUCK_CONFIGURATION_DIR=/etc/${ENVIRONMENT_NAME}/${ENVIRONMENT_NAME}.d
+    CLUCK_CONFIGURATION_FILE=${CLUCK_CONFIGURATION_DIR}/50-${PACKAGE_NAME}.conf
+    if test ! -f ${CLUCK_CONFIGURATION_FILE}
+    then
+        echo "# Variables to define the communicatord and fluid-settings" >${CLUCK_CONFIGURATION_FILE}
+        echo "#" >>${CLUCK_CONFIGURATION_FILE}
+        echo "# See /etc/cluck/cluck.conf for documentation" >>${CLUCK_CONFIGURATION_FILE}
+        echo "#" >>${CLUCK_CONFIGURATION_FILE}
+        echo "#communicatord_listen=" >>${CLUCK_CONFIGURATION_FILE}
+
+        chmod 0644 ${CLUCK_CONFIGURATION_FILE}
+        chown "${USER_NAME}":"${GROUP_NAME}" ${CLUCK_CONFIGURATION_FILE}
+    fi
+
+    # Setup logger environment
+    #
+    create_log_dirs ${ENVIRONMENT_NAME} ${PACKAGE_NAME} ${USER_NAME} ${GROUP_NAME} false
+fi
+
+
+# vim: ts=4 sw=4 et nocindent

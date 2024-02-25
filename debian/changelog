@@ -1,0 +1,8 @@
+cluck (1.0.0.0~jammy) jammy; urgency=high
+
+  * First version of snaplock moved as its own project.
+    - Includes the snap_lock class (renamed cluck) in a library.
+    - Includes the service.
+    - Includes a separate tool we can use in a console to test the service.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sun, 25 Feb 2024 10:08:45 -0800
