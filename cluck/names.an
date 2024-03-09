@@ -1,0 +1,36 @@
+# Global names for the Cluck environment
+
+introducer=name
+project=cluck
+
+[public]
+cmd_activate_lock=ACTIVATE_LOCK
+cmd_add_ticket=ADD_TICKET
+cmd_cluster_status=CLUSTER_STATUS
+cmd_drop_ticket=DROP_TICKET
+cmd_get_max_ticket=GET_MAX_TICKET
+cmd_list_tickets=LIST_TICKETS
+cmd_lock=LOCK
+cmd_locked=LOCKED
+cmd_lock_activated=LOCK_ACTIVATED
+cmd_lock_entered=LOCK_ENTERED
+cmd_lock_entering=LOCK_ENTERING
+cmd_lock_exiting=LOCK_EXITING
+cmd_lock_failed=LOCK_FAILED
+cmd_lock_leaders=LOCK_LEADERS
+cmd_lock_ready=LOCK_READY
+cmd_lock_started=LOCK_STARTED
+cmd_lock_status=LOCK_STATUS
+cmd_lock_tickets=LOCK_TICKETS
+cmd_max_ticket=MAX_TICKET
+cmd_no_lock=NO_LOCK
+cmd_ticket_added=TICKET_ADDED
+cmd_ticket_ready=TICKET_READY
+cmd_ticket_list=TICKET_LIST
+cmd_unlock=UNLOCK
+cmd_unlocked=UNLOCKED
+cmd_unlocking=UNLOCKING
+
+service_name=cluckd
+
+# vim: syntax=dosini

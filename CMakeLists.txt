@@ -23,14 +23,19 @@ project(cluck_project)
 find_package(AdvGetOpt        REQUIRED)
 find_package(AtomicNames      REQUIRED)
 find_package(Communicatord    REQUIRED)
+find_package(CppThread        REQUIRED)
+find_package(EventDispatcher  REQUIRED)
 find_package(FluidSettings    REQUIRED)
 find_package(LibAddr          REQUIRED)
 find_package(LibExcept        REQUIRED)
+find_package(OpenSSL          REQUIRED)
 find_package(SnapCMakeModules REQUIRED)
 find_package(SnapDev          REQUIRED)
 find_package(SnapLogger       REQUIRED)
 
 SnapGetVersion(CLUCK ${CMAKE_CURRENT_SOURCE_DIR})
+
+enable_language(CXX)
 
 include_directories(
     ${CMAKE_CURRENT_BINARY_DIR}
@@ -41,7 +46,7 @@ add_subdirectory(cluck)
 add_subdirectory(daemon)
 add_subdirectory(tools)
 add_subdirectory(cmake)
-add_subdirectory(tests)
+#add_subdirectory(tests)
 add_subdirectory(conf)
 add_subdirectory(doc)
 

@@ -1,11 +1,11 @@
 // Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
 //
-// https://snapwebsites.org/
+// https://snapwebsites.org/project/cluck
 // contact@m2osw.com
 //
-// This program is free software; you can redistribute it and/or modify
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
-// the Free Software Foundation; either version 2 of the License, or
+// the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
 // This program is distributed in the hope that it will be useful,
@@ -13,50 +13,71 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
-// You should have received a copy of the GNU General Public License along
-// with this program; if not, write to the Free Software Foundation, Inc.,
-// 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
 // self
 //
-#include "snaplock.h"
+#include    "cluckd.h"
+
+#include    "debug_info.h"
+#include    "info.h"
 
 
-// snapmanager lib
+// cluck
 //
-#include "version.h"
+#include    <cluck/exception.h>
+#include    <cluck/names.h>
+#include    <cluck/version.h>
 
 
-// snapwebsites lib
+// communicatord
 //
-#include <snapwebsites/log.h>
-#include <snapwebsites/qstring_stream.h>
-#include <snapwebsites/dbutils.h>
-#include <snapwebsites/process.h>
-#include <snapwebsites/snap_string_list.h>
+#include    <communicatord/names.h>
 
 
-// advgetopt lib
+// eventdispatcher
 //
-#include <advgetopt/advgetopt.h>
+#include    <eventdispatcher/names.h>
 
 
-// C++ lib
+// snapdev
 //
-#include <algorithm>
-#include <iostream>
-#include <sstream>
+#include    <snapdev/hexadecimal_string.h>
+#include    <snapdev/stringize.h>
+#include    <snapdev/tokenize_string.h>
+#include    <snapdev/to_string_literal.h>
 
 
-// openssl lib
+// snaplogger
 //
-#include <openssl/rand.h>
+#include    <snaplogger/logger.h>
+#include    <snaplogger/options.h>
+#include    <snaplogger/severity.h>
+
+
+// advgetopt
+//
+#include    <advgetopt/advgetopt.h>
+#include    <advgetopt/exception.h>
+
+
+// C++
+//
+#include    <algorithm>
+#include    <iostream>
+#include    <sstream>
+
+
+// openssl
+//
+#include    <openssl/rand.h>
 
 
 // last include
 //
-#include <snapdev/poison.h>
+#include    <snapdev/poison.h>
 
 
 
@@ -94,7 +115,7 @@
 
 
 
-namespace snaplock
+namespace cluck_daemon
 {
 
 
@@ -103,96 +124,69 @@ namespace
 
 
 
+constexpr std::string_view  g_default_candidate_priority =
+    snapdev::integer_to_string_literal<computer::PRIORITY_DEFAULT>.data();
+
+
 advgetopt::option const g_options[] =
 {
-    {
-        'c',
-        advgetopt::GETOPT_FLAG_COMMAND_LINE | advgetopt::GETOPT_FLAG_ENVIRONMENT_VARIABLE | advgetopt::GETOPT_FLAG_REQUIRED | advgetopt::GETOPT_FLAG_SHOW_USAGE_ON_ERROR,
-        "config",
-        nullptr,
-        "Path to snaplock and other configuration files.",
-        nullptr
-    },
-    {
-        '\0',
-        advgetopt::GETOPT_FLAG_COMMAND_LINE | advgetopt::GETOPT_FLAG_ENVIRONMENT_VARIABLE | advgetopt::GETOPT_FLAG_FLAG,
-        "debug",
-        nullptr,
-        "Start the snaplock daemon in debug mode.",
-        nullptr
-    },
-    {
-        '\0',
-        advgetopt::GETOPT_FLAG_COMMAND_LINE | advgetopt::GETOPT_FLAG_ENVIRONMENT_VARIABLE | advgetopt::GETOPT_FLAG_FLAG,
-        "debug-lock-messages",
-        nullptr,
-        "Log all the lock messages received by snaplock.",
-        nullptr
-    },
-    {
-        '\0',
-        advgetopt::GETOPT_FLAG_COMMAND_LINE | advgetopt::GETOPT_FLAG_ENVIRONMENT_VARIABLE | advgetopt::GETOPT_FLAG_FLAG,
-        "list",
-        nullptr,
-        "List existing tickets and exits.",
-        nullptr
-    },
-    {
-        'l',
-        advgetopt::GETOPT_FLAG_COMMAND_LINE | advgetopt::GETOPT_FLAG_ENVIRONMENT_VARIABLE | advgetopt::GETOPT_FLAG_REQUIRED,
-        "logfile",
-        nullptr,
-        "Full path to the snaplock logfile.",
-        nullptr
-    },
-    {
-        'n',
-        advgetopt::GETOPT_FLAG_COMMAND_LINE | advgetopt::GETOPT_FLAG_ENVIRONMENT_VARIABLE | advgetopt::GETOPT_FLAG_FLAG,
-        "nolog",
-        nullptr,
-        "Only output to the console, not a log file.",
-        nullptr
-    },
-    {
-        '\0',
-        advgetopt::GETOPT_FLAG_END,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr
-    }
+    advgetopt::define_option(
+          advgetopt::Name("candidate-priority")
+        , advgetopt::ShortName('p')
+        , advgetopt::Flags(advgetopt::all_flags<
+                      advgetopt::GETOPT_FLAG_REQUIRED
+                    , advgetopt::GETOPT_FLAG_GROUP_OPTIONS>())
+        , advgetopt::Help("Define the priority of this candidate (1 to 14) to gain a leader position or \"off\".")
+        , advgetopt::DefaultValue(g_default_candidate_priority.data())
+    ),
+    advgetopt::define_option(
+          advgetopt::Name("server-name")
+        , advgetopt::ShortName('n')
+        , advgetopt::Flags(advgetopt::all_flags<
+                      advgetopt::GETOPT_FLAG_DYNAMIC_CONFIGURATION
+                    , advgetopt::GETOPT_FLAG_REQUIRED
+                    , advgetopt::GETOPT_FLAG_GROUP_OPTIONS>())
+        , advgetopt::Help("Set the name of this server instance.")
+        , advgetopt::DefaultValue("cluckd")
+    ),
+    advgetopt::end_options()
 };
 
 
+advgetopt::group_description const g_group_descriptions[] =
+{
+    advgetopt::define_group(
+          advgetopt::GroupNumber(advgetopt::GETOPT_FLAG_GROUP_COMMANDS)
+        , advgetopt::GroupName("command")
+        , advgetopt::GroupDescription("Commands:")
+    ),
+    advgetopt::define_group(
+          advgetopt::GroupNumber(advgetopt::GETOPT_FLAG_GROUP_OPTIONS)
+        , advgetopt::GroupName("option")
+        , advgetopt::GroupDescription("Options:")
+    ),
+    advgetopt::end_groups()
+};
 
 
-// until we have C++20 remove warnings this way
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
 advgetopt::options_environment const g_options_environment =
 {
-    .f_project_name = "snapwebsites",
-    .f_group_name = nullptr,
+    .f_project_name = "cluck",
     .f_options = g_options,
-    .f_options_files_directory = nullptr,
-    .f_environment_variable_name = "SNAPLOCK_OPTIONS",
-    .f_section_variables_name = nullptr,
-    .f_configuration_files = nullptr,
-    .f_configuration_filename = nullptr,
-    .f_configuration_directories = nullptr,
-    .f_environment_flags = advgetopt::GETOPT_ENVIRONMENT_FLAG_PROCESS_SYSTEM_PARAMETERS,
+    .f_environment_variable_name = "CLUCK_OPTIONS",
+    .f_environment_flags = advgetopt::GETOPT_ENVIRONMENT_FLAG_SYSTEM_PARAMETERS
+                         | advgetopt::GETOPT_ENVIRONMENT_FLAG_PROCESS_SYSTEM_PARAMETERS,
     .f_help_header = "Usage: %p [-<opt>]\n"
                      "where -<opt> is one or more of:",
     .f_help_footer = "%c",
-    .f_version = SNAPLOCK_VERSION_STRING,
-    .f_license = "GNU GPL v2",
+    .f_version = CLUCK_VERSION_STRING,
+    .f_license = "GNU GPL v3",
     .f_copyright = "Copyright (c) 2013-"
-                   BOOST_PP_STRINGIZE(UTC_BUILD_YEAR)
+                   SNAPDEV_STRINGIZE(UTC_BUILD_YEAR)
                    " by Made to Order Software Corporation -- All Rights Reserved",
-    //.f_build_date = UTC_BUILD_DATE,
-    //.f_build_time = UTC_BUILD_TIME
+    .f_groups = g_group_descriptions,
 };
-#pragma GCC diagnostic pop
+
 
 
 }
@@ -201,275 +195,110 @@ advgetopt::options_environment const g_options_environment =
 
 
 
-/** \brief List of snaplock commands
+/** \brief List of cluck daemon commands.
  *
- * The following table defines the commands understood by snaplock
- * that are not defined as a default by add_snap_communicator_commands().
+ * The following table defines the commands understood by cluckd
+ * that are not defined as a default by communicator.
  */
-snap::dispatcher<snaplock>::dispatcher_match::vector_t const snaplock::g_snaplock_service_messages =
-{
-    {
-        "ABSOLUTELY"
-      , &snaplock::msg_absolutely
-    },
-    {
-        "ACTIVATELOCK"
-      , &snaplock::msg_activate_lock
-    },
-    {
-        "ADDTICKET"
-      , &snaplock::msg_add_ticket
-    },
-    {
-        "CLUSTERUP"
-      , &snaplock::msg_cluster_up
-    },
-    {
-        "CLUSTERDOWN"
-      , &snaplock::msg_cluster_down
-    },
-    {
-        "DISCONNECTED"
-      , &snaplock::msg_server_gone
-    },
-    {
-        "DROPTICKET"
-      , &snaplock::msg_drop_ticket
-    },
-    {
-        "GETMAXTICKET"
-      , &snaplock::msg_get_max_ticket
-    },
-    {
-        "HANGUP"
-      , &snaplock::msg_server_gone
-    },
-    {
-        "LOCK"
-      , &snaplock::msg_lock
-    },
-    {
-        "LOCKACTIVATED"
-      , &snaplock::msg_lock_activated
-    },
-    {
-        "LOCKENTERED"
-      , &snaplock::msg_lock_entered
-    },
-    {
-        "LOCKENTERING"
-      , &snaplock::msg_lock_entering
-    },
-    {
-        "LOCKEXITING"
-      , &snaplock::msg_lock_exiting
-    },
-    {
-        "LOCKFAILED"
-      , &snaplock::msg_lock_failed
-    },
-    {
-        "LOCKLEADERS"
-      , &snaplock::msg_lock_leaders
-    },
-    {
-        "LOCKSTARTED"
-      , &snaplock::msg_lock_started
-    },
-    {
-        "LOCKSTATUS"
-      , &snaplock::msg_lock_status
-    },
-    {
-        "LOCKTICKETS"
-      , &snaplock::msg_lock_tickets
-    },
-    {
-        "LISTTICKETS"
-      , &snaplock::msg_list_tickets
-    },
-    {
-        "MAXTICKET"
-      , &snaplock::msg_max_ticket
-    },
-    {
-        "STATUS"
-      , &snaplock::msg_status
-    },
-    {
-        "TICKETADDED"
-      , &snaplock::msg_ticket_added
-    },
-    {
-        "TICKETREADY"
-      , &snaplock::msg_ticket_ready
-    },
-    {
-        "UNLOCK"
-      , &snaplock::msg_unlock
-    }
-};
-
-
-
-
-
-
-
-snaplock::computer_t::computer_t()
-{
-    // used for a remote computer, we'll eventually get a set_id() which
-    // defines the necessary computer parameters
-}
-
-
-snaplock::computer_t::computer_t(QString const & name, uint8_t priority)
-    : f_self(true)
-    , f_priority(priority)
-    , f_pid(getpid())
-    , f_name(name)
-{
-    RAND_bytes(reinterpret_cast<unsigned char *>(&f_random_id), sizeof(f_random_id));
-
-    snap::snap_config config("snapcommunicator");
-    f_ip_address = config["listen"];
-}
-
-
-bool snaplock::computer_t::is_self() const
-{
-    return f_self;
-}
-
-
-void snaplock::computer_t::set_connected(bool connected)
-{
-    f_connected = connected;
-}
-
-
-bool snaplock::computer_t::get_connected() const
-{
-    return f_connected;
-}
-
-
-bool snaplock::computer_t::set_id(QString const & id)
-{
-    if(f_priority != PRIORITY_UNDEFINED)
-    {
-        throw snaplock_exception_content_invalid_usage("computer_t::set_id() can't be called more than once or on this snaplock computer");
-    }
-
-    snap::snap_string_list parts(id.split('|'));
-    if(parts.size() != 5)
-    {
-        // do not throw in case something changes we do not want snaplock to
-        // "crash" over and over again
-        //
-        SNAP_LOG_ERROR("received a computer id which does not have exactly 5 parts.");
-        return false;
-    }
-
-    // base is VERY IMPORTANT for this one as we save priorities below ten
-    // as 0n (01 to 09) so the sort works as expected
-    //
-    bool ok(false);
-    f_priority = parts[0].toLong(&ok, 10); 
-    if(!ok
-    || f_priority < PRIORITY_USER_MIN
-    || f_priority > PRIORITY_MAX)
-    {
-        SNAP_LOG_ERROR("priority is limited to a number between 0 and 15 inclusive.");
-        return false;
-    }
-
-    f_random_id = parts[1].toULong(&ok, 10);
-
-    f_ip_address = parts[2];
-    if(f_ip_address.isEmpty())
-    {
-        SNAP_LOG_ERROR("the process IP cannot be an empty string.");
-        return false;
-    }
-
-    f_pid = parts[3].toLong(&ok, 10);
-    if(!ok || f_pid < 1 || f_pid > snap::process::get_pid_max())
-    {
-        SNAP_LOG_ERROR("a process identifier is 15 bits so ")(f_pid)(" does not look valid (0 is also not accepted).");
-        return false;
-    }
-
-    f_name = parts[4];
-    if(f_name.isEmpty())
-    {
-        SNAP_LOG_ERROR("the server name in the lockid cannot be empty.");
-        return false;
-    }
-
-    f_id = id;
-
-    return true;
-}
-
-
-snaplock::computer_t::priority_t snaplock::computer_t::get_priority() const
-{
-    return f_priority;
-}
-
-
-void snaplock::computer_t::set_start_time(time_t start_time)
-{
-    f_start_time = start_time;
-}
-
-
-time_t snaplock::computer_t::get_start_time() const
-{
-    return f_start_time;
-}
-
-
-QString const & snaplock::computer_t::get_name() const
-{
-    return f_name;
-}
-
-
-QString const & snaplock::computer_t::get_id() const
-{
-    if(f_id.isEmpty())
-    {
-        if(f_priority == PRIORITY_UNDEFINED)
-        {
-            throw snaplock_exception_content_invalid_usage("computer_t::get_id() can't be called when the priority is not defined");
-        }
-        if(f_ip_address.isEmpty())
-        {
-            throw snaplock_exception_content_invalid_usage("computer_t::get_id() can't be called when the address is empty");
-        }
-        if(f_pid == 0)
-        {
-            throw snaplock_exception_content_invalid_usage("computer_t::get_id() can't be called when the pid is not defined");
-        }
-
-        f_id = QString("%1|%2|%3|%4|%5")
-                        .arg(f_priority, 2, 10, QChar('0'))
-                        .arg(f_random_id)
-                        .arg(f_ip_address)
-                        .arg(f_pid)
-                        .arg(f_name);
-    }
-
-    return f_id;
-}
-
-
-QString const & snaplock::computer_t::get_ip_address() const
-{
-    return f_ip_address;
-}
+//ed::dispatcher<cluckd>::dispatcher_match::vector_t const cluckd::g_snaplock_service_messages =
+//{
+//    {
+//        "ACTIVATELOCK"
+//      , &cluckd::msg_activate_lock
+//    },
+//    {
+//        "ADDTICKET"
+//      , &cluckd::msg_add_ticket
+//    },
+//    {
+//        "CLUSTERUP"
+//      , &cluckd::msg_cluster_up
+//    },
+//    {
+//        "CLUSTERDOWN"
+//      , &cluckd::msg_cluster_down
+//    },
+//    {
+//        "DISCONNECTED"
+//      , &cluckd::msg_server_gone
+//    },
+//    {
+//        "DROPTICKET"
+//      , &cluckd::msg_drop_ticket
+//    },
+//    {
+//        "GETMAXTICKET"
+//      , &cluckd::msg_get_max_ticket
+//    },
+//    {
+//        "HANGUP"
+//      , &cluckd::msg_server_gone
+//    },
+//    {
+//        "LOCK"
+//      , &cluckd::msg_lock
+//    },
+//    {
+//        "LOCKACTIVATED"
+//      , &cluckd::msg_lock_activated
+//    },
+//    {
+//        "LOCKENTERED"
+//      , &cluckd::msg_lock_entered
+//    },
+//    {
+//        "LOCKENTERING"
+//      , &cluckd::msg_lock_entering
+//    },
+//    {
+//        "LOCKEXITING"
+//      , &cluckd::msg_lock_exiting
+//    },
+//    {
+//        "LOCKFAILED"
+//      , &cluckd::msg_lock_failed
+//    },
+//    {
+//        "LOCKLEADERS"
+//      , &cluckd::msg_lock_leaders
+//    },
+//    {
+//        "LOCKSTARTED"
+//      , &cluckd::msg_lock_started
+//    },
+//    {
+//        "LOCKSTATUS"
+//      , &cluckd::msg_lock_status
+//    },
+//    {
+//        "LOCKTICKETS"
+//      , &cluckd::msg_lock_tickets
+//    },
+//    {
+//        "LISTTICKETS"
+//      , &cluckd::msg_list_tickets
+//    },
+//    {
+//        "MAXTICKET"
+//      , &cluckd::msg_max_ticket
+//    },
+//    {
+//        "STATUS"
+//      , &cluckd::msg_status
+//    },
+//    {
+//        "TICKETADDED"
+//      , &cluckd::msg_ticket_added
+//    },
+//    {
+//        "TICKETREADY"
+//      , &cluckd::msg_ticket_ready
+//    },
+//    {
+//        "UNLOCK"
+//      , &cluckd::msg_unlock
+//    }
+//};
 
 
 
@@ -484,7 +313,12 @@ QString const & snaplock::computer_t::get_ip_address() const
 
 
 
-/** \class snaplock
+
+
+
+
+
+/** \class cluckd
  * \brief Class handling intercomputer locking.
  *
  * This class is used in order to create an intercomputer lock on request.
@@ -573,151 +407,107 @@ QString const & snaplock::computer_t::get_ip_address() const
  *
  * \param[in] argc  The number of arguments in the argv array.
  * \param[in] argv  The array of argument strings.
- *
  */
-snaplock::snaplock(int argc, char * argv[])
-    : dispatcher(this, g_snaplock_service_messages)
-    , f_opt(g_options_environment, argc, argv)
-    , f_config("snaplock")
+cluckd::cluckd(int argc, char * argv[])
+    : f_opts(g_options_environment)
+    //, f_config("cluck")
 {
-    add_snap_communicator_commands();
+    snaplogger::add_logger_options(f_opts);
+    f_opts.finish_parsing(argc, argv);
+    if(!snaplogger::process_logger_options(f_opts, "/etc/cluck/logger"))
+    {
+        throw advgetopt::getopt_exit("logger options generated an error.", 0);
+    }
 
     // read the configuration file
     //
-    if(f_opt.is_defined("config"))
-    {
-        f_config.set_configuration_path(f_opt.get_string("config"));
-    }
-
-    // --debug
-    f_debug = f_opt.is_defined("debug");
-
-    // --debug-lock-messages
-    f_debug_lock_messages = f_opt.is_defined("debug-lock-messages")     // command line
-                         || f_config.has_parameter("debug_lock_messages");   // .conf file
-
-    // set message trace mode if debug-lock-messages is defined
-    //
-    if(f_debug_lock_messages)
-    {
-        set_trace();
-    }
+    //if(f_opt.is_defined("config"))
+    //{
+    //    f_config.set_configuration_path(f_opt.get_string("config"));
+    //}
 
     // get the server name using the library function
     //
     // TODO: if the name of the server is changed, we should reboot, but
-    //       to the minimum we need to restart snaplock (among other daemons)
+    //       to the minimum we need to restart cluck (among other daemons)
     //       remember that snapmanager.cgi gives you that option
+    //       with fluid-settings, though, we should be able to fix that
+    //       on the fly (but our tickets make use of the name...)
     //
-    f_server_name = QString::fromUtf8(snap::server::get_server_name().c_str());
-#ifdef _DEBUG
-    // to debug multiple snaplock on the same server each instance needs to
-    // have a different server name
-    //
-    if(f_config.has_parameter("server_name"))
-    {
-        f_server_name = f_config["server_name"];
-    }
-#endif
+    f_server_name = f_opts.get_string("server-name");
+//#ifdef _DEBUG
+//    // to debug multiple snaplock on the same server each instance needs to
+//    // have a different server name
+//    //
+//    if(f_config.has_parameter("server_name"))
+//    {
+//        f_server_name = f_config["server_name"];
+//    }
+//#endif
 
     // local_listen=... -- from snapcommnicator.conf
     //
-    tcp_client_server::get_addr_port(QString::fromUtf8(f_config("snapcommunicator", "local_listen").c_str()), f_communicator_addr, f_communicator_port, "tcp");
+    //tcp_client_server::get_addr_port(f_config("snapcommunicator", "local_listen"), f_communicator_addr, f_communicator_port, "tcp");
 
-    // setup the logger: --nolog, --logfile, or config file log_config
-    //
-    if(f_opt.is_defined("nolog"))
-    {
-        snap::logging::configure_console();
-    }
-    else if(f_opt.is_defined("logfile"))
-    {
-        snap::logging::configure_logfile(QString::fromUtf8(f_opt.get_string("logfile").c_str()));
-    }
-    else
-    {
-        if(f_config.has_parameter("log_config"))
-        {
-            // use .conf definition when available
-            //
-            f_log_conf = f_config["log_config"];
-        }
-        snap::logging::configure_conffile(f_log_conf);
-    }
+//#ifdef _DEBUG
+//    // for test purposes (i.e. to run any number of snaplock on a single
+//    // computer) we allow the administrator to change the name of the
+//    // server, but only in a debug version
+//    //
+//    if(f_config.has_parameter("service_name"))
+//    {
+//        f_service_name = f_config["service_name"];
+//    }
+//#endif
 
-    if(f_debug)
+    computer::priority_t priority(computer::PRIORITY_OFF);
+    std::string candidate_priority(f_opts.get_string("candidate-priority"));
+    if(candidate_priority != "off")
     {
-        // Force the logger level to DEBUG
-        // (unless already lower)
-        //
-        snap::logging::reduce_log_output_level( snap::logging::log_level_t::LOG_LEVEL_DEBUG );
+        priority = f_opts.get_long("candidate-priority"
+                                , 0
+                                , computer::PRIORITY_USER_MIN
+                                , computer::PRIORITY_MAX);
     }
-
-#ifdef _DEBUG
-    // for test purposes (i.e. to run any number of snaplock on a single
-    // computer) we allow the administrator to change the name of the
-    // server, but only in a debug version
-    //
-    if(f_config.has_parameter("service_name"))
-    {
-        f_service_name = f_config["service_name"];
-    }
-#endif
-
-    int64_t priority = computer_t::PRIORITY_DEFAULT;
-    if(f_opt.is_defined("candidate-priority"))
-    {
-        std::string const candidate_priority(f_opt.get_string("candidate-priority"));
-        if(candidate_priority == "off")
-        {
-            priority = computer_t::PRIORITY_OFF;
-        }
-        else
-        {
-            priority = f_opt.get_long("candidate-priority"
-                                    , 0
-                                    , computer_t::PRIORITY_USER_MIN
-                                    , computer_t::PRIORITY_MAX);
-        }
-    }
-    else if(f_config.has_parameter("candidate_priority"))
-    {
-        QString const candidate_priority(f_config["candidate_priority"]);
-        if(candidate_priority == "off")
-        {
-            // a priority 15 means that this computer is not a candidate
-            // at all (useful for nodes that get dynamically added
-            // and removed--i.e. avoid re-election each time that happens.)
-            //
-            priority = computer_t::PRIORITY_OFF;
-        }
-        else
-        {
-            bool ok(false);
-            priority = candidate_priority.toLong(&ok, 10);
-            if(!ok)
-            {
-                SNAP_LOG_FATAL("invalid candidate_priority, a valid decimal number was expected instead of \"")(candidate_priority)("\".");
-                exit(1);
-            }
-            if(priority < computer_t::PRIORITY_USER_MIN
-            || priority > computer_t::PRIORITY_MAX)
-            {
-                SNAP_LOG_FATAL("candidate_priority must be between 1 and 15, \"")(candidate_priority)("\" is not valid.");
-                exit(1);
-            }
-        }
-    }
+    //else if(f_config.has_parameter("candidate_priority"))
+    //{
+    //    std::string const candidate_priority(f_config["candidate_priority"]);
+    //    if(candidate_priority == "off")
+    //    {
+    //        // a priority 15 means that this computer is not a candidate
+    //        // at all (useful for nodes that get dynamically added
+    //        // and removed--i.e. avoid re-election each time that happens.)
+    //        //
+    //        priority = computer::PRIORITY_OFF;
+    //    }
+    //    else
+    //    {
+    //        bool ok(false);
+    //        priority = candidate_priority.toLong(&ok, 10);
+    //        if(!ok)
+    //        {
+    //            SNAP_LOG_FATAL("invalid candidate_priority, a valid decimal number was expected instead of \"")(candidate_priority)("\".");
+    //            exit(1);
+    //        }
+    //        if(priority < computer::PRIORITY_USER_MIN
+    //        || priority > computer::PRIORITY_MAX)
+    //        {
+    //            SNAP_LOG_FATAL("candidate_priority must be between 1 and 15, \"")(candidate_priority)("\" is not valid.");
+    //            exit(1);
+    //        }
+    //    }
+    //}
 
     // make sure there are no standalone parameters
     //
-    if(f_opt.is_defined("--"))
+    if(f_opts.is_defined("--"))
     {
-        SNAP_LOG_FATAL("unexpected parameters found on snaplock daemon command line.");
-        std::cerr << "error: unexpected parameter found on snaplock daemon command line." << std::endl;
-        std::cerr << f_opt.usage(advgetopt::GETOPT_FLAG_SHOW_USAGE_ON_ERROR);
-        exit(1);
-        snapdev::NOT_REACHED();
+        char const * errmsg("unexpected parameter found on cluck daemon command line.");
+        SNAP_LOG_FATAL
+            << errmsg
+            << SNAP_LOG_SEND;
+        std::cerr << f_opts.usage(advgetopt::GETOPT_FLAG_SHOW_USAGE_ON_ERROR);
+        throw advgetopt::getopt_exit(errmsg, 1);
     }
 
     f_start_time = time(nullptr);
@@ -728,7 +518,7 @@ snaplock::snaplock(int argc, char * argv[])
     //
     // as a side effect: it generates our identifier
     //
-    f_computers[f_server_name] = std::make_shared<computer_t>(f_server_name, priority);
+    f_computers[f_server_name] = std::make_shared<computer>(f_server_name, priority);
     f_computers[f_server_name]->set_start_time(f_start_time);
     f_computers[f_server_name]->set_connected(true);
     f_my_id = f_computers[f_server_name]->get_id();
@@ -741,7 +531,7 @@ snaplock::snaplock(int argc, char * argv[])
  * At this point, the destructor is present mainly because we have
  * some virtual functions.
  */
-snaplock::~snaplock()
+cluckd::~cluckd()
 {
 }
 
@@ -752,74 +542,39 @@ snaplock::~snaplock()
  * used to lock processes from any number of computers that have access
  * to the snaplock daemon network.
  */
-void snaplock::run()
+void cluckd::run()
 {
-    // Stop on these signals, log them, then terminate.
-    //
-    signal( SIGSEGV, snaplock::sighandler );
-    signal( SIGBUS,  snaplock::sighandler );
-    signal( SIGFPE,  snaplock::sighandler );
-    signal( SIGILL,  snaplock::sighandler );
-    signal( SIGTERM, snaplock::sighandler );
-    signal( SIGINT,  snaplock::sighandler );
-    signal( SIGQUIT, snaplock::sighandler );
+    f_communicator = ed::communicator::instance();
 
-    // Continue, but let us know by adding one line to the logs
+    // capture Ctrl-C (SIGINT) to get a clean exit by default
     //
-    signal( SIGPIPE, snaplock::sigloghandler );
-
-    // ignore console signals
-    //
-    signal( SIGTSTP,  SIG_IGN );
-    signal( SIGTTIN,  SIG_IGN );
-    signal( SIGTTOU,  SIG_IGN );
-
-    // initialize the communicator and its connections
-    //
-    f_communicator = snap::snap_communicator::instance();
-
-    // capture Ctrl-C (SIGINT)
-    //
-    f_interrupt.reset(new snaplock_interrupt(this));
+    f_interrupt = std::make_shared<interrupt>(this);
     f_communicator->add_connection(f_interrupt);
 
     // timer so we can timeout locks
     //
-    f_timer.reset(new snaplock_timer(this));
+    f_timer = std::make_shared<timer>(this);
     f_communicator->add_connection(f_timer);
 
     // capture SIGUSR1 to print out information
     //
-    f_info.reset(new snaplock_info(this));
+    f_info = std::make_shared<cluck_daemon::info>(this);
     f_communicator->add_connection(f_info);
 
     // capture SIGUSR2 to print out information
     //
-    f_debug_info.reset(new snaplock_debug_info(this));
+    f_debug_info = std::make_shared<cluck_daemon::debug_info>(this);
     f_communicator->add_connection(f_debug_info);
 
-    // create a messenger to communicate with the Snap Communicator process
+    // create a messenger to connect with the Communicator daemon
     // and other services as required
     //
-    if(f_opt.is_defined("list"))
-    {
-        snap::logging::set_log_output_level(snap::logging::log_level_t::LOG_LEVEL_ERROR);
-
-        // in this case create a snaplock_tool() which means most messages
-        // are not going to function; and once ready, it will execute the
-        // function specified on the command line such as --list
-        //
-        f_service_name = "snaplocktool";
-        f_messenger.reset(new snaplock_tool(this, f_communicator_addr.toUtf8().data(), f_communicator_port));
-    }
-    else
-    {
-        SNAP_LOG_INFO("--------------------------------- snaplock started.");
-
-        f_messenger.reset(new snaplock_messenger(this, f_communicator_addr.toUtf8().data(), f_communicator_port));
-        f_messenger->set_dispatcher(shared_from_this());
-    }
+    f_messenger = std::make_shared<messenger>(this, f_opts);
     f_communicator->add_connection(f_messenger);
+
+    SNAP_LOG_INFO
+        << "--------------------------------- snaplock started."
+        << SNAP_LOG_SEND;
 
     // now run our listening loop
     //
@@ -827,120 +582,7 @@ void snaplock::run()
 }
 
 
-/** \brief A static function to capture various signals.
- *
- * This function captures unwanted signals like SIGSEGV and SIGILL.
- *
- * The handler logs the information and then the service exists.
- * This is done mainly so we have a chance to debug problems even
- * when it crashes on a remote server.
- *
- * \warning
- * The signals are setup after the construction of the snaplock
- * object because that is where we initialize the logger.
- *
- * \param[in] sig  The signal that was just emitted by the OS.
- */
-void snaplock::sighandler(int sig)
-{
-    QString signame;
-    bool show_stack(true);
-    switch(sig)
-    {
-    case SIGSEGV:
-        signame = "SIGSEGV";
-        break;
 
-    case SIGBUS:
-        signame = "SIGBUS";
-        break;
-
-    case SIGFPE:
-        signame = "SIGFPE";
-        break;
-
-    case SIGILL:
-        signame = "SIGILL";
-        break;
-
-    case SIGTERM:
-        signame = "SIGTERM";
-        show_stack = false;
-        break;
-
-    case SIGINT:
-        signame = "SIGINT";
-        show_stack = false;
-        break;
-
-    case SIGQUIT:
-        signame = "SIGQUIT";
-        show_stack = false;
-        break;
-
-    default:
-        signame = "UNKNOWN";
-        break;
-
-    }
-
-    if(show_stack)
-    {
-        snap::snap_exception_base::output_stack_trace();
-    }
-
-    SNAP_LOG_FATAL("Fatal signal caught: ")(signame);
-
-    // Exit with error status
-    //
-    ::exit(1);
-    snapdev::NOT_REACHED();
-}
-
-
-void snaplock::sigloghandler(int sig)
-{
-    std::string signame;
-
-    switch(sig)
-    {
-    case SIGPIPE:
-        signame = "SIGPIPE";
-        break;
-
-    default:
-        signame = "UNKNOWN";
-        break;
-
-    }
-
-    SNAP_LOG_WARNING("POSIX signal caught: ")(signame);
-
-    // in this case we return because we want the process to continue
-    //
-    return;
-}
-
-
-
-
-
-/** \brief Forward the message to the messenger.
- *
- * The dispatcher needs to be able to send messages (some replies are sent
- * from the dispatcher code directly). This function allows for such to
- * happen.
- *
- * The function simply forwards the messages to the messenger queue.
- *
- * \param[in] message  The message to be forwarded.
- * \param[in] cache  Whether the message can be cached if it can't be
- *                   dispatched immediately.
- */
-bool snaplock::send_message(snap::snap_communicator_message const & message, bool cache)
-{
-    return f_messenger->send_message(message, cache);
-}
 
 
 /** \brief Return the number of known computers running snaplock.
@@ -952,7 +594,7 @@ bool snaplock::send_message(snap::snap_communicator_message const & message, boo
  *
  * \return The number of instances of snaplock running and connected.
  */
-int snaplock::get_computer_count() const
+int cluckd::get_computer_count() const
 {
     return f_computers.size();
 }
@@ -982,7 +624,7 @@ int snaplock::get_computer_count() const
  * As computers running snaplock appear and disappear, the quorum
  * number will change, dynamically.
  */
-int snaplock::quorum() const
+int cluckd::quorum() const
 {
     return f_computers.size() / 2 + 1;
 }
@@ -998,15 +640,15 @@ int snaplock::quorum() const
  *
  * \return The name of the server snaplock is running on.
  */
-QString const & snaplock::get_server_name() const
+std::string const & cluckd::get_server_name() const
 {
     return f_server_name;
 }
 
 
-/** \brief Check whethre snaplock is ready to process lock requests.
+/** \brief Check whether cluck is ready to process lock requests.
  *
- * This function checks whether snaplock is ready by looking at whether
+ * This function checks whether cluck is ready by looking at whether
  * it has leaders and if so, whether each leader is connected.
  *
  * Once both tests succeeds, this snaplock can forward the locks to
@@ -1015,13 +657,15 @@ QString const & snaplock::get_server_name() const
  *
  * \return true once locks can be processed.
  */
-bool snaplock::is_ready() const
+bool cluckd::is_ready() const
 {
     // without at least one leader we are definitely not ready
     //
     if(f_leaders.empty())
     {
-        SNAP_LOG_TRACE("not considered ready: no leaders.");
+        SNAP_LOG_TRACE
+            << "not considered ready: no leaders."
+            << SNAP_LOG_SEND;
         return false;
     }
 
@@ -1041,7 +685,9 @@ bool snaplock::is_ready() const
     if(f_leaders.size() == 1
     && f_neighbors_count != 1)
     {
-        SNAP_LOG_TRACE("not considered ready: no enough leaders for this cluster.");
+        SNAP_LOG_TRACE
+            << "not considered ready: no enough leaders for this cluster."
+            << SNAP_LOG_SEND;
         return false;
     }
 
@@ -1060,7 +706,9 @@ bool snaplock::is_ready() const
     if(f_neighbors_quorum < 3
     && f_computers.size() < f_neighbors_count)
     {
-        SNAP_LOG_TRACE("not considered ready: quorum changed, re-election expected soon.");
+        SNAP_LOG_TRACE
+            << "not considered ready: quorum changed, re-election expected soon."
+            << SNAP_LOG_SEND;
         return false;
     }
 
@@ -1070,7 +718,9 @@ bool snaplock::is_ready() const
     //
     if(f_computers.size() < f_neighbors_quorum)
     {
-        SNAP_LOG_TRACE("not considered ready: quorum lost, re-election expected soon.");
+        SNAP_LOG_TRACE
+            << "not considered ready: quorum lost, re-election expected soon."
+            << SNAP_LOG_SEND;
         return false;
     }
 
@@ -1080,9 +730,11 @@ bool snaplock::is_ready() const
     {
         if(!l->get_connected())
         {
-            SNAP_LOG_TRACE("not considered ready: no direct connection with leader: \"")
-                          (l->get_name())
-                          ("\".");
+            SNAP_LOG_TRACE
+                << "not considered ready: no direct connection with leader: \""
+                << l->get_name()
+                << "\"."
+                << SNAP_LOG_SEND;
 
             // attempt resending a LOCKSTARTED because it could be that it
             // did not work quite right and the snaplock daemons are not
@@ -1098,12 +750,12 @@ bool snaplock::is_ready() const
                 //
                 f_pace_lockstarted = now + 5;
 
-                // only send it to that specific server snaplock daemon
+                // only send it to that specific server cluck daemon
                 //
-                snap::snap_communicator_message temporary_message;
+                ed::message temporary_message;
                 temporary_message.set_sent_from_server(l->get_name());
                 temporary_message.set_sent_from_service("snaplock");
-                const_cast<snaplock *>(this)->send_lockstarted(&temporary_message);
+                const_cast<cluckd *>(this)->send_lock_started(&temporary_message);
             }
 
             return false;
@@ -1119,54 +771,60 @@ bool snaplock::is_ready() const
 /** \brief Check whether we are a leader.
  *
  * This function goes through the list of leaders to determine whether
- * this snaplock is one of them, if so it returns that leader
- * computer_t object. Otherwise it returns a null pointer.
+ * the specified identifier represents a leader. If so it returns a pointer
+ * to that leader computer object. Otherwise it returns a null pointer.
+ *
+ * When the function is called with an empty string as the computer
+ * identifier, this computer is checked to see whether it is a leader.
  *
  * \warning
- * This function is considered slow since it goes through the list each
- * time. On the other hand, it's only 1 to 3 leaders. Yet, you should
- * cache the result within your function if you need to call the function
- * multiple times, as in:
+ * This function is considered slow since it goes through the list of leaders
+ * on each call. On the other hand, it's only 1 to 3 leaders. Yet, you should
+ * cache the result within your function if you need the results multiple
+ * times, as in:
  *
  * \code
- *      computer_t::pointer_t leader(is_leader());
+ *      computer::pointer_t leader(is_leader());
  *      // ... then use `leader` any number of times ...
  * \endcode
  *
  * \par
- * This done that way so the function is dynamic and the result can
- * change over time.
+ * This is done that way because the function may result different results
+ * over time.
  *
  * \param[in] id  The identifier of the leader to search, if empty, default
- *                to f_my_id (i.e. whether this snaplock is a leader).
+ *                to f_my_id (i.e. whether this cluckd is a leader).
  *
- * \return Our computer_t::pointer_t or a null pointer.
+ * \return The leader computer::pointer_t or a null pointer.
  */
-snaplock::computer_t::pointer_t snaplock::is_leader(QString id) const
+computer::pointer_t cluckd::is_leader(std::string id) const
 {
-    if(id.isEmpty())
+    if(id.empty())
     {
         id = f_my_id;
     }
 
-    for(auto const & l : f_leaders)
+    auto const l(std::find_if(
+          f_leaders.begin()
+        , f_leaders.end()
+        , [id](auto const & c){
+              return c->get_id() == id;
+          }));
+    if(l != f_leaders.end())
     {
-        if(l->get_id() == id)
-        {
-            return l;
-        }
+        return *l;
     }
 
-    return computer_t::pointer_t();
+    return computer::pointer_t();
 }
 
 
-snaplock::computer_t::pointer_t snaplock::get_leader_a() const
+computer::pointer_t cluckd::get_leader_a() const
 {
 #ifdef _DEBUG
-    if(!is_leader())
+    if(is_leader() == nullptr)
     {
-        throw snaplock_exception_content_invalid_usage("snaplock::get_leader_a(): only a leader can call this function.");
+        throw cluck::logic_error("cluckd::get_leader_a(): only a leader can call this function.");
     }
 #endif
 
@@ -1174,10 +832,10 @@ snaplock::computer_t::pointer_t snaplock::get_leader_a() const
     {
     case 0:
     default:
-        throw snaplock_exception_content_invalid_usage("snaplock::get_leader_a(): call this function only when leaders were elected.");
+        throw cluck::logic_error("cluckd::get_leader_a(): call this function only when leaders were elected.");
 
     case 1:
-        return computer_t::pointer_t(nullptr);
+        return computer::pointer_t();
 
     case 2:
     case 3:
@@ -1187,12 +845,12 @@ snaplock::computer_t::pointer_t snaplock::get_leader_a() const
 }
 
 
-snaplock::computer_t::pointer_t snaplock::get_leader_b() const
+computer::pointer_t cluckd::get_leader_b() const
 {
 #ifdef _DEBUG
     if(!is_leader())
     {
-        throw snaplock_exception_content_invalid_usage("snaplock::get_leader_b(): only a leader can call this function.");
+        throw cluck::logic_error("cluckd::get_leader_b(): only a leader can call this function.");
     }
 #endif
 
@@ -1200,11 +858,11 @@ snaplock::computer_t::pointer_t snaplock::get_leader_b() const
     {
     case 0:
     default:
-        throw snaplock_exception_content_invalid_usage("snaplock::get_leader_b(): call this function only when leaders were elected.");
+        throw cluck::unexpected_case("cluckd::get_leader_b(): call this function only when leaders were elected.");
 
     case 1:
     case 2: // we have a leader A but no leader B when we have only 2 leaders
-        return computer_t::pointer_t(nullptr);
+        return computer::pointer_t();
 
     case 3:
         return f_leaders[f_leaders[2]->is_self() ? 1 : 2];
@@ -1214,7 +872,7 @@ snaplock::computer_t::pointer_t snaplock::get_leader_b() const
 
 
 
-/** \brief Output various data about the snaplock current status.
+/** \brief Output various data about the cluckd current status.
  *
  * This function outputs the current status of a snaplock daemon to
  * the snaplock.log file.
@@ -1222,13 +880,32 @@ snaplock::computer_t::pointer_t snaplock::get_leader_b() const
  * This is used to debug a snaplock instance and make sure that the
  * state is how you would otherwise expect it to be.
  */
-void snaplock::info()
+void cluckd::info()
 {
-    SNAP_LOG_INFO("++++++++ SNAPLOCK INFO ++++++++");
-    SNAP_LOG_INFO("My leader ID: ")(f_my_id);
-    SNAP_LOG_INFO("My IP address: ")(f_my_ip_address);
-    SNAP_LOG_INFO("Total number of computers: ")(f_neighbors_count)(" (quorum: ")(f_neighbors_quorum)(", leaders: ")(f_leaders.size())(")");
-    SNAP_LOG_INFO("Known computers: ")(f_computers.size());
+    SNAP_LOG_INFO
+        << "++++++++ SNAPLOCK INFO ++++++++"
+        << SNAP_LOG_SEND;
+    SNAP_LOG_INFO
+        << "My leader ID: "
+        << f_my_id
+        << SNAP_LOG_SEND;
+    SNAP_LOG_INFO
+        << "My IP address: "
+        << f_my_ip_address
+        << SNAP_LOG_SEND;
+    SNAP_LOG_INFO
+        << "Total number of computers: "
+        << f_neighbors_count
+        << " (quorum: "
+        << f_neighbors_quorum
+        << ", leaders: "
+        << f_leaders.size()
+        << ")"
+        << SNAP_LOG_SEND;
+    SNAP_LOG_INFO
+        << "Known computers: "
+        << f_computers.size()
+        << SNAP_LOG_SEND;
     for(auto const & c : f_computers)
     {
         auto const it(std::find_if(
@@ -1238,151 +915,111 @@ void snaplock::info()
                 {
                     return c.second == l;
                 }));
-        QString leader;
+        std::string leader;
         if(it != f_leaders.end())
         {
-            leader = QString(" (LEADER #%1)").arg(it - f_leaders.begin());
+            leader = " (LEADER #";
+            leader += std::to_string(it - f_leaders.begin());
+            leader += ')';
         }
-        SNAP_LOG_INFO(" --          Computer Name: ")(c.second->get_name())(leader);
-        SNAP_LOG_INFO(" --            Computer ID: ")(c.second->get_id());
-        SNAP_LOG_INFO(" --    Computer IP Address: ")(c.second->get_ip_address());
+        SNAP_LOG_INFO
+            << " --          Computer Name: "
+            << c.second->get_name()
+            << leader
+            << SNAP_LOG_SEND;
+        SNAP_LOG_INFO
+            << " --            Computer ID: "
+            << c.second->get_id()
+            << SNAP_LOG_SEND;
+        SNAP_LOG_INFO
+            << " --    Computer IP Address: "
+            << c.second->get_ip_address()
+            << SNAP_LOG_SEND;
     }
-
-}
-
-
-void snaplock::debug_info()
-{
-#ifdef _DEBUG
-SNAP_LOG_TRACE("++++ serialized tickets in debug_info(): ")(serialized_tickets().replace("\n", " --- "));
-    //if(f_computers.size() != 100)
-    //{
-    //    SNAP_LOG_INFO("++++ COMPUTER ")(f_communicator_port)(" is not fully connected to all computers?");
-    //}
-    //if(f_leaders.size() != 3)
-    //{
-    //    SNAP_LOG_INFO("++++ COMPUTER ")(f_communicator_port)(" does not (yet?) have 3 leaders");
-    //}
-    //else
-    //{
-    //    SNAP_LOG_INFO(" -- ")(f_leaders[0]->get_name())(" + ")(f_leaders[1]->get_name())(" + ")(f_leaders[2]->get_name());
-    //}
-#else
-    SNAP_LOG_INFO("this version of snaplock is not a debug version. The debug_info() function does nothing in this version.");
-#endif
 }
 
 
 
-
-/** \brief Generate the output for "snaplock --list"
+/** \brief Generate the output for "cluck --list"
  *
- * This function loops over the list of tickets and outpurs a string that
- * it sends back to the `snaplock --list` command for printing to the
- * user.
+ * This function loops over the list of tickets and outputs a string that
+ * it sends back to the `cluck --list` tool for printing to the administrator.
  *
- * \param[in] message  The message to reply to.
+ * \return A string with the list of all the tickets.
  */
-void snaplock::msg_list_tickets(snap::snap_communicator_message & message)
+std::string cluckd::ticket_list() const
 {
-    QString ticketlist;
+    std::stringstream list;
     for(auto const & obj_ticket : f_tickets)
     {
         for(auto const & key_ticket : obj_ticket.second)
         {
-            QString const & obj_name(key_ticket.second->get_object_name());
-            QString const & key(key_ticket.second->get_entering_key());
-            snaplock_ticket::ticket_id_t const ticket_id(key_ticket.second->get_ticket_number());
-            time_t const lock_timeout(key_ticket.second->get_lock_timeout());
+            list
+                << "ticket_id: "
+                << key_ticket.second->get_ticket_number()
+                << "  object name: \""
+                << key_ticket.second->get_object_name()
+                << "\"  key: "
+                << key_ticket.second->get_entering_key()
+                << "  ";
 
-            QString timeout_msg;
-            if(lock_timeout == 0)
+            cluck::timeout_t const lock_timeout(key_ticket.second->get_lock_timeout());
+            if(!lock_timeout)
             {
-                time_t const obtention_timeout(key_ticket.second->get_obtention_timeout());
-                timeout_msg = QString("obtention %1 %2")
-                            .arg(snap::snap_child::date_to_string(obtention_timeout * 1000000LL, snap::snap_child::date_format_t::DATE_FORMAT_SHORT))
-                            .arg(snap::snap_child::date_to_string(obtention_timeout * 1000000LL, snap::snap_child::date_format_t::DATE_FORMAT_TIME));
+                list
+                    << "timeout "
+                    << lock_timeout.to_string();
             }
             else
             {
-                timeout_msg = QString("timeout %1 %2")
-                            .arg(snap::snap_child::date_to_string(lock_timeout * 1000000LL, snap::snap_child::date_format_t::DATE_FORMAT_SHORT))
-                            .arg(snap::snap_child::date_to_string(lock_timeout * 1000000LL, snap::snap_child::date_format_t::DATE_FORMAT_TIME));
+                cluck::timeout_t const obtention_timeout(key_ticket.second->get_obtention_timeout());
+                list
+                    << "obtention "
+                    << obtention_timeout.to_string();
             }
 
-            QString const msg(QString("ticket id: %1  object name: \"%2\"  key: %3  %4\n")
-                            .arg(ticket_id)
-                            .arg(obj_name)
-                            .arg(key)
-                            .arg(timeout_msg));
-            ticketlist += msg;
+            list << '\n';
         }
     }
-    snap::snap_communicator_message list_message;
-    list_message.set_command("TICKETLIST");
-    list_message.reply_to(message);
-    list_message.add_parameter("list", ticketlist);
-    send_message(list_message);
+    return list.str();
 }
 
 
-/** \brief Send the CLUSTERSTATUS to snapcommunicator.
- *
- * This function builds a message and sends it to snapcommunicator.
- *
- * The CLUSTERUP and CLUSTERDOWN messages are sent only when that specific
- * event happen and until then we do not know what the state really is
- * (although we assume the worst and use CLUSTERDOWN until we get a reply.)
- */
-void snaplock::ready(snap::snap_communicator_message & message)
+void cluckd::set_neighbors_count(int count)
 {
-    snapdev::NOT_USED(message);
+    f_neighbors_count = count;
+    f_neighbors_quorum = count / 2 + 1;
 
-    snap::snap_communicator_message clusterstatus_message;
-    clusterstatus_message.set_command("CLUSTERSTATUS");
-    clusterstatus_message.set_service("snapcommunicator");
-    send_message(clusterstatus_message);
+    SNAP_LOG_INFO
+        << "cluster is up with "
+        << count
+        << " neighbors, attempt an election"
+           " then check for leaders by sending a LOCK_STARTED message."
+        << SNAP_LOG_SEND;
 }
 
 
-void snaplock::msg_cluster_up(snap::snap_communicator_message & message)
+void cluckd::cluster_down()
 {
-    f_neighbors_count = message.get_integer_parameter("neighbors_count");
-    f_neighbors_quorum = f_neighbors_count / 2 + 1;
+    SNAP_LOG_INFO
+        << "cluster is down, canceling existing locks and we have to"
+           " refuse any further lock requests for a while."
+        << SNAP_LOG_SEND;
 
-    SNAP_LOG_INFO("cluster is up with ")
-                 (f_neighbors_count)
-                 (" neighbors, attempt an election then check for leaders by sending a LOCKSTARTED message.");
-
-    election_status();
-
-    send_lockstarted(nullptr);
-}
-
-
-void snaplock::msg_cluster_down(snap::snap_communicator_message & message)
-{
-    snapdev::NOT_USED(message);
-
-    // there is nothing to do here, when the cluster comes back up the
-    // snapcommunicator will automatically send us a signal about it
-
-    SNAP_LOG_INFO("cluster is down, canceling existing locks and we have to refuse any further lock requests for a while.");
-
-    // in this case we just cannot keep the leaders
+    // in this case we cannot safely keep the leaders
     //
     f_leaders.clear();
 
-    // in case services listen to the NOLOCK, let them know it's gone
+    // in case services listen to the NO_LOCK, let them know it's gone
     //
     check_lock_status();
 
-    // we do not call the lockgone() because the HANGUP will be sent
+    // we do not call the lock_gone() because the HANGUP will be sent
     // if required so we do not have to do that twice
 }
 
 
-void snaplock::election_status()
+void cluckd::election_status()
 {
     // we already have election results?
     //
@@ -1394,18 +1031,14 @@ void snaplock::election_status()
         if(f_leaders.size() == 3
         || (f_neighbors_count < 3 && f_leaders.size() == f_neighbors_count))
         {
-            // this could have changed since we may get the list of
-            // leaders with some of those leaders set to "disabled"
-            //
-            check_lock_status();
             return;
         }
     }
 
-    // neighbors count is 0 until we receive a very first CLUSTERUP
-    // (note that it does not go back to zero on CLUSTERDOWN, however,
+    // neighbors count is 0 until we receive a very first CLUSTER_UP
+    // (note that it does not go back to zero on CLUSTER_DOWN, however,
     // the quorum as checked in the next if() is never going to be
-    // reached if the cluster is down.)
+    // reached if the cluster is down)
     //
     if(f_neighbors_count == 0)
     {
@@ -1415,7 +1048,7 @@ void snaplock::election_status()
     // this one probably looks complicated...
     //
     // if our quorum is 1 or 2 then we need a number of computers
-    // equal to the total number of computers (i.e. a CLUSTERCOMPLETE
+    // equal to the total number of computers (i.e. a CLUSTER_COMPLETE
     // status which we compute here)
     //
     if(f_neighbors_quorum < 3
@@ -1425,7 +1058,7 @@ void snaplock::election_status()
     }
 
     // since the neighbors count & quorum never go back to zero (on a
-    // CLUSTERDOWN) we have to verify that the number of computers is
+    // CLUSTER_DOWN) we have to verify that the number of computers is
     // acceptable here
     //
     // Note: further we will not count computers marked disabled, which
@@ -1441,7 +1074,7 @@ void snaplock::election_status()
     // to proceed with an election we must have the smallest IP address
     // (it is not absolutely required, but that way we avoid many
     // consensus problems, in effect we have one "temporary-leader" that ends
-    // up telling us who the final three leaders are.)
+    // up telling us who the final three leaders are)
     //
     for(auto & c : f_computers)
     {
@@ -1458,18 +1091,18 @@ void snaplock::election_status()
     // three (i.e. lower priority, random, IP, pid.)
     //
     int off(0);
-    computer_t::map_t sort_by_id;
-    for(auto c : f_computers)
+    computer::map_t sort_by_id;
+    for(auto const & c : f_computers)
     {
         // ignore nodes with a priority of 15 (i.e. OFF)
         //
-        if(c.second->get_priority() != computer_t::PRIORITY_OFF)
+        if(c.second->get_priority() != computer::PRIORITY_OFF)
         {
-            QString id(c.second->get_id());
+            std::string id(c.second->get_id());
 
             // is this computer a leader?
             //
-            auto it(std::find(f_leaders.begin(), f_leaders.end(), c.second));
+            auto const it(std::find(f_leaders.begin(), f_leaders.end(), c.second));
             if(it != f_leaders.end())
             {
                 // leaders have a priority of 00
@@ -1490,25 +1123,28 @@ void snaplock::election_status()
     {
         if(off != 0)
         {
-            SNAP_LOG_FATAL(
-                    "you cannot have any computer turned OFF when you"
-                    " have three or less computers total in your cluster."
-                    " The elections cannot be completed in these"
-                    " conditions.");
+            SNAP_LOG_FATAL
+                << "you cannot have any cluck computer turned OFF when you"
+                   " have three or less computers total in your cluster."
+                   " The elections cannot be completed in these"
+                   " conditions."
+                << SNAP_LOG_SEND;
             return;
         }
     }
     else if(f_computers.size() - off < 3)
     {
-        SNAP_LOG_FATAL("you have a total of ")
-                (f_computers.size())
-                (" computers in your cluster. You turned off ")
-                (off)
-                (" of them, which means less than three are left"
-                 " as candidates for leadership which is not enough."
-                 " You can have a maximum of ")
-                (f_computers.size() - 3)
-                (" that are turned off on this cluster.");
+        SNAP_LOG_FATAL
+            << "you have a total of "
+            << f_computers.size()
+            << " computers in your cluster. You turned off "
+            << off
+            << " of them, which means less than three are left"
+               " as candidates for leadership which is not enough."
+               " You can have a maximum of "
+            << f_computers.size() - 3
+            << " that are turned off on this cluster."
+            << SNAP_LOG_SEND;
         return;
     }
 
@@ -1526,89 +1162,95 @@ void snaplock::election_status()
 
     // the first three are the new leaders
     //
-    snap::snap_communicator_message lockleaders_message;
-    lockleaders_message.set_command("LOCKLEADERS");
-    lockleaders_message.set_service("*");
+    ed::message lockleaders_message;
+    lockleaders_message.set_command(cluck::g_name_cluck_cmd_lock_leaders);
+    lockleaders_message.set_service(communicatord::g_name_communicatord_server_any);
     f_leaders.clear();
-    f_election_date = snap::snap_child::get_current_date();
+    f_election_date = snapdev::now();
     lockleaders_message.add_parameter("election_date", f_election_date);
     auto leader(sort_by_id.begin());
-    size_t const max(std::min(static_cast<computer_t::map_t::size_type>(3), sort_by_id.size()));
-    for(size_t idx(0); idx < max; ++idx, ++leader)
+    std::size_t const max(std::min(static_cast<computer::map_t::size_type>(3), sort_by_id.size()));
+    for(std::size_t idx(0); idx < max; ++idx, ++leader)
     {
-        lockleaders_message.add_parameter(QString("leader%1").arg(idx), leader->second->get_id());
+        lockleaders_message.add_parameter(
+              "leader" + std::to_string(idx)
+            , leader->second->get_id());
         f_leaders.push_back(leader->second);
     }
-    send_message(lockleaders_message);
+    f_messenger->send_message(lockleaders_message);
 
-SNAP_LOG_WARNING("election status = add leader(s)... ")(f_computers.size())(" comps and ")(f_leaders.size())(" leaders");
-
-    // when the election succeeded we may have to send LOCK messages
-    // assuming some were cached and did not yet time out
-    //
-    check_lock_status();
+#if 1
+SNAP_LOG_WARNING
+<< "election status = add leader(s)... "
+<< f_computers.size()
+<< " computers and "
+<< f_leaders.size()
+<< " leaders."
+<< SNAP_LOG_SEND;
+#endif
 }
 
 
-void snaplock::check_lock_status()
+void cluckd::check_lock_status()
 {
     bool const ready(is_ready());
-    QString const current_status(ready ? "LOCKREADY" : "NOLOCK");
-
-    if(f_lock_status != current_status)
+    if(f_lock_status != ready)
     {
-        f_lock_status = current_status;
+        return;
+    }
+    f_lock_status = ready;
 
-        snap::snap_communicator_message status_message;
-        status_message.set_command(current_status);
-        status_message.set_service(".");
-        status_message.add_parameter("cache", "no");
-        send_message(status_message);
+    ed::message status_message;
+    status_message.set_command(f_lock_status
+                    ? cluck::g_name_cluck_cmd_lock_ready
+                    : cluck::g_name_cluck_cmd_no_lock);
+    status_message.set_service(communicatord::g_name_communicatord_server_me);
+    status_message.add_parameter("cache", "no");
+    f_messenger->send_message(status_message);
 
-        if(ready
-        && !f_message_cache.empty())
+    if(ready
+    && !f_message_cache.empty())
+    {
+        // we still have a cache of locks that can now be processed
+        //
+        // note:
+        // although msg_lock() could re-add some of those messages
+        // in the f_message_cache vector, it should not since it
+        // calls the same is_ready() function which we know returns
+        // true and therefore no cache is required
+        //
+        message_cache::list_t cache;
+        cache.swap(f_message_cache);
+        for(auto & mc : cache)
         {
-            // we still have a cache of locks that can now be processed
-            //
-            // note:
-            // although msg_lock() could re-add some of those messages
-            // in the f_message_cache vector, it should not since it
-            // calls the same is_read() function which we know returns
-            // true and therefore no cache is required
-            //
-            message_cache::vector_t cache;
-            cache.swap(f_message_cache);
-            for(auto mc : cache)
-            {
-                msg_lock(mc.f_message);
-            }
+            msg_lock(mc.f_message);
         }
     }
 }
 
 
-void snaplock::send_lockstarted(snap::snap_communicator_message const * message)
+void cluckd::send_lock_started(ed::message const * msg)
 {
     // tell other snaplock instances that are already listening that
     // we are ready; this way we can calculate the number of computers
     // available in our network and use that to calculate the QUORUM
     //
-    snap::snap_communicator_message lockstarted_message;
-    lockstarted_message.set_command("LOCKSTARTED");
-    if(message == nullptr)
+    ed::message lockstarted_message;
+    lockstarted_message.set_command(cluck::g_name_cluck_cmd_lock_started);
+    if(msg == nullptr)
     {
-        lockstarted_message.set_service("*");
+        lockstarted_message.set_service(communicatord::g_name_communicatord_service_public_broadcast);
 
         // unfortunately, the following does NOT work as expected...
         // (i.e. the following ends up sending the message to ourselves only
         // and does not forward to any remote communicators.)
         //
         //lockstarted_message.set_server("*");
-        //lockstarted_message.set_service("snaplock");
+        //lockstarted_message.set_service("cluck");
     }
     else
     {
-        lockstarted_message.reply_to(*message);
+        lockstarted_message.reply_to(*msg);
     }
 
     // our info: server name and id
@@ -1624,31 +1266,31 @@ void snaplock::send_lockstarted(snap::snap_communicator_message const * message)
         lockstarted_message.add_parameter("election_date", f_election_date);
         for(size_t idx(0); idx < f_leaders.size(); ++idx)
         {
-            lockstarted_message.add_parameter(QString("leader%1").arg(idx), f_leaders[idx]->get_id());
+            lockstarted_message.add_parameter("leader" + std::to_string(idx), f_leaders[idx]->get_id());
         }
     }
 
-    send_message(lockstarted_message);
+    f_messenger->send_message(lockstarted_message);
 }
 
 
-void snaplock::msg_lock_leaders(snap::snap_communicator_message & message)
+void cluckd::msg_lock_leaders(ed::message & msg)
 {
-    f_election_date = message.get_integer_parameter("election_date");
+    f_election_date = msg.get_integer_parameter("election_date");
 
     // save the new leaders in our own list
     //
     f_leaders.clear();
     for(int idx(0); idx < 3; ++idx)
     {
-        QString const param_name(QString("leader%1").arg(idx));
-        if(message.has_parameter(param_name))
+        std::string const param_name("leader" + std::to_string(idx));
+        if(msg.has_parameter(param_name))
         {
-            computer_t::pointer_t leader(std::make_shared<computer_t>());
-            QString const lockid(message.get_parameter(param_name));
+            computer::pointer_t leader(std::make_shared<computer>());
+            std::string const lockid(msg.get_parameter(param_name));
             if(leader->set_id(lockid))
             {
-                computer_t::map_t::iterator exists(f_computers.find(leader->get_name()));
+                computer::map_t::iterator exists(f_computers.find(leader->get_name()));
                 if(exists != f_computers.end())
                 {
                     // it already exists, use our existing instance
@@ -1681,7 +1323,7 @@ void snaplock::msg_lock_leaders(snap::snap_communicator_message & message)
         // one extra zero (255 % 3 == 0); however, there are 85 times
         // 3 in 255 so it probably won't be noticeable.
         //
-        uint8_t c;
+        std::uint8_t c;
         RAND_bytes(reinterpret_cast<unsigned char *>(&c), sizeof(c));
         f_next_leader = c % f_leaders.size();
     }
@@ -1695,24 +1337,24 @@ void snaplock::msg_lock_leaders(snap::snap_communicator_message & message)
 
 /** \brief Called whenever a snaplock computer is acknowledging itself.
  *
- * This function gets called on a LOCKSTARTED event which is sent whenever
+ * This function gets called on a LOCK_STARTED event which is sent whenever
  * a snaplock process is initialized on a computer.
  *
  * The message is expected to include the computer name. At this time
  * we cannot handle having more than one instance one the same computer.
  *
- * \param[in] message  The LOCKSTARTED message.
+ * \param[in] message  The LOCK_STARTED message.
  */
-void snaplock::msg_lock_started(snap::snap_communicator_message & message)
+void cluckd::msg_lock_started(ed::message & msg)
 {
     // get the server name (that other server telling us it is ready)
     //
-    QString const server_name(message.get_parameter("server_name"));
-    if(server_name.isEmpty())
+    std::string const server_name(msg.get_parameter("server_name"));
+    if(server_name.empty())
     {
         // name missing
         //
-        throw snap::snap_communicator_invalid_message("snaplock::msg_lockstarted(): Invalid server name (empty).");
+        throw cluck::invalid_message("cluckd::msg_lock_started(): Invalid server name (empty).");
     }
 
     // I do not think we would even message ourselves, but in case it happens
@@ -1723,19 +1365,19 @@ void snaplock::msg_lock_started(snap::snap_communicator_message & message)
         return;
     }
 
-    time_t const start_time(message.get_integer_parameter("starttime"));
+    time_t const start_time(msg.get_integer_parameter("starttime"));
 
-    computer_t::map_t::iterator it(f_computers.find(server_name));
+    computer::map_t::iterator it(f_computers.find(server_name));
     bool new_computer(it == f_computers.end());
     if(new_computer)
     {
         // create a computer instance so we know it exists
         //
-        computer_t::pointer_t computer(std::make_shared<computer_t>());
+        computer::pointer_t computer(std::make_shared<computer>());
 
         // fill the fields from the "lockid" parameter
         //
-        if(!computer->set_id(message.get_parameter("lockid")))
+        if(!computer->set_id(msg.get_parameter("lockid")))
         {
             // this is not a valid identifier, ignore altogether
             //
@@ -1773,9 +1415,9 @@ void snaplock::msg_lock_started(snap::snap_communicator_message & message)
 
     // keep the newest election results
     //
-    if(message.has_parameter("election_date"))
+    if(msg.has_parameter("election_date"))
     {
-        int64_t const election_date(message.get_integer_parameter("election_date"));
+        snapdev::timespec_ex const election_date(msg.get_timespec_parameter("election_date"));
         if(election_date > f_election_date)
         {
             f_election_date = election_date;
@@ -1788,14 +1430,14 @@ void snaplock::msg_lock_started(snap::snap_communicator_message & message)
     {
         for(int idx(0); idx < 3; ++idx)
         {
-            QString const param_name(QString("leader%1").arg(idx));
-            if(message.has_parameter(param_name))
+            std::string const param_name("leader" + std::to_string(idx));
+            if(msg.has_parameter(param_name))
             {
-                computer_t::pointer_t leader(std::make_shared<computer_t>());
-                QString const lockid(message.get_parameter(param_name));
+                computer::pointer_t leader(std::make_shared<computer>());
+                std::string const lockid(msg.get_parameter(param_name));
                 if(leader->set_id(lockid))
                 {
-                    computer_t::map_t::iterator exists(f_computers.find(leader->get_name()));
+                    computer::map_t::iterator exists(f_computers.find(leader->get_name()));
                     if(exists != f_computers.end())
                     {
                         // it already exists, use our existing instance
@@ -1820,34 +1462,16 @@ void snaplock::msg_lock_started(snap::snap_communicator_message & message)
 
     election_status();
 
+    // this can have an effect on the lock statuses
+    //
+    check_lock_status();
+
     if(new_computer)
     {
         // send a reply if that was a new computer
         //
-        send_lockstarted(&message);
+        send_lock_started(&msg);
     }
-}
-
-
-/** \brief A service asked about the lock status.
- *
- * The lock status is whether the snaplock service is ready to receive
- * LOCK messages (LOCKREADY) or is still waiting on a CLUSTERUP and
- * LOCKLEADERS to happen (NOLOCK.)
- *
- * Note that LOCK messages are accepted while the lock service is not
- * yet ready, however, those are cached and it is more likely that they
- * will timeout.
- *
- * \param[in] message  The message to reply to.
- */
-void snaplock::msg_lock_status(snap::snap_communicator_message & message)
-{
-    snap::snap_communicator_message status_message;
-    status_message.set_command(is_ready() ? "LOCKREADY" : "NOLOCK");
-    status_message.reply_to(message);
-    status_message.add_parameter("cache", "no");
-    send_message(status_message);
 }
 
 
@@ -1866,42 +1490,44 @@ void snaplock::msg_lock_status(snap::snap_communicator_message & message)
  * in that existing object. The extraction is additive so we can do
  * it any number of times.
  *
- * \param[in] message  The message to reply to.
+ * \param[in] msg  The message to reply to.
  */
-void snaplock::msg_lock_tickets(snap::snap_communicator_message & message)
+void cluckd::msg_lock_tickets(ed::message & msg)
 {
-    QString const tickets(message.get_parameter("tickets"));
+    std::string const tickets(msg.get_parameter("tickets"));
 
     // we have one ticket per line, so we first split per line and then
-    // work on one line at a time
+    // work on lines one at a time
     //
-    snap::snap_string_list const lines(tickets.split('\n'));
+    std::list<std::string> lines;
+    snapdev::tokenize_string(lines, tickets, "\n", true);
     for(auto const & l : lines)
     {
-        snaplock_ticket::pointer_t ticket;
-        snap::snap_string_list const vars(l.split('|'));
+        ticket::pointer_t t;
+        std::list<std::string> vars;
+        snapdev::tokenize_string(vars, tickets, "|", true);
         auto object_name_value(std::find_if(
                   vars.begin()
                 , vars.end()
-                , [](QString const & vv)
+                , [](std::string const & vv)
                 {
-                    return vv.startsWith("object_name=");
+                    return vv.starts_with("object_name=");
                 }));
         if(object_name_value != vars.end())
         {
             auto entering_key_value(std::find_if(
                       vars.begin()
                     , vars.end()
-                    , [](QString const & vv)
+                    , [](std::string const & vv)
                     {
-                        return vv.startsWith("entering_key=");
+                        return vv.starts_with("entering_key=");
                     }));
             if(entering_key_value != vars.end())
             {
                 // extract the values which start after the '=' sign
                 //
-                QString const object_name(object_name_value->mid(12));
-                QString const entering_key(entering_key_value->mid(13));
+                std::string const object_name(object_name_value->substr(12));
+                std::string const entering_key(entering_key_value->substr(13));
 
                 auto entering_ticket(f_entering_tickets.find(object_name));
                 if(entering_ticket != f_entering_tickets.end())
@@ -1909,10 +1535,10 @@ void snaplock::msg_lock_tickets(snap::snap_communicator_message & message)
                     auto key_ticket(entering_ticket->second.find(entering_key));
                     if(key_ticket != entering_ticket->second.end())
                     {
-                        ticket = key_ticket->second;
+                        t = key_ticket->second;
                     }
                 }
-                if(ticket == nullptr)
+                if(t == nullptr)
                 {
                     auto obj_ticket(f_tickets.find(object_name));
                     if(obj_ticket != f_tickets.end())
@@ -1920,38 +1546,38 @@ void snaplock::msg_lock_tickets(snap::snap_communicator_message & message)
                         auto key_ticket(std::find_if(
                                   obj_ticket->second.begin()
                                 , obj_ticket->second.end()
-                                , [&entering_key](auto const & t)
+                                , [&entering_key](auto const & o)
                                 {
-                                    return t.second->get_entering_key() == entering_key;
+                                    return o.second->get_entering_key() == entering_key;
                                 }));
                         if(key_ticket != obj_ticket->second.end())
                         {
-                            ticket = key_ticket->second;
+                            t = key_ticket->second;
                         }
                     }
                 }
 
                 // ticket exists? if not create a new one
                 //
-                bool const new_ticket(ticket == nullptr);
+                bool const new_ticket(t == nullptr);
                 if(new_ticket)
                 {
                     // creaet a new ticket, some of the parameters are there just
                     // because they are required; they will be replaced by the
                     // unserialize call...
                     //
-                    ticket = std::make_shared<snaplock_ticket>(
-                                                  this
-                                                , f_messenger
-                                                , object_name
-                                                , entering_key
-                                                , snap::snap_lock::SNAP_LOCK_DEFAULT_TIMEOUT + time(nullptr)
-                                                , snap::snap_lock::SNAP_LOCK_DEFAULT_TIMEOUT
-                                                , f_server_name
-                                                , "snaplock");
+                    t = std::make_shared<ticket>(
+                                  this
+                                , f_messenger
+                                , object_name
+                                , entering_key
+                                , cluck::CLUCK_DEFAULT_TIMEOUT + snapdev::now()
+                                , cluck::CLUCK_DEFAULT_TIMEOUT
+                                , f_server_name
+                                , cluck::g_name_cluck_service_name);
                 }
 
-                ticket->unserialize(l);
+                t->unserialize(l);
 
                 // do a couple of additional sanity tests to
                 // make sure that we want to keep new tickets
@@ -1964,18 +1590,18 @@ void snaplock::msg_lock_tickets(snap::snap_communicator_message & message)
                 // a new owner)
                 //
                 if(new_ticket
-                && ticket->is_locked())
+                && t->is_locked())
                 {
                     auto li(std::find_if(
                               f_leaders.begin()
                             , f_leaders.end()
-                            , [&ticket](auto const & c)
+                            , [&t](auto const & c)
                             {
-                                return ticket->get_owner() == c->get_name();
+                                return t->get_owner() == c->get_name();
                             }));
                     if(li != f_leaders.end())
                     {
-                        f_tickets[object_name][ticket->get_ticket_key()] = ticket;
+                        f_tickets[object_name][t->get_ticket_key()] = t;
                     }
                 }
             }
@@ -1984,30 +1610,35 @@ void snaplock::msg_lock_tickets(snap::snap_communicator_message & message)
 }
 
 
-/** \brief With the STATUS message we know of new snapcommunicators.
+/** \brief With the STATUS message we know of new communicatord services.
  *
  * This function captures the STATUS message and if it sees that the
  * name of the service is "remote communicator connection" then it
- * sends a new LOCKSTARTED message to make sure that all snaplock's
+ * sends a new LOCK_STARTED message to make sure that all snaplock's
  * are aware of us.
  *
- * \param[in] message  The LOCKSTARTED message.
+ * \param[in] msg  The LOCK_STARTED message.
  */
-void snaplock::msg_status(snap::snap_communicator_message & message)
+void cluckd::msg_status(ed::message & msg)
 {
     // check the service name, it has to be one that means it is a remote
     // connection with another snapcommunicator
     //
-    QString const service(message.get_parameter("service"));
+    std::string const service(msg.get_parameter(communicatord::g_name_communicatord_param_service));
+
+    // TODO: the names probably changed as per the comments below...
+    //       we also want those names to be defined in names.an
     if(service == "remote connection"                   // remote host connected to us
+    // "communicator local listener" ?
     || service == "remote communicator connection")     // we connected to remote host
+    // "communicator remote listener" ?
     {
         // check what the status is now: "up" or "down"
         //
-        QString const status(message.get_parameter("status"));
-        if(status == "up")
+        std::string const status(msg.get_parameter(communicatord::g_name_communicatord_param_status));
+        if(status == communicatord::g_name_communicatord_value_up)
         {
-            // we already broadcast a LOCKSTARTED from CLUSTERUP
+            // we already broadcast a LOCK_STARTED from CLUSTER_UP
             // and that's enough
             //
         }
@@ -2015,7 +1646,7 @@ void snaplock::msg_status(snap::snap_communicator_message & message)
         {
             // host is down, remove from our list of hosts
             //
-            msg_server_gone(message);
+            msg_server_gone(msg);
         }
     }
 }
@@ -2026,20 +1657,20 @@ void snaplock::msg_status(snap::snap_communicator_message & message)
  * This function is used to know that a remote connection was
  * disconnected.
  *
- * We receive the HANGUP whenever a remote connection hangs
- * up or snapcommunicator received a DISCONNECT message.
+ * This function handles the HANGUP, DISCONNECTED, and STATUS(down)
+ * nessages as required.
  *
  * This allows us to manage the f_computers list of computers running
- * snaplock.
+ * cluckd services.
  *
- * \param[in] message  The LOCKSTARTED message.
+ * \param[in] msg  The LOCK_STARTED message.
  */
-void snaplock::msg_server_gone(snap::snap_communicator_message & message)
+void cluckd::msg_server_gone(ed::message & msg)
 {
-    // was it a snaplock service at least?
+    // was it a cluckd service at least?
     //
-    QString const server_name(message.get_parameter("server_name"));
-    if(server_name.isEmpty()
+    std::string const server_name(msg.get_parameter("server_name"));
+    if(server_name.empty()
     || server_name == f_server_name)
     {
         // we never want to remove ourselves?!
@@ -2078,9 +1709,9 @@ void snaplock::msg_server_gone(snap::snap_communicator_message & message)
         //
         election_status();
 
-        // if too many leaders were dropped, we may go back to the NOLOCK status
+        // if too many leaders were dropped, we may go back to the NO_LOCK status
         //
-        // we only send a NOLOCK if the election could not re-assign another
+        // we only send a NO_LOCK if the election could not re-assign another
         // computer as the missing leader(s)
         //
         check_lock_status();
@@ -2105,7 +1736,7 @@ void snaplock::msg_server_gone(snap::snap_communicator_message & message)
  *
  * \param[in] quitting  Set to true if we received a QUITTING message.
  */
-void snaplock::stop(bool quitting)
+void cluckd::stop(bool quitting)
 {
     if(f_messenger != nullptr)
     {
@@ -2119,15 +1750,7 @@ void snaplock::stop(bool quitting)
         }
         else
         {
-            f_messenger->mark_done();
-
-            // unregister if we are still connected to the messenger
-            // and Snap! Communicator is not already quitting
-            //
-            snap::snap_communicator_message cmd;
-            cmd.set_command("UNREGISTER");
-            cmd.add_parameter("service", f_service_name);
-            send_message(cmd);
+            f_messenger->unregister_service();
         }
     }
 
@@ -2154,13 +1777,13 @@ void snaplock::stop(bool quitting)
  * specified message.
  *
  * The function throws if a parameter is missing or invalid (i.e. an
- * integer is not valid.)
+ * integer is not valid).
  *
  * \note
  * The timeout parameter is always viewed as optional. It is set to
- * "now + DEFAULT_TIMEOUT" if undefined in the message. If specified in
- * the message, there is no minimum or maximum (i.e. it may already
- * have timed out.)
+ * "now + cluck::CLUCK_LOCK_DEFAULT_TIMEOUT" if undefined in the message.
+ * If specified in the message, there is no minimum or maximum
+ * (i.e. it may already have timed out).
  *
  * \exception snap_communicator_invalid_message
  * If a required parameter (object_name, client_pid, or key) is missing
@@ -2170,25 +1793,33 @@ void snaplock::stop(bool quitting)
  * \param[in] message  The message from which we get parameters.
  * \param[out] object_name  A pointer to a QString that receives the object name.
  * \param[out] client_pid  A pointer to a pid_t that receives the client pid.
- * \param[out] timeout  A pointer to an int64_t that receives the timeout date in seconds.
+ * \param[out] timeout  A pointer to an cluck::timeout_t that receives the timeout date.
  * \param[out] key  A pointer to a QString that receives the key parameter.
  * \param[out] source  A pointer to a QString that receives the source parameter.
  *
  * \return true if all specified parameters could be retrieved.
  */
-void snaplock::get_parameters(snap::snap_communicator_message const & message, QString * object_name, pid_t * client_pid, time_t * timeout, QString * key, QString * source)
+void cluckd::get_parameters(
+      ed::message const & msg
+    , std::string * object_name
+    , pid_t * client_pid
+    , cluck::timeout_t * timeout
+    , std::string * key
+    , std::string * source)
 {
     // get the "object name" (what we are locking)
     // in Snap, the object name is often a URI plus the action we are performing
     //
     if(object_name != nullptr)
     {
-        *object_name = message.get_parameter("object_name");
-        if(object_name->isEmpty())
+        *object_name = msg.get_parameter("object_name");
+        if(object_name->empty())
         {
             // name missing
             //
-            throw snap::snap_communicator_invalid_message("snaplock::get_parameters(): Invalid object name. We cannot lock the empty string.");
+            throw cluck::invalid_message(
+                  "cluckd::get_parameters(): Invalid object name."
+                  " We cannot lock the empty string.");
         }
     }
 
@@ -2198,12 +1829,15 @@ void snaplock::get_parameters(snap::snap_communicator_message const & message, Q
     //
     if(client_pid != nullptr)
     {
-        *client_pid = message.get_integer_parameter("pid");
+        *client_pid = msg.get_integer_parameter("pid");
         if(*client_pid < 1)
         {
             // invalid pid
             //
-            throw snap::snap_communicator_invalid_message(QString("snaplock::get_parameters(): Invalid pid specified for a lock (%1). It must be a positive decimal number.").arg(message.get_parameter("pid")).toUtf8().data());
+            throw cluck::invalid_message(
+                  "cluckd::get_parameters(): Invalid pid specified for a lock ("
+                + std::to_string(*client_pid)
+                + "). It must be a positive decimal number.");
         }
     }
 
@@ -2212,16 +1846,16 @@ void snaplock::get_parameters(snap::snap_communicator_message const & message, Q
     //
     if(timeout != nullptr)
     {
-        if(message.has_parameter("timeout"))
+        if(msg.has_parameter("timeout"))
         {
             // this timeout may already be out of date in which case
             // the lock immediately fails
             //
-            *timeout = message.get_integer_parameter("timeout");
+            *timeout = msg.get_timespec_parameter("timeout");
         }
         else
         {
-            *timeout = time(nullptr) + DEFAULT_TIMEOUT;
+            *timeout = snapdev::now() + cluck::CLUCK_UNLOCK_DEFAULT_TIMEOUT;
         }
     }
 
@@ -2229,12 +1863,12 @@ void snaplock::get_parameters(snap::snap_communicator_message const & message, Q
     //
     if(key != nullptr)
     {
-        *key = message.get_parameter("key");
-        if(key->isEmpty())
+        *key = msg.get_parameter("key");
+        if(key->empty())
         {
             // key missing
             //
-            throw snap::snap_communicator_invalid_message("snaplock::get_parameters(): A key cannot be an empty string.");
+            throw cluck::invalid_message("cluckd::get_parameters(): A key cannot be an empty string.");
         }
     }
 
@@ -2242,12 +1876,12 @@ void snaplock::get_parameters(snap::snap_communicator_message const & message, Q
     //
     if(source != nullptr)
     {
-        *source = message.get_parameter("source");
-        if(source->isEmpty())
+        *source = msg.get_parameter("source");
+        if(source->empty())
         {
             // source missing
             //
-            throw snap::snap_communicator_invalid_message("snaplock::get_parameters(): A source cannot be an empty string.");
+            throw cluck::invalid_message("cluckd::get_parameters(): A source cannot be an empty string.");
         }
     }
 }
@@ -2262,12 +1896,13 @@ void snaplock::get_parameters(snap::snap_communicator_message const & message, Q
  * with it so we send it an ALIVE message to know whether it is worth
  * the trouble of entering that lock.
  *
- * \param[in] message  The ABSOLUTE message to handle.
+ * \param[in] msg  The ABSOLUTELY message to handle.
  */
-void snaplock::msg_absolutely(snap::snap_communicator_message & message)
+void cluckd::msg_absolutely(ed::message & msg)
 {
-    QString const serial(message.get_parameter("serial"));
-    snap::snap_string_list const segments(serial.split('/'));
+    std::string const serial(msg.get_parameter("serial"));
+    std::vector<std::string> segments;
+    snapdev::tokenize_string(segments, serial, "/");
 
     if(segments[0] == "relock")
     {
@@ -2276,36 +1911,38 @@ void snaplock::msg_absolutely(snap::snap_communicator_message & message)
         //
         if(segments.size() != 4)
         {
-            SNAP_LOG_WARNING("ABSOLUTELY reply has an invalid relock serial parameters \"")
-                            (serial)
-                            ("\" was expected to have exactly 4 segments.");
+            SNAP_LOG_WARNING
+                << "ABSOLUTELY reply has an invalid relock serial parameters \""
+                << serial
+                << "\" was expected to have exactly 4 segments."
+                << SNAP_LOG_SEND;
 
-            snap::snap_communicator_message lock_failed_message;
-            lock_failed_message.set_command("LOCKFAILED");
-            lock_failed_message.reply_to(message);
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
             lock_failed_message.add_parameter("object_name", "unknown");
             lock_failed_message.add_parameter("error", "invalid");
-            send_message(lock_failed_message);
+            f_messenger->send_message(lock_failed_message);
 
             return;
         }
 
         // notice how the split() re-split the entering key
         //
-        QString const object_name(segments[1]);
-        QString const server_name(segments[2]);
-        QString const client_pid(segments[3]);
+        std::string const object_name(segments[1]);
+        std::string const server_name(segments[2]);
+        std::string const client_pid(segments[3]);
 
         auto entering_ticket(f_entering_tickets.find(object_name));
         if(entering_ticket != f_entering_tickets.end())
         {
-            QString const entering_key(QString("%1/%2").arg(server_name).arg(client_pid));
+            std::string const entering_key(server_name + '/' + client_pid);
             auto key_ticket(entering_ticket->second.find(entering_key));
             if(key_ticket != entering_ticket->second.end())
             {
                 // remove the alive timeout
                 //
-                key_ticket->second->set_alive_timeout(0);
+                key_ticket->second->set_alive_timeout(cluck::timeout_t());
 
                 // got it! start the bakery algorithm
                 //
@@ -2318,7 +1955,7 @@ void snaplock::msg_absolutely(snap::snap_communicator_message & message)
 }
 
 
-/** \brief Lock the resource.
+/** \brief Lock the named resource.
  *
  * This function locks the specified resource \p object_name. It returns
  * when the resource is locked or when the lock timeout is reached.
@@ -2350,18 +1987,18 @@ void snaplock::msg_absolutely(snap::snap_communicator_message & message)
  * that would happen while working on locking this entry. This means
  * failures may result in a lock that never ends.
  *
- * \param[in] message  The lock message.
+ * \param[in] msg  The lock message.
  *
  * \return true if the lock was successful, false otherwise.
  *
  * \sa unlock()
  */
-void snaplock::msg_lock(snap::snap_communicator_message & message)
+void cluckd::msg_lock(ed::message & msg)
 {
-    QString object_name;
+    std::string object_name;
     pid_t client_pid(0);
-    time_t timeout(0);
-    get_parameters(message, &object_name, &client_pid, &timeout, nullptr, nullptr);
+    cluck::timeout_t timeout;
+    get_parameters(msg, &object_name, &client_pid, &timeout, nullptr, nullptr);
 
     // do some cleanup as well
     //
@@ -2369,76 +2006,82 @@ void snaplock::msg_lock(snap::snap_communicator_message & message)
 
     // if we are a leader, create an entering key
     //
-    QString const server_name(message.has_parameter("lock_proxy_server_name")
-                                ? message.get_parameter("lock_proxy_server_name")
-                                : message.get_sent_from_server());
+    std::string const server_name(msg.has_parameter("lock_proxy_server_name")
+                                ? msg.get_parameter("lock_proxy_server_name")
+                                : msg.get_sent_from_server());
 
-    QString const service_name(message.has_parameter("lock_proxy_service_name")
-                                ? message.get_parameter("lock_proxy_service_name")
-                                : message.get_sent_from_service());
+    std::string const service_name(msg.has_parameter("lock_proxy_service_name")
+                                ? msg.get_parameter("lock_proxy_service_name")
+                                : msg.get_sent_from_service());
 
-    QString const entering_key(QString("%1/%2").arg(server_name).arg(client_pid));
+    std::string const entering_key(server_name + '/' + std::to_string(client_pid));
 
-    if(timeout <= time(nullptr))
+    if(timeout <= snapdev::now())
     {
-        SNAP_LOG_WARNING("Lock on \"")
-                        (object_name)
-                        ("\" / \"")
-                        (client_pid)
-                        ("\" timed out before we could start the locking process.");
+        SNAP_LOG_WARNING
+            << "Lock on \""
+            << object_name
+            << "\" / \""
+            << client_pid
+            << "\" timed out before we could start the locking process."
+            << SNAP_LOG_SEND;
 
-        snap::snap_communicator_message lock_failed_message;
-        lock_failed_message.set_command("LOCKFAILED");
-        lock_failed_message.reply_to(message);
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter("object_name", object_name);
         lock_failed_message.add_parameter("key", entering_key);
         lock_failed_message.add_parameter("error", "timedout");
-        send_message(lock_failed_message);
+        f_messenger->send_message(lock_failed_message);
 
         return;
     }
 
-    snap::snap_lock::timeout_t const duration(message.get_integer_parameter("duration"));
-    if(duration < snap::snap_lock::SNAP_LOCK_MINIMUM_TIMEOUT)
+    cluck::timeout_t const duration(msg.get_timespec_parameter("duration"));
+    if(duration < cluck::CLUCK_MINIMUM_TIMEOUT)
     {
-        // invalid duration, minimum is 3
+        // duration too small
         //
-        SNAP_LOG_ERROR(duration)
-                      (" is an invalid duration, the minimum accepted is ")
-                      (snap::snap_lock::SNAP_LOCK_MINIMUM_TIMEOUT)
-                      (".");
+        SNAP_LOG_ERROR
+            << duration
+            << " is an invalid duration, the minimum accepted is "
+            << cluck::CLUCK_MINIMUM_TIMEOUT
+            << '.'
+            << SNAP_LOG_SEND;
 
-        snap::snap_communicator_message lock_failed_message;
-        lock_failed_message.set_command("LOCKFAILED");
-        lock_failed_message.reply_to(message);
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter("object_name", object_name);
         lock_failed_message.add_parameter("key", entering_key);
         lock_failed_message.add_parameter("error", "invalid");
-        send_message(lock_failed_message);
+        f_messenger->send_message(lock_failed_message);
 
         return;
     }
 
-    snap::snap_lock::timeout_t unlock_duration(snap::snap_lock::SNAP_UNLOCK_USES_LOCK_TIMEOUT);
-    if(message.has_parameter("unlock_duration"))
+    cluck::timeout_t unlock_duration(cluck::CLUCK_DEFAULT_TIMEOUT);
+    if(msg.has_parameter("unlock_duration"))
     {
-        unlock_duration = message.get_integer_parameter("unlock_duration");
-        if(unlock_duration < snap::snap_lock::SNAP_UNLOCK_MINIMUM_TIMEOUT)
+        unlock_duration = msg.get_timespec_parameter("unlock_duration");
+        if(unlock_duration < cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT)
         {
-            // invalid duration, minimum is 60
+            // invalid duration, minimum is cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
             //
-            SNAP_LOG_ERROR(unlock_duration)
-                          (" is an invalid unlock duration, the minimum accepted is ")
-                          (snap::snap_lock::SNAP_UNLOCK_MINIMUM_TIMEOUT)
-                          (".");
+            SNAP_LOG_ERROR
+                << unlock_duration
+                << " is an invalid unlock duration, the minimum accepted is "
+                << cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
+                << '.'
+                << SNAP_LOG_SEND;
 
-            snap::snap_communicator_message lock_failed_message;
-            lock_failed_message.set_command("LOCKFAILED");
-            lock_failed_message.reply_to(message);
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
             lock_failed_message.add_parameter("object_name", object_name);
             lock_failed_message.add_parameter("key", entering_key);
             lock_failed_message.add_parameter("error", "invalid");
-            send_message(lock_failed_message);
+            f_messenger->send_message(lock_failed_message);
 
             return;
         }
@@ -2446,22 +2089,19 @@ void snaplock::msg_lock(snap::snap_communicator_message & message)
 
     if(!is_ready())
     {
-        SNAP_LOG_TRACE("caching LOCK message for \"")
-                      (object_name)
-                      ("\" as the snaplock system is not yet considered ready.");
+        SNAP_LOG_TRACE
+            << "caching LOCK message for \""
+            << object_name
+            << "\" as the cluck system is not yet considered ready."
+            << SNAP_LOG_SEND;
 
-        message_cache const mc
-            {
-                timeout,
-                message
-            };
-        f_message_cache.push_back(mc);
+        f_message_cache.emplace_back(timeout, msg);
 
         // make sure the cache gets cleaned up if the message times out
         //
-        int64_t const timeout_date(f_messenger->get_timeout_date());
+        std::int64_t const timeout_date(f_timer->get_timeout_date());
         if(timeout_date == -1
-        || timeout_date > timeout)
+        || cluck::timeout_t(timeout_date / 1'000'000, timeout_date % 1'000'000) > timeout)
         {
             f_timer->set_timeout_date(timeout);
         }
@@ -2473,11 +2113,11 @@ void snaplock::msg_lock(snap::snap_communicator_message & message)
         // we are not a leader, we need to forward the message to one
         // of the leaders instead
         //
-        forward_message_to_leader(message);
+        forward_message_to_leader(msg);
         return;
     }
 
-    // make sure there is not a ticket with the same name already defined
+    // make sure this is a new ticket
     //
     auto entering_ticket(f_entering_tickets.find(object_name));
     if(entering_ticket != f_entering_tickets.end())
@@ -2486,11 +2126,11 @@ void snaplock::msg_lock(snap::snap_communicator_message & message)
         if(key_ticket != entering_ticket->second.end())
         {
             // if this is a re-LOCK, then it may be a legitimate duplicate
-            // in which case we do not want to generate a LOCKFAILED error
+            // in which case we do not want to generate a LOCK_FAILED error
             //
-            if(message.has_parameter("serial"))
+            if(msg.has_parameter("serial"))
             {
-                snaplock_ticket::serial_t const serial(message.get_integer_parameter("serial"));
+                ticket::serial_t const serial(msg.get_integer_parameter("serial"));
                 if(key_ticket->second->get_serial() == serial)
                 {
                     // legitimate double request from leaders
@@ -2503,19 +2143,21 @@ void snaplock::msg_lock(snap::snap_communicator_message & message)
 
             // the object already exists... do not allow duplicates
             //
-            SNAP_LOG_ERROR("an entering ticket has the same object name \"")
-                          (object_name)
-                          ("\" and entering key \"")
-                          (entering_key)
-                          ("\".");
+            SNAP_LOG_ERROR
+                << "an entering ticket has the same object name \""
+                << object_name
+                << "\" and entering key \""
+                << entering_key
+                << "\"."
+                << SNAP_LOG_SEND;
 
-            snap::snap_communicator_message lock_failed_message;
-            lock_failed_message.set_command("LOCKFAILED");
-            lock_failed_message.reply_to(message);
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
             lock_failed_message.add_parameter("object_name", object_name);
             lock_failed_message.add_parameter("key", entering_key);
             lock_failed_message.add_parameter("error", "duplicate");
-            send_message(lock_failed_message);
+            f_messenger->send_message(lock_failed_message);
 
             return;
         }
@@ -2542,25 +2184,27 @@ void snaplock::msg_lock(snap::snap_communicator_message & message)
         {
             // there is already a ticket with this name/entering key
             //
-            SNAP_LOG_ERROR("a ticket has the same object name \"")
-                          (object_name)
-                          ("\" and entering key \"")
-                          (entering_key)
-                          ("\".");
+            SNAP_LOG_ERROR
+                << "a ticket has the same object name \""
+                << object_name
+                << "\" and entering key \""
+                << entering_key
+                << "\"."
+                << SNAP_LOG_SEND;
 
-            snap::snap_communicator_message lock_failed_message;
-            lock_failed_message.set_command("LOCKFAILED");
-            lock_failed_message.reply_to(message);
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
             lock_failed_message.add_parameter("object_name", object_name);
             lock_failed_message.add_parameter("key", entering_key);
             lock_failed_message.add_parameter("error", "duplicate");
-            send_message(lock_failed_message);
+            f_messenger->send_message(lock_failed_message);
 
             return;
         }
     }
 
-    snaplock_ticket::pointer_t ticket(std::make_shared<snaplock_ticket>(
+    ticket::pointer_t ticket(std::make_shared<ticket>(
                                   this
                                 , f_messenger
                                 , object_name
@@ -2576,7 +2220,7 @@ void snaplock::msg_lock(snap::snap_communicator_message & message)
     //
     ticket->set_unlock_duration(unlock_duration);
 
-    // general a serial number for that ticket
+    // generate a serial number for that ticket
     //
     f_ticket_serial = (f_ticket_serial + 1) & 0x00FFFFFF;
     if(f_leaders[0]->get_id() != f_my_id)
@@ -2594,22 +2238,22 @@ void snaplock::msg_lock(snap::snap_communicator_message & message)
     }
     ticket->set_serial(f_ticket_serial);
 
-    if(message.has_parameter("serial"))
+    if(msg.has_parameter("serial"))
     {
         // if we have a "serial" number in that message, we lost a leader
         // and when that happens we are not unlikely to have lost the
         // client that requested the LOCK, send an ALIVE message to make
         // sure that the client still exists before entering the ticket
         //
-        ticket->set_alive_timeout(5 + time(nullptr));
+        ticket->set_alive_timeout(snapdev::now() + cluck::timeout_t(5, 0));
 
-        snap::snap_communicator_message alive_message;
-        alive_message.set_command("ALIVE");
+        ed::message alive_message;
+        alive_message.set_command(ed::g_name_ed_cmd_alive);
         alive_message.set_server(server_name);
         alive_message.set_service(service_name);
-        alive_message.add_parameter("serial", QString("relock/%1/%2").arg(object_name).arg(entering_key));
+        alive_message.add_parameter("serial", "relock/" + object_name + '/' + entering_key);
         alive_message.add_parameter("timestamp", time(nullptr));
-        send_message(alive_message);
+        f_messenger->send_message(alive_message);
     }
     else
     {
@@ -2628,15 +2272,17 @@ void snaplock::msg_lock(snap::snap_communicator_message & message)
  *
  * This function unlocks the resource specified in the call to lock().
  *
- * \param[in] message  The unlock message.
+ * \param[in] msg  The unlock message.
  *
- * \sa lock()
+ * \sa msg_lock()
  */
-void snaplock::msg_unlock(snap::snap_communicator_message & message)
+void cluckd::msg_unlock(ed::message & msg)
 {
     if(!is_ready())
     {
-        SNAP_LOG_ERROR("received an UNLOCK when snaplock is not ready to receive LOCK messages.");
+        SNAP_LOG_ERROR
+            << "received an UNLOCK when cluckd is not ready to receive lock related messages."
+            << SNAP_LOG_SEND;
         return;
     }
 
@@ -2645,28 +2291,28 @@ void snaplock::msg_unlock(snap::snap_communicator_message & message)
         // we are not a leader, we need to forward to a leader to handle
         // the message properly
         //
-        forward_message_to_leader(message);
+        forward_message_to_leader(msg);
         return;
     }
 
-    QString object_name;
+    std::string object_name;
     pid_t client_pid(0);
-    get_parameters(message, &object_name, &client_pid, nullptr, nullptr, nullptr);
+    get_parameters(msg, &object_name, &client_pid, nullptr, nullptr, nullptr);
 
     // if the ticket still exists, send the UNLOCKED and then erase it
     //
     auto obj_ticket(f_tickets.find(object_name));
     if(obj_ticket != f_tickets.end())
     {
-        QString const server_name(message.has_parameter("lock_proxy_server_name")
-                                    ? message.get_parameter("lock_proxy_server_name")
-                                    : message.get_sent_from_server());
+        std::string const server_name(msg.has_parameter("lock_proxy_server_name")
+                                    ? msg.get_parameter("lock_proxy_server_name")
+                                    : msg.get_sent_from_server());
 
-        //QString const service_name(message.has_parameter("lock_proxy_service_name")
-        //                            ? message.get_parameter("lock_proxy_service_name")
-        //                            : message.get_sent_from_service());
+        //std::string const service_name(msg.has_parameter("lock_proxy_service_name")
+        //                            ? msg.get_parameter("lock_proxy_service_name")
+        //                            : msg.get_sent_from_service());
 
-        QString const entering_key(QString("%1/%2").arg(server_name).arg(client_pid));
+        std::string const entering_key(server_name + '/' + std::to_string(client_pid));
         auto key_ticket(std::find_if(
                   obj_ticket->second.begin()
                 , obj_ticket->second.end()
@@ -2690,7 +2336,7 @@ void snaplock::msg_unlock(snap::snap_communicator_message & message)
                 f_tickets.erase(obj_ticket);
             }
         }
-else SNAP_LOG_WARNING("and we could not find that key in that object's map...");
+else SNAP_LOG_WARNING << "and we could not find that key in that object's map..." << SNAP_LOG_SEND;
     }
 
     // reset the timeout with the other locks
@@ -2703,20 +2349,20 @@ else SNAP_LOG_WARNING("and we could not find that key in that object's map...");
  *
  * This command drops the specified ticket (object_name).
  *
- * \param[in] message  The entering message.
+ * \param[in] msg  The entering message.
  */
-void snaplock::msg_lock_entering(snap::snap_communicator_message & message)
+void cluckd::msg_lock_entering(ed::message & msg)
 {
-    QString object_name;
-    time_t timeout(0);
-    QString key;
-    QString source;
-    get_parameters(message, &object_name, nullptr, &timeout, &key, &source);
+    std::string object_name;
+    cluck::timeout_t timeout;
+    std::string key;
+    std::string source;
+    get_parameters(msg, &object_name, nullptr, &timeout, &key, &source);
 
     // the server_name and client_pid never include a slash so using
     // such as separators is safe
     //
-    if(timeout > time(nullptr))  // lock still in the future?
+    if(timeout > snapdev::now())  // lock still in the future?
     {
         if(is_ready())              // still have leaders?
         {
@@ -2736,48 +2382,52 @@ void snaplock::msg_lock_entering(snap::snap_communicator_message & message)
                 // ticket does not exist, so create it now
                 // (note: ticket should only exist on originator)
                 //
-                int32_t const duration(message.get_integer_parameter("duration"));
-                if(duration < snap::snap_lock::SNAP_LOCK_MINIMUM_TIMEOUT)
+                cluck::timeout_t const duration(msg.get_timespec_parameter("duration"));
+                if(duration < cluck::CLUCK_MINIMUM_TIMEOUT)
                 {
-                    // invalid duration, minimum is 3
+                    // invalid duration
                     //
-                    SNAP_LOG_ERROR(duration)
-                                  (" is an invalid duration, the minimum accepted is ")
-                                  (snap::snap_lock::SNAP_LOCK_MINIMUM_TIMEOUT)
-                                  (".");
+                    SNAP_LOG_ERROR
+                        << duration
+                        << " is an invalid duration, the minimum accepted is "
+                        << cluck::CLUCK_MINIMUM_TIMEOUT
+                        << "."
+                        << SNAP_LOG_SEND;
 
-                    snap::snap_communicator_message lock_failed_message;
-                    lock_failed_message.set_command("LOCKFAILED");
-                    lock_failed_message.reply_to(message);
+                    ed::message lock_failed_message;
+                    lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+                    lock_failed_message.reply_to(msg);
                     lock_failed_message.add_parameter("object_name", object_name);
                     lock_failed_message.add_parameter("key", key);
                     lock_failed_message.add_parameter("error", "invalid");
-                    send_message(lock_failed_message);
+                    f_messenger->send_message(lock_failed_message);
 
                     return;
                 }
 
-                int32_t unlock_duration(snap::snap_lock::SNAP_UNLOCK_USES_LOCK_TIMEOUT);
-                if(message.has_parameter("unlock_duration"))
+                cluck::timeout_t unlock_duration(cluck::CLUCK_DEFAULT_TIMEOUT);
+                if(msg.has_parameter("unlock_duration"))
                 {
-                    unlock_duration = message.get_integer_parameter("unlock_duration");
-                    if(unlock_duration != snap::snap_lock::SNAP_UNLOCK_USES_LOCK_TIMEOUT
-                    && unlock_duration < snap::snap_lock::SNAP_UNLOCK_MINIMUM_TIMEOUT)
+                    unlock_duration = msg.get_timespec_parameter("unlock_duration");
+                    if(unlock_duration != cluck::CLUCK_DEFAULT_TIMEOUT
+                    && unlock_duration < cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT)
                     {
                         // invalid duration, minimum is 60
                         //
-                        SNAP_LOG_ERROR(duration)
-                                      (" is an invalid unlock duration, the minimum accepted is ")
-                                      (snap::snap_lock::SNAP_UNLOCK_MINIMUM_TIMEOUT)
-                                      (".");
+                        SNAP_LOG_ERROR
+                            << duration
+                            << " is an invalid unlock duration, the minimum accepted is "
+                            << cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
+                            << "."
+                            << SNAP_LOG_SEND;
 
-                        snap::snap_communicator_message lock_failed_message;
-                        lock_failed_message.set_command("LOCKFAILED");
-                        lock_failed_message.reply_to(message);
+                        ed::message lock_failed_message;
+                        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+                        lock_failed_message.reply_to(msg);
                         lock_failed_message.add_parameter("object_name", object_name);
                         lock_failed_message.add_parameter("key", key);
                         lock_failed_message.add_parameter("error", "invalid");
-                        send_message(lock_failed_message);
+                        f_messenger->send_message(lock_failed_message);
 
                         return;
                     }
@@ -2785,25 +2435,27 @@ void snaplock::msg_lock_entering(snap::snap_communicator_message & message)
 
                 // we have to know where this message comes from
                 //
-                snap::snap_string_list const source_segments(source.split("/"));
-                if(source_segments.size() != 2)
+                std::vector<std::string> source_segments;
+                if(snapdev::tokenize_string(source_segments, source, "/") != 2)
                 {
-                    SNAP_LOG_ERROR("Invalid number of parameters in source (found ")
-                                  (source_segments.size())
-                                  (", expected 2.)");
+                    SNAP_LOG_ERROR
+                        << "Invalid number of parameters in source parameter (found "
+                        << source_segments.size()
+                        << ", expected 2)."
+                        << SNAP_LOG_SEND;
 
-                    snap::snap_communicator_message lock_failed_message;
-                    lock_failed_message.set_command("LOCKFAILED");
-                    lock_failed_message.reply_to(message);
+                    ed::message lock_failed_message;
+                    lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+                    lock_failed_message.reply_to(msg);
                     lock_failed_message.add_parameter("object_name", object_name);
                     lock_failed_message.add_parameter("key", key);
                     lock_failed_message.add_parameter("error", "invalid");
-                    send_message(lock_failed_message);
+                    f_messenger->send_message(lock_failed_message);
 
                     return;
                 }
 
-                snaplock_ticket::pointer_t ticket(std::make_shared<snaplock_ticket>(
+                ticket::pointer_t ticket(std::make_shared<ticket>(
                                           this
                                         , f_messenger
                                         , object_name
@@ -2817,21 +2469,23 @@ void snaplock::msg_lock_entering(snap::snap_communicator_message & message)
 
                 // finish up on ticket initialization
                 //
-                ticket->set_owner(message.get_sent_from_server());
+                ticket->set_owner(msg.get_sent_from_server());
                 ticket->set_unlock_duration(unlock_duration);
-                ticket->set_serial(message.get_integer_parameter("serial"));
+                ticket->set_serial(msg.get_integer_parameter("serial"));
             }
 
-            snap::snap_communicator_message reply;
-            reply.set_command("LOCKENTERED");
-            reply.reply_to(message);
+            ed::message reply;
+            reply.set_command(cluck::g_name_cluck_cmd_lock_entered);
+            reply.reply_to(msg);
             reply.add_parameter("object_name", object_name);
             reply.add_parameter("key", key);
-            send_message(reply);
+            f_messenger->send_message(reply);
         }
         else
         {
-            SNAP_LOG_DEBUG("received LOCKENTERING while we are thinking we are not ready.");
+            SNAP_LOG_DEBUG
+                << "received LOCK_ENTERING while we are thinking we are not ready."
+                << SNAP_LOG_SEND;
         }
     }
 
@@ -2839,21 +2493,21 @@ void snaplock::msg_lock_entering(snap::snap_communicator_message & message)
 }
 
 
-/** \brief Tell all the tickets that we received a LOCKENTERED message.
+/** \brief Tell all the tickets that we received a LOCK_ENTERED message.
  *
  * This function calls all the tickets entered() function which
- * process the LOCKENTERED message.
+ * processes the LOCK_ENTERED message.
  *
  * We pass the key and "our ticket" number along so it can actually
  * create the ticket if required.
  *
- * \param[in] message  The LOCKENTERED message.
+ * \param[in] msg  The LOCK_ENTERED message.
  */
-void snaplock::msg_lock_entered(snap::snap_communicator_message & message)
+void cluckd::msg_lock_entered(ed::message & msg)
 {
-    QString object_name;
-    QString key;
-    get_parameters(message, &object_name, nullptr, nullptr, &key, nullptr);
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
 
     auto const obj_entering_ticket(f_entering_tickets.find(object_name));
     if(obj_entering_ticket != f_entering_tickets.end())
@@ -2871,13 +2525,13 @@ void snaplock::msg_lock_entered(snap::snap_communicator_message & message)
  *
  * This command drops the specified ticket (object_name).
  *
- * \param[in] message  The entering message.
+ * \param[in] msg  The entering message.
  */
-void snaplock::msg_lock_exiting(snap::snap_communicator_message & message)
+void cluckd::msg_lock_exiting(ed::message & msg)
 {
-    QString object_name;
-    QString key;
-    get_parameters(message, &object_name, nullptr, nullptr, &key, nullptr);
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
 
     // when exiting we just remove the entry with that key
     //
@@ -2944,27 +2598,28 @@ void snaplock::msg_lock_exiting(snap::snap_communicator_message & message)
  * If the specified ticket does not exist, nothing happens.
  *
  * \warning
- * The DROPTICKET event receives either the ticket key (if available)
+ * The DROP_TICKET event receives either the ticket key (if available)
  * or the entering key (when the ticket key was not yet available.)
- * Note that the ticket key should always exists by the time a DROPTICKET
+ * Note that the ticket key should always exists by the time a DROP_TICKET
  * happens, but just in case this allows the drop a ticket at any time.
  *
- * \param[in] message  The message just received.
+ * \param[in] msg  The message just received.
  */
-void snaplock::msg_drop_ticket(snap::snap_communicator_message & message)
+void cluckd::msg_drop_ticket(ed::message & msg)
 {
-    QString object_name;
-    QString key;
-    get_parameters(message, &object_name, nullptr, nullptr, &key, nullptr);
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
 
-    snap::snap_string_list const segments(key.split('/'));
+    std::vector<std::string> segments;
+    snapdev::tokenize_string(segments, key, "/");
 
     // drop the regular ticket
     //
     // if we have only 2 segments, then there is no corresponding ticket
     // since tickets are added only once we have a ticket_id
     //
-    QString entering_key;
+    std::string entering_key;
     if(segments.size() == 3)
     {
         auto obj_ticket(f_tickets.find(object_name));
@@ -2990,7 +2645,7 @@ void snaplock::msg_drop_ticket(snap::snap_communicator_message & message)
         // we have to regenerate the entering_key without
         // the ticket_id (which is the first element)
         //
-        entering_key = QString("%1/%2").arg(segments[1]).arg(segments[2]);
+        entering_key = segments[1] + '/' + segments[2];
     }
     else
     {
@@ -3028,29 +2683,31 @@ void snaplock::msg_drop_ticket(snap::snap_communicator_message & message)
  * This function searches the list of tickets for the largest one
  * and returns that number.
  *
+ * \param[in] msg  The message just received.
+ *
  * \return The largest ticket number that currently exist in the list
  *         of tickets.
  */
-void snaplock::msg_get_max_ticket(snap::snap_communicator_message & message)
+void cluckd::msg_get_max_ticket(ed::message & msg)
 {
-    QString object_name;
-    QString key;
-    get_parameters(message, &object_name, nullptr, nullptr, &key, nullptr);
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
 
     // remove any f_tickets that timed out by now because these should
     // not be taken in account in the max. computation
     //
     cleanup();
 
-    snaplock_ticket::ticket_id_t last_ticket(get_last_ticket(object_name));
+    ticket::ticket_id_t last_ticket(get_last_ticket(object_name));
 
-    snap::snap_communicator_message reply;
-    reply.set_command("MAXTICKET");
-    reply.reply_to(message);
+    ed::message reply;
+    reply.set_command(cluck::g_name_cluck_cmd_max_ticket);
+    reply.reply_to(msg);
     reply.add_parameter("object_name", object_name);
     reply.add_parameter("key", key);
     reply.add_parameter("ticket_id", last_ticket);
-    send_message(reply);
+    f_messenger->send_message(reply);
 }
 
 
@@ -3059,18 +2716,18 @@ void snaplock::msg_get_max_ticket(snap::snap_communicator_message & message)
  * This function searches the list of tickets for the largest one
  * and records that number.
  *
- * If a quorum is reached when adding this ticket, then an ADDTICKET reply
+ * If a quorum is reached when adding this ticket, then an ADD_TICKET reply
  * is sent back to the sender.
  *
- * \param[in] message  The MAXTICKET message being handled.
+ * \param[in] msg  The MAX_TICKET message being handled.
  */
-void snaplock::msg_max_ticket(snap::snap_communicator_message & message)
+void cluckd::msg_max_ticket(ed::message & msg)
 {
-    QString object_name;
-    QString key;
-    get_parameters(message, &object_name, nullptr, nullptr, &key, nullptr);
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
 
-    // the MAXTICKET is an answer that has to go in a still un-added ticket
+    // the MAX_TICKET is an answer that has to go in a still un-added ticket
     //
     auto const obj_entering_ticket(f_entering_tickets.find(object_name));
     if(obj_entering_ticket != f_entering_tickets.end())
@@ -3078,7 +2735,7 @@ void snaplock::msg_max_ticket(snap::snap_communicator_message & message)
         auto const key_entering_ticket(obj_entering_ticket->second.find(key));
         if(key_entering_ticket != obj_entering_ticket->second.end())
         {
-            key_entering_ticket->second->max_ticket(message.get_integer_parameter("ticket_id"));
+            key_entering_ticket->second->max_ticket(msg.get_integer_parameter("ticket_id"));
         }
     }
 }
@@ -3097,14 +2754,14 @@ void snaplock::msg_max_ticket(snap::snap_communicator_message & message)
  * of the implementation since we want to be fault tolerant (as in if one
  * of the leaders goes down, the locking mechanism still works.)
  *
- * \param[in] message  The ADDTICKET message being handled.
+ * \param[in] msg  The ADDTICKET message being handled.
  */
-void snaplock::msg_add_ticket(snap::snap_communicator_message & message)
+void cluckd::msg_add_ticket(ed::message & msg)
 {
-    QString object_name;
-    QString key;
-    time_t timeout;
-    get_parameters(message, &object_name, nullptr, &timeout, &key, nullptr);
+    std::string object_name;
+    std::string key;
+    cluck::timeout_t timeout;
+    get_parameters(msg, &object_name, nullptr, &timeout, &key, nullptr);
 
 #ifdef _DEBUG
     {
@@ -3116,7 +2773,7 @@ void snaplock::msg_add_ticket(snap::snap_communicator_message & message)
             {
                 // this ticket exists on this system
                 //
-                throw std::logic_error("snaplock::add_ticket() ticket already exists");
+                throw cluck::logic_error("cluck::add_ticket() ticket already exists");
             }
         }
     }
@@ -3124,60 +2781,82 @@ void snaplock::msg_add_ticket(snap::snap_communicator_message & message)
 
     // the client_pid parameter is part of the key (3rd segment)
     //
-    snap::snap_string_list const segments(key.split('/'));
+    std::vector<std::string> segments;
+    snapdev::tokenize_string(segments, key, "/");
     if(segments.size() != 3)
     {
-        SNAP_LOG_ERROR("Expected exactly 3 segments in \"")
-                      (key)
-                      ("\" to add a ticket.");
+        SNAP_LOG_ERROR
+            << "Expected exactly 3 segments in \""
+            << key
+            << "\" to add a ticket."
+            << SNAP_LOG_SEND;
 
-        snap::snap_communicator_message lock_failed_message;
-        lock_failed_message.set_command("LOCKFAILED");
-        lock_failed_message.reply_to(message);
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter("object_name", object_name);
         lock_failed_message.add_parameter("key", key);
         lock_failed_message.add_parameter("error", "invalid");
-        send_message(lock_failed_message);
+        f_messenger->send_message(lock_failed_message);
 
         return;
     }
 
-    bool ok(false);
-    uint32_t const number(segments[0].toUInt(&ok, 16));
+    // TODO: we probably want to look in a function which returns false
+    //       instead of having to do a try/catch
+    //
+    bool ok(true);
+    std::uint32_t number(0);
+    try
+    {
+        number = snapdev::hex_to_int<std::uint32_t>(segments[0]);
+    }
+    catch(snapdev::hexadecimal_string_exception const &)
+    {
+        ok = false;
+    }
+    catch(snapdev::hexadecimal_string_out_of_range const &)
+    {
+        ok = false;
+    }
     if(!ok)
     {
-        SNAP_LOG_ERROR("somehow ticket number \"")
-                      (segments[0])
-                      ("\" is not a valid hexadecimal number");
+        SNAP_LOG_ERROR
+            << "somehow ticket number \""
+            << segments[0]
+            << "\" is not a valid hexadecimal number"
+            << SNAP_LOG_SEND;
 
-        snap::snap_communicator_message lock_failed_message;
-        lock_failed_message.set_command("LOCKFAILED");
-        lock_failed_message.reply_to(message);
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter("object_name", object_name);
         lock_failed_message.add_parameter("key", key);
         lock_failed_message.add_parameter("error", "invalid");
-        send_message(lock_failed_message);
+        f_messenger->send_message(lock_failed_message);
 
         return;
     }
 
-    // by now all existing snaplock instances should already have
+    // by now all the leaders should already have
     // an entering ticket for that one ticket
     //
     auto const obj_entering_ticket(f_entering_tickets.find(object_name));
     if(obj_entering_ticket == f_entering_tickets.end())
     {
-        SNAP_LOG_ERROR("Expected entering ticket object for \"")
-                      (object_name)
-                      ("\" not found when adding a ticket.");
+        SNAP_LOG_ERROR
+            << "Expected entering ticket object for \""
+            << object_name
+            << "\" not found when adding a ticket."
+            << SNAP_LOG_SEND;
 
-        snap::snap_communicator_message lock_failed_message;
-        lock_failed_message.set_command("LOCKFAILED");
-        lock_failed_message.reply_to(message);
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter("object_name", object_name);
         lock_failed_message.add_parameter("key", key);
         lock_failed_message.add_parameter("error", "invalid");
-        send_message(lock_failed_message);
+        f_messenger->send_message(lock_failed_message);
 
         return;
     }
@@ -3185,21 +2864,23 @@ void snaplock::msg_add_ticket(snap::snap_communicator_message & message)
     // the key we need to search is not the new ticket key but the
     // entering key, build it from the segments
     //
-    QString const entering_key(QString("%1/%2").arg(segments[1]).arg(segments[2]));
+    std::string const entering_key(segments[1] + '/' + segments[2]);
     auto const key_entering_ticket(obj_entering_ticket->second.find(entering_key));
     if(key_entering_ticket == obj_entering_ticket->second.end())
     {
-        SNAP_LOG_ERROR("Expected entering ticket key for \"")
-                      (object_name)
-                      ("\" not found when adding a ticket.");
+        SNAP_LOG_ERROR
+            << "Expected entering ticket key for \""
+            << object_name
+            << "\" not found when adding a ticket."
+            << SNAP_LOG_SEND;
 
-        snap::snap_communicator_message lock_failed_message;
-        lock_failed_message.set_command("LOCKFAILED");
-        lock_failed_message.reply_to(message);
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter("object_name", object_name);
         lock_failed_message.add_parameter("key", key);
         lock_failed_message.add_parameter("error", "invalid");
-        send_message(lock_failed_message);
+        f_messenger->send_message(lock_failed_message);
 
         return;
     }
@@ -3213,16 +2894,16 @@ void snaplock::msg_add_ticket(snap::snap_communicator_message & message)
 
     // WARNING: the set_ticket_number() function has the same side
     //          effects as the add_ticket() function without the
-    //          send_message() call
+    //          f_messenger->send_message() call
     //
     f_tickets[object_name][key]->set_ticket_number(number);
 
-    snap::snap_communicator_message ticket_added_message;
-    ticket_added_message.set_command("TICKETADDED");
-    ticket_added_message.reply_to(message);
+    ed::message ticket_added_message;
+    ticket_added_message.set_command(cluck::g_name_cluck_cmd_ticket_added);
+    ticket_added_message.reply_to(msg);
     ticket_added_message.add_parameter("object_name", object_name);
     ticket_added_message.add_parameter("key", key);
-    send_message(ticket_added_message);
+    f_messenger->send_message(ticket_added_message);
 }
 
 
@@ -3231,13 +2912,13 @@ void snaplock::msg_add_ticket(snap::snap_communicator_message & message)
  * This function gets called whenever the ticket was added on another
  * leader.
  *
- * \param[in] message  The TICKETADDED message being handled.
+ * \param[in] msg  The TICKET_ADDED message being handled.
  */
-void snaplock::msg_ticket_added(snap::snap_communicator_message & message)
+void cluckd::msg_ticket_added(ed::message & msg)
 {
-    QString object_name;
-    QString key;
-    get_parameters(message, &object_name, nullptr, nullptr, &key, nullptr);
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
 
     auto const obj_ticket(f_tickets.find(object_name));
     if(obj_ticket != f_tickets.end())
@@ -3254,29 +2935,35 @@ void snaplock::msg_ticket_added(snap::snap_communicator_message & message)
                 // gets removed on the first TICKETADDED we receive so
                 // on the second one we get here...
                 //
-                SNAP_LOG_TRACE("called with object \"")
-                              (object_name)
-                              ("\" not present in f_entering_ticket (key: \"")
-                              (key)
-                              ("\".)");
+                SNAP_LOG_TRACE
+                    << "called with object \""
+                    << object_name
+                    << "\" not present in f_entering_ticket (key: \""
+                    << key
+                    << "\".)"
+                    << SNAP_LOG_SEND;
                 return;
             }
             key_ticket->second->ticket_added(obj_entering_ticket->second);
         }
         else
         {
-            SNAP_LOG_DEBUG("found object \"")
-                          (object_name)
-                          ("\" but could not find a ticket with key \"")
-                          (key)
-                          ("\"...");
+            SNAP_LOG_DEBUG
+                << "found object \""
+                << object_name
+                << "\" but could not find a ticket with key \""
+                << key
+                << "\"..."
+                << SNAP_LOG_SEND;
         }
     }
     else
     {
-        SNAP_LOG_DEBUG("object \"")
-                      (object_name)
-                      ("\" not found.");
+        SNAP_LOG_DEBUG
+            << "object \""
+            << object_name
+            << "\" not found."
+            << SNAP_LOG_SEND;
     }
 }
 
@@ -3286,13 +2973,13 @@ void snaplock::msg_ticket_added(snap::snap_communicator_message & message)
  * This message is received when the owner of a ticket marks a
  * ticket as ready. This means the ticket is available for locking.
  *
- * \param[in] message  The TICKETREADY message.
+ * \param[in] msg  The TICKET_READY message.
  */
-void snaplock::msg_ticket_ready(snap::snap_communicator_message & message)
+void cluckd::msg_ticket_ready(ed::message & msg)
 {
-    QString object_name;
-    QString key;
-    get_parameters(message, &object_name, nullptr, nullptr, &key, nullptr);
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
 
     auto obj_ticket(f_tickets.find(object_name));
     if(obj_ticket != f_tickets.end())
@@ -3320,15 +3007,15 @@ void snaplock::msg_ticket_ready(snap::snap_communicator_message & message)
  * happen if the ticket just timed out) then we still have to reply, only
  * we let the other leader know that we have no clue what he is talking about.
  *
- * \param[in] message  The message being processed.
+ * \param[in] msg  The message being processed.
  */
-void snaplock::msg_activate_lock(snap::snap_communicator_message & message)
+void cluckd::msg_activate_lock(ed::message & msg)
 {
-    QString object_name;
-    QString key;
-    get_parameters(message, &object_name, nullptr, nullptr, &key, nullptr);
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
 
-    QString first_key("no-key");
+    std::string first_key("no-key");
 
     auto ticket(find_first_lock(object_name));
     if(ticket != nullptr)
@@ -3348,13 +3035,13 @@ void snaplock::msg_activate_lock(snap::snap_communicator_message & message)
     // always reply, if we could not find the key, then we returned 'no-key'
     // as the key parameter
     //
-    snap::snap_communicator_message lock_activated_message;
-    lock_activated_message.set_command("LOCKACTIVATED");
-    lock_activated_message.reply_to(message);
+    ed::message lock_activated_message;
+    lock_activated_message.set_command(cluck::g_name_cluck_cmd_lock_activated);
+    lock_activated_message.reply_to(msg);
     lock_activated_message.add_parameter("object_name", object_name);
     lock_activated_message.add_parameter("key", key);
     lock_activated_message.add_parameter("other_key", first_key);
-    send_message(lock_activated_message);
+    f_messenger->send_message(lock_activated_message);
 
     // the list of tickets is not unlikely changed so we need to make
     // a call to cleanup to make sure the timer is reset appropriately
@@ -3369,15 +3056,15 @@ void snaplock::msg_activate_lock(snap::snap_communicator_message & message)
  * activated. This is true only if the 'key' and 'other_key'
  * are a match, though.
  *
- * \param[in] message  The message to be managed.
+ * \param[in] msg  The message to be managed.
  */
-void snaplock::msg_lock_activated(snap::snap_communicator_message & message)
+void cluckd::msg_lock_activated(ed::message & msg)
 {
-    QString object_name;
-    QString key;
-    get_parameters(message, &object_name, nullptr, nullptr, &key, nullptr);
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
 
-    QString const & other_key(message.get_parameter("other_key"));
+    std::string const & other_key(msg.get_parameter("other_key"));
     if(other_key == key)
     {
         auto obj_ticket(f_tickets.find(object_name));
@@ -3419,16 +3106,16 @@ void snaplock::msg_lock_activated(snap::snap_communicator_message & message)
  * can send a LOCKFAILED message here and as a side effect destroy a
  * perfectly valid ticket.
  *
- * \param[in] message  The message to be managed.
+ * \param[in] msg  The message to be managed.
  */
-void snaplock::msg_lock_failed(snap::snap_communicator_message & message)
+void cluckd::msg_lock_failed(ed::message & msg)
 {
-    QString object_name;
-    QString key;
-    get_parameters(message, &object_name, nullptr, nullptr, &key, nullptr);
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
 
-    QString forward_server;
-    QString forward_service;
+    std::string forward_server;
+    std::string forward_service;
 
     // remove f_entering_tickets entries if we find matches there
     //
@@ -3501,15 +3188,15 @@ void snaplock::msg_lock_failed(snap::snap_communicator_message & message)
         }
     }
 
-    if(!forward_server.isEmpty()
-    && !forward_service.isEmpty())
+    if(!forward_server.empty()
+    && !forward_service.empty())
     {
         // we deleted an entry, forward the message to the service
         // that requested that lock
         //
-        message.set_server(forward_server);
-        message.set_service(forward_service);
-        send_message(message);
+        msg.set_server(forward_server);
+        msg.set_service(forward_service);
+        f_messenger->send_message(msg);
     }
 
     // the list of tickets is not unlikely changed so we need to make
@@ -3543,7 +3230,7 @@ void snaplock::msg_lock_failed(snap::snap_communicator_message & message)
  * \param[in] object_name  The name of the object which very
  *                         first ticket may have changed.
  */
-void snaplock::activate_first_lock(QString const & object_name)
+void cluckd::activate_first_lock(std::string const & object_name)
 {
     auto ticket(find_first_lock(object_name));
 
@@ -3558,9 +3245,9 @@ void snaplock::activate_first_lock(QString const & object_name)
 }
 
 
-snaplock_ticket::pointer_t snaplock::find_first_lock(QString const & object_name)
+ticket::pointer_t cluckd::find_first_lock(std::string const & object_name)
 {
-    snaplock_ticket::pointer_t first_ticket;
+    ticket::pointer_t first_ticket;
     auto const obj_ticket(f_tickets.find(object_name));
 
     if(obj_ticket != f_tickets.end())
@@ -3634,7 +3321,7 @@ snaplock_ticket::pointer_t snaplock::find_first_lock(QString const & object_name
  * the others with the LOCKENTERING message is going to be lost no
  * matter what.
  */
-void snaplock::synchronize_leaders()
+void cluckd::synchronize_leaders()
 {
     // there is nothing to do if we are by ourselves because we cannot
     // gain any type of concensus unless we are expected to be the only
@@ -3654,13 +3341,13 @@ void snaplock::synchronize_leaders()
     }
 
     // determine whether we are leader #0 or not, if zero, then we
-    // call msg_lock() directly, otherwise we do a send_message()
+    // call msg_lock() directly, otherwise we do a f_messenger->send_message()
     //
     bool const leader0(f_leaders[0]->get_id() == f_my_id);
 
     // a vector of messages for which we have to call msg_lock()
     //
-    snap::snap_communicator_message::vector_t local_locks;
+    ed::message::vector_t local_locks;
 
     // if entering a ticket is definitely not locked, although it
     // could be ready (one step away from being locked!) we still
@@ -3675,7 +3362,7 @@ void snaplock::synchronize_leaders()
     {
         for(auto key_entering(obj_entering->second.begin()); key_entering != obj_entering->second.end(); )
         {
-            QString const owner_name(key_entering->second->get_owner());
+            std::string const owner_name(key_entering->second->get_owner());
             auto key_leader(std::find_if(
                       f_leaders.begin()
                     , f_leaders.end()
@@ -3687,10 +3374,10 @@ void snaplock::synchronize_leaders()
             {
                 // give new ownership to leader[0]
                 //
-                snap::snap_communicator_message lock_message;
-                lock_message.set_command("LOCK");
+                ed::message lock_message;
+                lock_message.set_command(cluck::g_name_cluck_cmd_lock);
                 lock_message.set_server(f_leaders[0]->get_name());
-                lock_message.set_service("snaplock");
+                lock_message.set_service(cluck::g_name_cluck_service_name);
                 lock_message.set_sent_from_server(key_entering->second->get_server_name());
                 lock_message.set_sent_from_service(key_entering->second->get_service_name());
                 lock_message.add_parameter("object_name", key_entering->second->get_object_name());
@@ -3714,7 +3401,7 @@ void snaplock::synchronize_leaders()
                     //
                     ++key_entering;
                     lock_message.add_parameter("serial", key_entering->second->get_serial());
-                    send_message(lock_message);
+                    f_messenger->send_message(lock_message);
                 }
             }
             else
@@ -3730,12 +3417,12 @@ void snaplock::synchronize_leaders()
     // if locked, a ticket is assigned leader0 as its new owner so
     // further work on that ticket works as expected
     //
-    QString serialized;
+    std::string serialized;
     for(auto obj_ticket(f_tickets.begin()); obj_ticket != f_tickets.end(); ++obj_ticket)
     {
         for(auto key_ticket(obj_ticket->second.begin()); key_ticket != obj_ticket->second.end(); )
         {
-            QString const owner_name(key_ticket->second->get_owner());
+            std::string const owner_name(key_ticket->second->get_owner());
             auto key_leader(std::find_if(
                       f_leaders.begin()
                     , f_leaders.end()
@@ -3757,7 +3444,7 @@ void snaplock::synchronize_leaders()
                 // they all agree on its current state
                 //
                 serialized += key_ticket->second->serialize();
-                serialized += QChar('\n');
+                serialized += '\n';
 
                 ++key_ticket;
             }
@@ -3770,10 +3457,10 @@ void snaplock::synchronize_leaders()
                 {
                     // give new ownership to leader[0]
                     //
-                    snap::snap_communicator_message lock_message;
-                    lock_message.set_command("LOCK");
+                    ed::message lock_message;
+                    lock_message.set_command(cluck::g_name_cluck_cmd_lock);
                     lock_message.set_server(f_leaders[0]->get_name());
-                    lock_message.set_service("snaplock");
+                    lock_message.set_service(cluck::g_name_cluck_service_name);
                     lock_message.set_sent_from_server(key_ticket->second->get_server_name());
                     lock_message.set_sent_from_service(key_ticket->second->get_service_name());
                     lock_message.add_parameter("object_name", key_ticket->second->get_object_name());
@@ -3794,7 +3481,7 @@ void snaplock::synchronize_leaders()
                         //
                         ++key_ticket;
                         lock_message.add_parameter("serial", key_ticket->second->get_serial());
-                        send_message(lock_message);
+                        f_messenger->send_message(lock_message);
                     }
                 }
                 else
@@ -3815,26 +3502,26 @@ void snaplock::synchronize_leaders()
         msg_lock(lm);
     }
 
-    // send LOCKTICkETS if there is serialized ticket data
+    // send LOCK_TICkETS if there is serialized ticket data
     //
-    if(!serialized.isEmpty())
+    if(!serialized.empty())
     {
-        snap::snap_communicator_message lock_tickets_message;
-        lock_tickets_message.set_command("LOCKTICKETS");
-        lock_tickets_message.set_service("snaplock");
+        ed::message lock_tickets_message;
+        lock_tickets_message.set_command(cluck::g_name_cluck_cmd_lock_tickets);
+        lock_tickets_message.set_service(cluck::g_name_cluck_service_name);
         lock_tickets_message.add_parameter("tickets", serialized);
 
         auto const la(get_leader_a());
         if(la != nullptr)
         {
             lock_tickets_message.set_server(la->get_name());
-            send_message(lock_tickets_message);
+            f_messenger->send_message(lock_tickets_message);
 
             auto const lb(get_leader_b());
             if(lb != nullptr)
             {
                 lock_tickets_message.set_server(lb->get_name());
-                send_message(lock_tickets_message);
+                f_messenger->send_message(lock_tickets_message);
             }
         }
     }
@@ -3852,9 +3539,9 @@ void snaplock::synchronize_leaders()
  * it to be used any further after this call so we may as well update that
  * message. It should not be destructive at all anyway.
  *
- * \param[in,out] message  The message being forwarded to a leader.
+ * \param[in,out] msg  The message being forwarded to a leader.
  */
-void snaplock::forward_message_to_leader(snap::snap_communicator_message & message)
+void cluckd::forward_message_to_leader(ed::message & msg)
 {
     // we are not a leader, we work as a proxy by forwarding the
     // message to a leader, we add our trail so the LOCKED and
@@ -3864,14 +3551,14 @@ void snaplock::forward_message_to_leader(snap::snap_communicator_message & messa
     //       even see the return message, it may be proxied to another
     //       server directly or through another route
     //
-    message.set_service("snaplock");
-    message.add_parameter("lock_proxy_server_name", message.get_sent_from_server());
-    message.add_parameter("lock_proxy_service_name", message.get_sent_from_service());
+    msg.set_service("cluckd");
+    msg.add_parameter("lock_proxy_server_name", msg.get_sent_from_server());
+    msg.add_parameter("lock_proxy_service_name", msg.get_sent_from_service());
 
     f_next_leader = (f_next_leader + 1) % f_leaders.size();
-    message.set_server(f_leaders[f_next_leader]->get_name());
+    msg.set_server(f_leaders[f_next_leader]->get_name());
 
-    send_message(message);
+    f_messenger->send_message(msg);
 }
 
 
@@ -3882,36 +3569,43 @@ void snaplock::forward_message_to_leader(snap::snap_communicator_message & messa
  * important if a process dies and does not properly remove
  * its locks.
  */
-void snaplock::cleanup()
+void cluckd::cleanup()
 {
-    time_t next_timeout(std::numeric_limits<time_t>::max());
+    cluck::timeout_t next_timeout(snapdev::timespec_ex::max());
 
     // when we receive LOCK requests before we have leaders elected, they
     // get added to our cache, so do some cache clean up when not empty
     //
+    cluck::timeout_t const now(snapdev::now());
     for(auto c(f_message_cache.begin()); c != f_message_cache.end(); )
     {
-        if(c->f_timeout <= time(nullptr))
+        if(c->f_timeout <= now)
         {
-            QString object_name;
+            std::string object_name;
             pid_t client_pid(0);
-            time_t timeout(0);
+            cluck::timeout_t timeout;
             get_parameters(c->f_message, &object_name, &client_pid, &timeout, nullptr, nullptr);
 
-            SNAP_LOG_WARNING("Lock on \"")(object_name)("\" / \"")(client_pid)("\" timed out before leaders were known.");
+            SNAP_LOG_WARNING
+                << "Lock on \""
+                << object_name
+                << "\" / \""
+                << client_pid
+                << "\" timed out before leaders were known."
+                << SNAP_LOG_SEND;
 
-            QString const server_name(c->f_message.has_parameter("lock_proxy_server_name")
+            std::string const server_name(c->f_message.has_parameter("lock_proxy_server_name")
                                         ? c->f_message.get_parameter("lock_proxy_server_name")
                                         : c->f_message.get_sent_from_server());
-            QString const entering_key(QString("%1/%2").arg(server_name).arg(client_pid));
+            std::string const entering_key(server_name + '/' + std::to_string(client_pid));
 
-            snap::snap_communicator_message lock_failed_message;
-            lock_failed_message.set_command("LOCKFAILED");
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
             lock_failed_message.reply_to(c->f_message);
             lock_failed_message.add_parameter("object_name", object_name);
             lock_failed_message.add_parameter("key", entering_key);
             lock_failed_message.add_parameter("error", "timedout");
-            send_message(lock_failed_message);
+            f_messenger->send_message(lock_failed_message);
 
             c = f_message_cache.erase(c);
         }
@@ -4008,15 +3702,12 @@ void snaplock::cleanup()
 
     // got a new timeout?
     //
-    if(next_timeout != std::numeric_limits<time_t>::max())
+    if(next_timeout != snapdev::timespec_ex::max())
     {
-        // out timeout is in seconds, snap_communicator expects
-        // micro seconds so multiply by 1 million
-        //
-        // we add +1 to the second to avoid looping like crazy
+        // we add one second to avoid looping like crazy
         // if we timeout just around the "wrong" time
         //
-        f_timer->set_timeout_date((next_timeout + 1) * 1000000LL);
+        f_timer->set_timeout_date(next_timeout + cluck::timeout_t(1, 0));
     }
     else
     {
@@ -4043,9 +3734,9 @@ void snaplock::cleanup()
  *
  * \return The last ticket number or NO_TICKET.
  */
-snaplock_ticket::ticket_id_t snaplock::get_last_ticket(QString const & object_name)
+ticket::ticket_id_t cluckd::get_last_ticket(std::string const & object_name)
 {
-    snaplock_ticket::ticket_id_t last_ticket(snaplock_ticket::NO_TICKET);
+    ticket::ticket_id_t last_ticket(ticket::NO_TICKET);
 
     // Note: There is no need to check the f_entering_tickets list
     //       since that one does not yet have any ticket number assigned
@@ -4060,7 +3751,7 @@ snaplock_ticket::ticket_id_t snaplock::get_last_ticket(QString const & object_na
         //
         for(auto key_ticket : obj_ticket->second)
         {
-            snaplock_ticket::ticket_id_t const ticket_number(key_ticket.second->get_ticket_number());
+            ticket::ticket_id_t const ticket_number(key_ticket.second->get_ticket_number());
             if(ticket_number > last_ticket)
             {
                 last_ticket = ticket_number;
@@ -4082,7 +3773,10 @@ snaplock_ticket::ticket_id_t snaplock::get_last_ticket(QString const & object_na
  * \param[in] key  The ticket key (3 segments).
  * \param[in] ticket  The ticket object being added.
  */
-void snaplock::set_ticket(QString const & object_name, QString const & key, snaplock_ticket::pointer_t ticket)
+void cluckd::set_ticket(
+      std::string const & object_name
+    , std::string const & key
+    , ticket::pointer_t ticket)
 {
     f_tickets[object_name][key] = ticket;
 }
@@ -4099,195 +3793,53 @@ void snaplock::set_ticket(QString const & object_name, QString const & key, snap
  *
  * \return A constant copy of the list of entering tickets.
  */
-snaplock_ticket::key_map_t const snaplock::get_entering_tickets(QString const & object_name)
+ticket::key_map_t const cluckd::get_entering_tickets(std::string const & object_name)
 {
     auto const it(f_entering_tickets.find(object_name));
     if(it == f_entering_tickets.end())
     {
-        return snaplock_ticket::key_map_t();
+        return ticket::key_map_t();
     }
 
     return it->second;
 }
 
 
-/** \brief Used to simulate a LOCKEXITING message.
+/** \brief Used to simulate a LOCK_EXITING message.
  *
- * This function is called to simulate sending a LOCKEXITING to the
- * snaplock object from the snaplock_ticket object.
+ * This function is called to simulate sending a LOCK_EXITING to the
+ * cluckd object from the ticket object.
  *
- * \param[in] message  The LOCKEXITING message with proper object name and key.
+ * \param[in] msg  The LOCK_EXITING message with proper object name and key.
  */
-void snaplock::lock_exiting(snap::snap_communicator_message & message)
+void cluckd::lock_exiting(ed::message & msg)
 {
-    msg_lock_exiting(message);
+    msg_lock_exiting(msg);
 }
 
 
 
-/** \brief Process a message received from Snap! Communicator.
- *
- * This function gets called whenever the Snap! Communicator sends
- * us a message while we act as a tool (opposed to being a daemon.)
- *
- * \param[in] message  The message we just received.
- */
-void snaplock::tool_message(snap::snap_communicator_message const & message)
+
+
+
+std::string cluckd::serialized_tickets()
 {
-    SNAP_LOG_TRACE("tool received message [")(message.to_message())("] for ")(f_server_name);
-
-    QString const command(message.get_command());
-
-    switch(command[0].unicode())
-    {
-    case 'H':
-        if(command == "HELP")
-        {
-            // Snap! Communicator is asking us about the commands that we support
-            //
-            snap::snap_communicator_message reply;
-            reply.set_command("COMMANDS");
-
-            // list of commands understood by service
-            // (many are considered to be internal commands... users
-            // should look at the LOCK and UNLOCK messages only)
-            //
-            reply.add_parameter("list", "CLUSTERDOWN,CLUSTERUP,HELP,QUITTING,READY,STOP,TICKETLIST,UNKNOWN");
-
-            send_message(reply);
-            return;
-        }
-        break;
-
-    case 'Q':
-        if(command == "QUITTING")
-        {
-            // If we received the QUITTING command, then somehow we sent
-            // a message to Snap! Communicator, which is already in the
-            // process of quitting... we should get a STOP too, but we
-            // can just quit ASAP too
-            //
-            stop(true);
-            return;
-        }
-        break;
-
-    case 'R':
-        if(command == "READY")
-        {
-            if(f_opt.is_defined("list"))
-            {
-                snap::snap_communicator_message list_message;
-                list_message.set_command("LISTTICKETS");
-                list_message.set_service("snaplock");
-                list_message.set_server(f_server_name);
-                list_message.add_parameter("cache", "no");
-                list_message.add_parameter("transmission_report", "failure");
-                send_message(list_message);
-            }
-            return;
-        }
-        break;
-
-    case 'S':
-        if(command == "STOP")
-        {
-            // Someone is asking us to leave
-            //
-            stop(false);
-            return;
-        }
-        break;
-
-    case 'T':
-        if(command == "TICKETLIST")
-        {
-            // received the answer to our LISTTICKETS request
-            //
-            ticket_list(message);
-            stop(false);
-            return;
-        }
-        else if(command == "TRANSMISSIONREPORT")
-        {
-            QString const status(message.get_parameter("status"));
-            if(status == "failed")
-            {
-                SNAP_LOG_ERROR("the transmission of our TICKLIST message failed to travel to a snaplock service");
-                stop(false);
-            }
-            return;
-        }
-        break;
-
-    case 'U':
-        if(command == "UNKNOWN")
-        {
-            // we sent a command that Snap! Communicator did not understand
-            //
-            SNAP_LOG_ERROR("we sent unknown command \"")(message.get_parameter("command"))("\" and probably did not get the expected result (2).");
-            return;
-        }
-        break;
-
-    }
-
-    // unknown commands get reported and process goes on
-    //
-    SNAP_LOG_ERROR("unsupported command \"")(command)("\" was received on the connection with Snap! Communicator.");
-    {
-        snap::snap_communicator_message reply;
-        reply.set_command("UNKNOWN");
-        reply.add_parameter("command", command);
-        send_message(reply);
-    }
-
-    return;
-}
-
-
-/** \brief Print out the resulting list of tickets
- *
- * \param[in] message  The TICKETLIST message.
- */
-void snaplock::ticket_list(snap::snap_communicator_message const & message)
-{
-    QString const list(message.get_parameter("list"));
-
-    // add newlines for people who have TRACE mode would otherwise have
-    // a hard time to find the actual list
-    //
-    if(list.isEmpty())
-    {
-        // TODO: add a --quiet command line option
-        //
-        std::cout << std::endl << "...no locks found..." << std::endl;
-    }
-    else
-    {
-        std::cout << std::endl << list << std::endl;
-    }
-}
-
-
-QString snaplock::serialized_tickets()
-{
-    QString result;
+    std::stringstream result;
 
     for(auto const & obj_ticket : f_tickets)
     {
         for(auto const & key_ticket : obj_ticket.second)
         {
-            result += key_ticket.second->serialize();
-            result += QChar('\n');
+            result
+                << key_ticket.second->serialize()
+                << '\n';
         }
     }
 
-    return result;
+    return result.str();
 }
 
 
 
-}
-// snaplock namespace
+} // namespace cluck_daemon
 // vim: ts=4 sw=4 et

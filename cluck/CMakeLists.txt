@@ -27,16 +27,9 @@ configure_file(
 )
 
 add_library(${PROJECT_NAME} SHARED
-    interrupt.cpp
-    meminfo.cpp
-    messenger.cpp
+    cluck.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/names.cpp
-    sitter.cpp
-    sitter_worker.cpp
-    sys_stats.cpp
-    tick_timer.cpp
     version.cpp
-    worker_done.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
@@ -69,10 +62,10 @@ target_link_libraries(${PROJECT_NAME}
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     VERSION
-        ${SITTER_VERSION_MAJOR}.${SITTER_VERSION_MINOR}
+        ${CLUCK_VERSION_MAJOR}.${CLUCK_VERSION_MINOR}
 
     SOVERSION
-        ${SITTER_VERSION_MAJOR}
+        ${CLUCK_VERSION_MAJOR}
 )
 
 install(
@@ -88,7 +81,7 @@ install(
         ${CMAKE_CURRENT_SOURCE_DIR}/
 
     DESTINATION
-        include/sitter
+        include/cluck
 
     FILES_MATCHING PATTERN
         "*.h"
@@ -99,7 +92,7 @@ install(
         ${CMAKE_CURRENT_BINARY_DIR}/version.h
 
     DESTINATION
-        include/sitter
+        include/cluck
 )
 
 

@@ -14,22 +14,18 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #pragma once
 
-// self
-//
-//#include    <cluck/exception.h>
-
-
-//#include    <eventdispatcher/tcp_bio_client.h>
 // eventdispatcher
 //
-//#include    <eventdispatcher/communicator.h>
-
-//#include    <eventdispatcher/tcp_bio_client.h>
+#include    <eventdispatcher/connection_with_send_message.h>
+#include    <eventdispatcher/dispatcher.h>
+//#include    <eventdispatcher/dispatcher_match.h>
+#include    <eventdispatcher/timer.h>
 
 
 // snapdev
 //
 #include    <snapdev/callback_manager.h>
+#include    <snapdev/timespec_ex.h>
 
 
 
@@ -38,80 +34,168 @@ namespace cluck
 
 
 
+enum class mode_t
+{
+    CLUCK_MODE_SIMPLE,      // code executes without the need for events
+    CLUCK_MODE_EXTENDED     // code requires further message to be sent/received
+};
+
+
+enum class reason_t
+{
+    CLUCK_REASON_NONE,
+    CLUCK_REASON_LOCAL_TIMEOUT,      // process_timeout() was called
+    CLUCK_REASON_REMOTE_TIMEOUT,     // FAILED_LOCK was received with a "timeout" error
+    CLUCK_REASON_DEADLOCK,           // FAILED_LOCK was received with a "deadlock" error
+};
+
+
+enum class type_t
+{
+    CLUCK_TYPE_READ_WRITE,
+    CLUCK_TYPE_READ_ONLY,
+    CLUCK_TYPE_READ_WRITE_PRIORITY, // prevent further READ-ONLY until done with this lock
+};
+
+
+enum class state_t
+{
+    CLUCK_STATE_IDLE,
+    CLUCK_STATE_LOCKING,
+    CLUCK_STATE_LOCKED,
+    CLUCK_STATE_UNLOCKING,
+    CLUCK_STATE_FAILED,
+};
+
+
 /** \brief A timeout delay.
  *
  * This type is used to defined a timeout delay between an event and its
- * reply. The value represents seconds.
+ * reply. The value represents microseconds.
  *
- * The special value -1 is used to indicate that the default is to be used.
+ * The special value, CLUCK_DEFAULT_TIMEOUT (-1), is used to indicate that
+ * the default is to be used.
  */
-typedef std::int32_t        timeout_t;
+typedef snapdev::timespec_ex        timeout_t;
 
-static constexpr timeout_t  CLUCK_DEFAULT_TIMEOUT = -1;
-static constexpr timeout_t  CLUCK_MAXIMUM_TIMEOUT = 7 * 24 * 60 * 60;     // no matter what limit all timeouts to this value (7 days)
-
-static constexpr timeout_t  CLUCK_LOCK_DEFAULT_TIMEOUT = 5;
-static constexpr timeout_t  CLUCK_UNLOCK_DEFAULT_TIMEOUT = 5;
-
-static constexpr timeout_t  CLUCK_LOCK_MINIMUM_TIMEOUT = 3;
-static constexpr timeout_t  CLUCK_LOCK_MAXIMUM_TIMEOUT = 60 * 60;    // by default limit obtention timeout to this value
-
-static constexpr timeout_t  CLUCK_UNLOCK_MINIMUM_TIMEOUT = 60;
+inline timeout_t  CLUCK_DEFAULT_TIMEOUT = timeout_t(-1, 0);
+inline timeout_t  CLUCK_MINIMUM_TIMEOUT = timeout_t(3, 0);
+inline timeout_t  CLUCK_MAXIMUM_TIMEOUT = timeout_t(7 * 24 * 60 * 60, 0);         // no matter what limit all timeouts to this value (7 days)
+inline timeout_t  CLUCK_LOCK_OBTENTION_DEFAULT_TIMEOUT = timeout_t(5, 0);
+inline timeout_t  CLUCK_LOCK_OBTENTION_MAXIMUM_TIMEOUT = timeout_t(60 * 60, 0);   // by default limit obtention timeout to this value
+inline timeout_t  CLUCK_LOCK_DURATION_DEFAULT_TIMEOUT = timeout_t(5, 0);
+inline timeout_t  CLUCK_UNLOCK_DEFAULT_TIMEOUT = timeout_t(5, 0);
+inline timeout_t  CLUCK_UNLOCK_MINIMUM_TIMEOUT = timeout_t(60, 0);
 
 
+timeout_t                   get_lock_obtention_timeout();
+void                        set_lock_obtention_timeout(timeout_t timeout);
+timeout_t                   get_lock_duration_timeout();
+void                        set_lock_duration_timeout(timeout_t timeout);
+timeout_t                   get_unlock_timeout();
+void                        set_unlock_timeout(timeout_t timeout);
 
-
-void initialize_communicator(
-          addr::addr const & addr
-        , ed::mode_t mode = ed::mode_t::MODE_PLAIN);
-
-
-
-namespace detail
-{
-class connection;
-}
 
 
 /** \brief Cluster lock.
  *
  * This class is used to run code synchronously in a cluster of computers.
  *
- * You are expected to setup two callbacks to know when the lock is in
- * place and another to know whether an error occurred and the lock was
- * never obtained.
+ * The class accepts three callbacks:
+ *
+ * * lock was obtained and is now in place
+ * * lock was not obtained (timeout, network error)
+ * * finally code (i.e. code to run after the lock was released)
+ *
+ * The cluck class is itself an eventdispatcher connection so you must add
+ * it to the communictor. Actually, you can add it and then forget about the
+ * pointer. That way, once you are in your finally code, it automatically
+ * gets removed from the communicator.
  */
 class cluck
+    : public ed::timer
 {
 public:
-    typedef std::shared_ptr<cluck>                          pointer_t;
-    typedef std::function<bool(std::string const & name)>   callback_t;
+    typedef std::shared_ptr<cluck>                  pointer_t;
+    typedef std::function<bool(cluck *)>            callback_t;
+    typedef snapdev::callback_manager<callback_t>   callback_manager_t;
+    typedef std::uint64_t                           serial_t;
 
-                        cluck(std::string const & name);
+                        cluck(
+                              std::string const & object_name
+                            , ed::connection_with_send_message::pointer_t connection
+                            , ed::dispatcher::pointer_t dispatcher
+                            , mode_t mode = mode_t::CLUCK_MODE_SIMPLE);
 
-    void                set_locked_callback(callback_t func);
-    void                set_failed_callback(callback_t func);
-    void                set_lock_duration(timeout_t duration);
-    void                set_obtention_timeout(timeout_t timeout);
+    callback_manager_t::callback_id_t
+                        add_lock_obtained_callback(
+                              callback_t func
+                            , callback_manager_t::priority_t priority = callback_manager_t::DEFAULT_PRIORITY);
+    bool                remove_lock_obtained_callback(
+                              callback_manager_t::callback_id_t id);
+    callback_manager_t::callback_id_t
+                        add_lock_failed_callback(
+                              callback_t func
+                            , callback_manager_t::priority_t priority = callback_manager_t::DEFAULT_PRIORITY);
+    bool                remove_lock_failed_callback(
+                              callback_manager_t::callback_id_t id);
+    callback_manager_t::callback_id_t
+                        add_finally_callback(
+                              callback_t func
+                            , callback_manager_t::priority_t priority = callback_manager_t::DEFAULT_PRIORITY);
+    bool                remove_finally_callback(
+                              callback_manager_t::callback_id_t id);
+
+    timeout_t           get_lock_obtention_timeout() const;
+    void                set_lock_obtention_timeout(timeout_t timeout);
+    timeout_t           get_lock_duration_timeout() const;
+    void                set_lock_duration_timeout(timeout_t timeout);
+    timeout_t           get_unlock_timeout() const;
     void                set_unlock_timeout(timeout_t timeout);
+    type_t              get_type() const;
+    void                set_type(type_t type);
+    reason_t            get_reason() const;
 
     bool                lock();
     void                unlock();
-
-    time_t              get_timeout_date() const;
+    timeout_t           get_timeout_date() const;
     bool                is_locked() const;
-    bool                lock_timed_out() const;
+    bool                is_busy() const;
+
+    // ed::connection implementation
+    virtual void        process_timeout() override;
 
 protected:
-    virtual bool        lock_obtained();
-    virtual bool        lock_failed();
+    virtual void        lock_obtained();
+    virtual void        lock_failed();
+    virtual void        finally();
 
 private:
-    std::string         f_name = std::string();
-    snapdev::callback_manager
-                        f_callbacks = snapdev::callback_manager();
-    std::shared_ptr<detail::connection>
-                        f_connection = std::shared_ptr<detail::connection>();
+    bool                is_cluck_msg(ed::message & msg) const;
+    void                msg_locked(ed::message & msg);
+    void                msg_lock_failed(ed::message & msg);
+    void                msg_unlocked(ed::message & msg);
+    void                msg_unlocking(ed::message & msg);
+    void                set_reason(reason_t reason);
+
+    std::string                 f_object_name = std::string();
+    ed::dispatcher_match::tag_t const
+                                f_tag = ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG;
+    ed::connection_with_send_message::pointer_t
+                                f_connection = ed::connection_with_send_message::pointer_t();
+    ed::dispatcher::pointer_t   f_dispatcher = ed::dispatcher::pointer_t();
+    mode_t                      f_mode = mode_t::CLUCK_MODE_SIMPLE;
+    callback_manager_t          f_lock_obtained_callbacks = callback_manager_t();
+    callback_manager_t          f_lock_failed_callbacks = callback_manager_t();
+    callback_manager_t          f_finally_callbacks = callback_manager_t();
+    timeout_t                   f_lock_obtention_timeout = CLUCK_DEFAULT_TIMEOUT;
+    timeout_t                   f_lock_duration_timeout = CLUCK_DEFAULT_TIMEOUT;
+    timeout_t                   f_unlock_timeout = CLUCK_DEFAULT_TIMEOUT;
+    timeout_t                   f_lock_timeout_date = timeout_t();
+    type_t                      f_type = type_t::CLUCK_TYPE_READ_WRITE;
+    state_t                     f_state = state_t::CLUCK_STATE_IDLE;
+    reason_t                    f_reason = reason_t::CLUCK_REASON_NONE;
+    serial_t                    f_serial = serial_t();
 };
 
 

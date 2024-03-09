@@ -1,5 +1,8 @@
 // Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
 //
+// https://snapwebsites.org/project/cluck
+// contact@m2osw.com
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -14,27 +17,31 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #pragma once
 
-// libexcept
+// cluck
 //
-#include    <libexcept/exception.h>
+#include    <cluck/cluck.h>
+
+
+// eventdispatcher
+//
+#include    <eventdispatcher/message.h>
 
 
 
-namespace cluck
+namespace cluck_daemon
 {
 
 
-DECLARE_LOGIC_ERROR(logic_error);
-DECLARE_LOGIC_ERROR(unexpected_case);
-DECLARE_OUT_OF_RANGE(out_of_range);
 
-DECLARE_MAIN_EXCEPTION(cluck_exception);
+struct message_cache
+{
+    typedef std::list<message_cache>  list_t;
 
-DECLARE_EXCEPTION(cluck_exception, busy);
-DECLARE_EXCEPTION(cluck_exception, invalid_message);
-DECLARE_EXCEPTION(cluck_exception, invalid_parameter);
-DECLARE_EXCEPTION(cluck_exception, timeout);
+    cluck::timeout_t        f_timeout = cluck::timeout_t();
+    ed::message             f_message = ed::message();
+};
 
 
-} // namespace cluck
+
+} // namespace cluck_daemon
 // vim: ts=4 sw=4 et

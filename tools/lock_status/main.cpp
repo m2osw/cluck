@@ -19,7 +19,7 @@
 
 // self
 //
-#include    "cluckd.h"
+#include    "server.h"
 
 
 // cluck
@@ -62,9 +62,8 @@ int main(int argc, char * argv[])
     std::string errmsg;
     try
     {
-        cluck_daemon::cluckd::pointer_t lock(std::make_shared<cluck_daemon::cluckd>(argc, argv));
-        lock->run();
-        return 0;
+        lock_status::server::pointer_t s(std::make_shared<lock_status::server>(argc, argv));
+        return s->run();
     }
     catch(advgetopt::getopt_exit const & e)
     {

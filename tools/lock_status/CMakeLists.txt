@@ -1,6 +1,6 @@
 # Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
 #
-# https://snapwebsites.org/project/cluck
+# https://snapwebsites.org/project/lock_status
 # contact@m2osw.com
 #
 # This program is free software: you can redistribute it and/or modify
@@ -16,36 +16,27 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-project(cluckd)
+
+project(lock-status)
 
 add_executable(${PROJECT_NAME}
-    cluckd.cpp
-    computer.cpp
-    debug_info.cpp
-    info.cpp
-    interrupt.cpp
     main.cpp
     messenger.cpp
-    ticket.cpp
-    timer.cpp
+    server.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
     PUBLIC
+        ${CMAKE_CURRENT_BINARY_DIR}
         ${ADVGETOPT_INCLUDE_DIRS}
-        ${CPPTHREAD_INCLUDE_DIRS}
-        ${EVENTDISPATCHER_INCLUDE_DIRS}
         ${LIBADDR_INCLUDE_DIRS}
         ${LIBEXCEPT_INCLUDE_DIRS}
-        ${OPENSSL_INCLUDE_DIR}
-        ${SNAPLOGGER_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME}
-    cluck
-    ${ADVGETOPT_LIBRARIES}
-    ${CPPTHREAD_LIBRARIES}
-    ${OPENSSL_LIBRARIES}
+    PUBLIC
+        cluck
+        ${ADVGETOPT_LIBRARIES}
 )
 
 install(
@@ -53,7 +44,8 @@ install(
         ${PROJECT_NAME}
 
     RUNTIME DESTINATION
-        sbin
+        bin
 )
+
 
 # vim: ts=4 sw=4 et

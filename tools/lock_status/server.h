@@ -1,5 +1,8 @@
 // Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
 //
+// https://snapwebsites.org/project/cluck
+// contact@m2osw.com
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -14,27 +17,37 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #pragma once
 
-// libexcept
+// self
 //
-#include    <libexcept/exception.h>
+#include    "messenger.h"
 
 
 
-namespace cluck
+namespace lock_status
 {
 
 
-DECLARE_LOGIC_ERROR(logic_error);
-DECLARE_LOGIC_ERROR(unexpected_case);
-DECLARE_OUT_OF_RANGE(out_of_range);
 
-DECLARE_MAIN_EXCEPTION(cluck_exception);
+class server
+{
+public:
+    typedef std::shared_ptr<server>  pointer_t;
 
-DECLARE_EXCEPTION(cluck_exception, busy);
-DECLARE_EXCEPTION(cluck_exception, invalid_message);
-DECLARE_EXCEPTION(cluck_exception, invalid_parameter);
-DECLARE_EXCEPTION(cluck_exception, timeout);
+                                server(int argc, char * argv[]);
+                                server(server const &) = delete;
+    virtual                     ~server() {}
+
+    server &                    operator = (server const &) = delete;
+
+    int                         run();
+
+private:
+    advgetopt::getopt           f_opts;
+    ed::communicator::pointer_t f_communicator = ed::communicator::pointer_t();
+    messenger::pointer_t        f_messenger = messenger::pointer_t();
+};
 
 
-} // namespace cluck
+
+} // namespace lock_status
 // vim: ts=4 sw=4 et

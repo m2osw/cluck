@@ -16,44 +16,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-project(cluckd)
-
-add_executable(${PROJECT_NAME}
-    cluckd.cpp
-    computer.cpp
-    debug_info.cpp
-    info.cpp
-    interrupt.cpp
-    main.cpp
-    messenger.cpp
-    ticket.cpp
-    timer.cpp
-)
-
-target_include_directories(${PROJECT_NAME}
-    PUBLIC
-        ${ADVGETOPT_INCLUDE_DIRS}
-        ${CPPTHREAD_INCLUDE_DIRS}
-        ${EVENTDISPATCHER_INCLUDE_DIRS}
-        ${LIBADDR_INCLUDE_DIRS}
-        ${LIBEXCEPT_INCLUDE_DIRS}
-        ${OPENSSL_INCLUDE_DIR}
-        ${SNAPLOGGER_INCLUDE_DIRS}
-)
-
-target_link_libraries(${PROJECT_NAME}
-    cluck
-    ${ADVGETOPT_LIBRARIES}
-    ${CPPTHREAD_LIBRARIES}
-    ${OPENSSL_LIBRARIES}
-)
-
-install(
-    TARGETS
-        ${PROJECT_NAME}
-
-    RUNTIME DESTINATION
-        sbin
-)
+add_subdirectory(lock_status)
 
 # vim: ts=4 sw=4 et

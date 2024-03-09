@@ -1,5 +1,8 @@
 // Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
 //
+// https://snapwebsites.org/
+// contact@m2osw.com
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -14,27 +17,39 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #pragma once
 
-// libexcept
+// eventdispatcher
 //
-#include    <libexcept/exception.h>
+#include    <eventdispatcher/signal.h>
 
 
 
-namespace cluck
+namespace cluck_daemon
 {
 
 
-DECLARE_LOGIC_ERROR(logic_error);
-DECLARE_LOGIC_ERROR(unexpected_case);
-DECLARE_OUT_OF_RANGE(out_of_range);
 
-DECLARE_MAIN_EXCEPTION(cluck_exception);
+class cluckd;
 
-DECLARE_EXCEPTION(cluck_exception, busy);
-DECLARE_EXCEPTION(cluck_exception, invalid_message);
-DECLARE_EXCEPTION(cluck_exception, invalid_parameter);
-DECLARE_EXCEPTION(cluck_exception, timeout);
+class debug_info
+    : public ed::signal
+{
+public:
+    typedef std::shared_ptr<debug_info>     pointer_t;
+
+                            debug_info(cluckd * c);
+                            debug_info(debug_info const &) = delete;
+    virtual                 ~debug_info() override {}
+
+    debug_info const &      operator = (debug_info const &) = delete;
+
+    // ed::connection implementation
+    virtual void            process_signal() override;
+
+private:
+    cluckd *                f_cluckd = nullptr;
+};
 
 
-} // namespace cluck
+
+} // namespace cluck_deamon
 // vim: ts=4 sw=4 et

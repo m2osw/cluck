@@ -1,65 +1,64 @@
-/*
- * Text:
- *      snaplock/src/snaplock_ticket.cpp
- *
- * Description:
- *      A daemon to synchronize processes between any number of computers
- *      by blocking all of them but one.
- *
- *      The ticket class is used to know which computer is next. All
- *      computers are given a number. The computer with the smallest
- *      number has priority in case multiple computers are assigned
- *      the same ticket number.
- *
- *      This algorithm is called the Lamport's Bakery Algorithm.
- *
- * License:
- *      Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
- *
- *      https://snapwebsites.org/
- *      contact@m2osw.com
- *
- *      Permission is hereby granted, free of charge, to any person obtaining a
- *      copy of this software and associated documentation files (the
- *      "Software"), to deal in the Software without restriction, including
- *      without limitation the rights to use, copy, modify, merge, publish,
- *      distribute, sublicense, and/or sell copies of the Software, and to
- *      permit persons to whom the Software is furnished to do so, subject to
- *      the following conditions:
- *
- *      The above copyright notice and this permission notice shall be included
- *      in all copies or substantial portions of the Software.
- *
- *      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- *      OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- *      MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- *      IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
- *      CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
- *      TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
- *      SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- */
-
-
-// ourselves
+// Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
 //
-#include "snaplock.h"
-
-
-// our lib
+// https://snapwebsites.org/project/cluck
+// contact@m2osw.com
 //
-#include <snapwebsites/log.h>
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+// self
+//
+#include    "ticket.h"
+
+#include    "cluckd.h"
+
+
+// cluck
+//
+#include    <cluck/exception.h>
+#include    <cluck/names.h>
+
+
+// advgetopt
+//
+#include    <advgetopt/validator_integer.h>
+
+
+// snapdev
+//
+#include    <snapdev/hexadecimal_string.h>
+#include    <snapdev/string_replace_many.h>
+#include    <snapdev/tokenize_string.h>
+
+
+// snaplogger
+//
+#include    <snaplogger/message.h>
 
 
 // last include
 //
-#include <snapdev/poison.h>
+#include    <snapdev/poison.h>
 
 
 
-namespace snaplock
+namespace cluck_daemon
 {
 
-/** \class snaplock_ticket
+
+
+/** \class ticket
  * \brief Handle the ticket messages.
  *
  * \section introduction Introduction
@@ -392,49 +391,51 @@ namespace snaplock
  * \param[in] server_name  The name of the server generating the locked.
  * \param[in] service_name  The server waiting for the LOCKED message.
  */
-snaplock_ticket::snaplock_ticket(
-              snaplock * sl
-            , snaplock_messenger::pointer_t messenger
-            , QString const & object_name
-            , QString const & entering_key
-            , time_t obtention_timeout
-            , int32_t lock_duration
-            , QString const & server_name
-            , QString const & service_name)
-    : f_snaplock(sl)
+ticket::ticket(
+              cluckd * c
+            , messenger::pointer_t messenger
+            , std::string const & object_name
+            , std::string const & entering_key
+            , cluck::timeout_t obtention_timeout
+            , cluck::timeout_t lock_duration
+            , std::string const & server_name
+            , std::string const & service_name)
+    : f_cluckd(c)
     , f_messenger(messenger)
     , f_object_name(object_name)
     , f_obtention_timeout(obtention_timeout)
     , f_lock_duration(lock_duration)
     , f_server_name(server_name)
     , f_service_name(service_name)
-    , f_owner(f_snaplock->get_server_name())
+    , f_owner(f_cluckd->get_server_name())
     , f_entering_key(entering_key)
 {
     // clamp the lock duration
     //
-    if(f_lock_duration < snap::snap_lock::SNAP_UNLOCK_MINIMUM_TIMEOUT)
+    if(f_lock_duration < cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT)
     {
-        f_lock_duration = snap::snap_lock::SNAP_UNLOCK_MINIMUM_TIMEOUT;
+        f_lock_duration = cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT;
     }
-    else if(f_lock_duration > snap::snap_lock::SNAP_MAXIMUM_TIMEOUT)
+    else if(f_lock_duration > cluck::CLUCK_MAXIMUM_TIMEOUT)
     {
-        f_lock_duration = snap::snap_lock::SNAP_MAXIMUM_TIMEOUT;
+        f_lock_duration = cluck::CLUCK_MAXIMUM_TIMEOUT;
     }
 
     set_unlock_duration(f_lock_duration);
 
-    SNAP_LOG_TRACE("Attempting to lock \"")
-                  (f_object_name)
-                  ("\" on \"")
-                  (f_entering_key)
-                  ("\" for \"")
-                  (f_server_name)
-                  ("/")
-                  (f_service_name)
-                  ("\" (timeout: ")
-                  (f_obtention_timeout)
-                  (").");
+    SNAP_LOG_TRACE
+        << "Attempting to lock \""
+        << f_object_name
+        << "\" on \""
+        << f_entering_key
+        << "\" for \""
+        << f_server_name
+        << '/'
+        << f_service_name
+        << "\" (timeout: "
+        << f_obtention_timeout
+        << ")."
+        << SNAP_LOG_SEND;
 }
 
 
@@ -449,32 +450,32 @@ snaplock_ticket::snaplock_ticket(
  * computer. In those cases, special care has to be taken to get things
  * to work as expected.
  *
- * \param[in] message  The message to send to the other two leaders.
+ * \param[in] msg  The message to send to the other two leaders.
  *
  * \return true if the message was forwarded at least once, false otherwise.
  */
-bool snaplock_ticket::send_message_to_leaders(snap::snap_communicator_message & message)
+bool ticket::send_message_to_leaders(ed::message & msg)
 {
     // finish the message initialization
     //
-    message.set_service("snaplock");
-    message.add_parameter("object_name", f_object_name);
+    msg.set_service("snaplock");
+    msg.add_parameter("object_name", f_object_name);
 
-    snaplock::computer_t::pointer_t leader(f_snaplock->get_leader_a());
+    computer::pointer_t leader(f_cluckd->get_leader_a());
     if(leader != nullptr)
     {
         // there are at least two leaders
         //
-        message.set_server(leader->get_name());
-        f_messenger->send_message(message);
+        msg.set_server(leader->get_name());
+        f_messenger->send_message(msg);
 
         // check for a third leader
         //
-        leader = f_snaplock->get_leader_b();
+        leader = f_cluckd->get_leader_b();
         if(leader != nullptr)
         {
-            message.set_server(leader->get_name());
-            f_messenger->send_message(message);
+            msg.set_server(leader->get_name());
+            f_messenger->send_message(msg);
         }
 
         // we have to wait for at least one reply
@@ -486,7 +487,7 @@ bool snaplock_ticket::send_message_to_leaders(snap::snap_communicator_message & 
     //
     // verify that this is correct otherwise we would mess up the algorithm
     //
-    return f_snaplock->get_computer_count() != 1;
+    return f_cluckd->get_computer_count() != 1;
 }
 
 
@@ -497,7 +498,7 @@ bool snaplock_ticket::send_message_to_leaders(snap::snap_communicator_message & 
  * process starts by sending a `LOCKENTERING` message to all the
  * other snaplock leaders.
  */
-void snaplock_ticket::entering()
+void ticket::entering()
 {
     // TODO implement the special case when there is only 1 leader
     //      (on the other hand, that should be rather rare)
@@ -508,8 +509,8 @@ void snaplock_ticket::entering()
     //    return;
     //}
 
-    snap::snap_communicator_message entering_message;
-    entering_message.set_command("LOCKENTERING");
+    ed::message entering_message;
+    entering_message.set_command(cluck::g_name_cluck_cmd_lock_entering);
     entering_message.add_parameter("key", f_entering_key);
     entering_message.add_parameter("timeout", f_obtention_timeout);
     entering_message.add_parameter("duration", f_lock_duration);
@@ -544,7 +545,7 @@ void snaplock_ticket::entering()
  * `LOCKENTERED` message had anything to do with this ticket.
  * If not, the message was just ignored.
  */
-void snaplock_ticket::entered()
+void ticket::entered()
 {
     // is this ticket concerned?
     //
@@ -557,10 +558,10 @@ void snaplock_ticket::entered()
 
         // calculate this instance max. ticket number
         //
-        f_our_ticket = f_snaplock->get_last_ticket(f_object_name);
+        f_our_ticket = f_cluckd->get_last_ticket(f_object_name);
 
-        snap::snap_communicator_message get_max_ticket_message;
-        get_max_ticket_message.set_command("GETMAXTICKET");
+        ed::message get_max_ticket_message;
+        get_max_ticket_message.set_command(cluck::g_name_cluck_cmd_get_max_ticket);
         get_max_ticket_message.add_parameter("key", f_entering_key);
         if(!send_message_to_leaders(get_max_ticket_message))
         {
@@ -572,7 +573,7 @@ void snaplock_ticket::entered()
 }
 
 
-/** \brief Called whenever a MAXTICKET is received.
+/** \brief Called whenever a MAX_TICKET is received.
  *
  * This function registers the largest ticket number. Once we reach
  * QUORUM, then we have the largest number and we can move on to the
@@ -580,7 +581,7 @@ void snaplock_ticket::entered()
  *
  * \param[in] new_max_ticket  Another possibly larger ticket.
  */
-void snaplock_ticket::max_ticket(int64_t new_max_ticket)
+void ticket::max_ticket(std::int64_t new_max_ticket)
 {
     if(!f_added_ticket)
     {
@@ -596,18 +597,18 @@ void snaplock_ticket::max_ticket(int64_t new_max_ticket)
 }
 
 
-/** \brief Send the ADDTICKET message.
+/** \brief Send the ADD_TICKET message.
  *
- * This function sends the ADDTICKET message to all the snaplock
+ * This function sends the ADD_TICKET message to all the cluckd
  * instances currently known.
  */
-void snaplock_ticket::add_ticket()
+void ticket::add_ticket()
 {
     // we expect exactly one call to this function
     //
     if(f_added_ticket)
     {
-        throw std::logic_error("snaplock_ticket::add_ticket() called more than once.");
+        throw std::logic_error("ticket::add_ticket() called more than once.");
     }
     f_added_ticket = true;
 
@@ -624,25 +625,27 @@ void snaplock_ticket::add_ticket()
     // However, the ticket number MUST be numerically sorted. For this reason,
     // since the key is a string, we must add introducing zeroes.
     //
-    f_ticket_key = QString("%1/%2").arg(f_our_ticket, 8, 16, QChar('0')).arg(f_entering_key);
+    f_ticket_key = snapdev::int_to_hex(f_our_ticket, false, 8)
+                 + '/'
+                 + f_entering_key;
 
-    f_snaplock->set_ticket(f_object_name, f_ticket_key, shared_from_this());
+    f_cluckd->set_ticket(f_object_name, f_ticket_key, shared_from_this());
 
-    snap::snap_communicator_message add_ticket_message;
-    add_ticket_message.set_command("ADDTICKET");
+    ed::message add_ticket_message;
+    add_ticket_message.set_command(cluck::g_name_cluck_cmd_add_ticket);
     add_ticket_message.add_parameter("key", f_ticket_key);
     add_ticket_message.add_parameter("timeout", f_obtention_timeout);
     if(!send_message_to_leaders(add_ticket_message))
     {
-        ticket_added(f_snaplock->get_entering_tickets(f_object_name));
+        ticket_added(f_cluckd->get_entering_tickets(f_object_name));
     }
 }
 
 
-/** \brief Called whenever a TICKETADDED is received.
+/** \brief Called whenever a TICKET_ADDED is received.
  *
- * This function sends a LOCKEXITING if the ticket reached the total number
- * of TICKETADDED required to get a quorum (which is just one with 1 to 3
+ * This function sends a LOCK_EXITING if the ticket reached the total number
+ * of TICKET_ADDED required to get a quorum (which is just one with 1 to 3
  * leaders.)
  *
  * The \p still_entering paramater defines the list of tickets that are
@@ -652,7 +655,7 @@ void snaplock_ticket::add_ticket()
  *
  * \param[in] still_entering  The list of still entering processes
  */
-void snaplock_ticket::ticket_added(snaplock_ticket::key_map_t const & still_entering)
+void ticket::ticket_added(key_map_t const & still_entering)
 {
     if(!f_added_ticket_quorum)
     {
@@ -667,12 +670,12 @@ void snaplock_ticket::ticket_added(snaplock_ticket::key_map_t const & still_ente
         // now we can forget about the entering flag
         // (equivalent to setting it to false)
         //
-        snap::snap_communicator_message exiting_message;
-        exiting_message.set_command("LOCKEXITING");
+        ed::message exiting_message;
+        exiting_message.set_command(cluck::g_name_cluck_cmd_lock_exiting);
         exiting_message.add_parameter("key", f_entering_key);
         snapdev::NOT_USED(send_message_to_leaders(exiting_message));
 
-        f_snaplock->lock_exiting(exiting_message);
+        f_cluckd->lock_exiting(exiting_message);
     }
 }
 
@@ -687,7 +690,7 @@ void snaplock_ticket::ticket_added(snaplock_ticket::key_map_t const & still_ente
  * are waiting for all entering flags that got created while
  * we determined the largest ticket number to be removed.
  */
-void snaplock_ticket::remove_entering(QString const & key)
+void ticket::remove_entering(std::string const & key)
 {
     if(f_added_ticket_quorum
     && !f_ticket_ready)
@@ -721,8 +724,8 @@ void snaplock_ticket::remove_entering(QString const & key)
 
                 // let the other two leaders know that the ticket is ready
                 //
-                snap::snap_communicator_message ticket_ready_message;
-                ticket_ready_message.set_command("TICKETREADY");
+                ed::message ticket_ready_message;
+                ticket_ready_message.set_command(cluck::g_name_cluck_cmd_ticket_ready);
                 ticket_ready_message.add_parameter("key", f_ticket_key);
                 snapdev::NOT_USED(send_message_to_leaders(ticket_ready_message));
             }
@@ -740,14 +743,14 @@ void snaplock_ticket::remove_entering(QString const & key)
  * This function can be called multiple times. It will send
  * the LOCKED message only once.
  */
-void snaplock_ticket::activate_lock()
+void ticket::activate_lock()
 {
     if(f_ticket_ready
     && !f_locked
     && !f_lock_failed)
     {
-        snap::snap_communicator_message activate_lock_message;
-        activate_lock_message.set_command("ACTIVATELOCK");
+        ed::message activate_lock_message;
+        activate_lock_message.set_command(cluck::g_name_cluck_cmd_activate_lock);
         activate_lock_message.add_parameter("key", f_ticket_key);
         if(!send_message_to_leaders(activate_lock_message))
         {
@@ -766,19 +769,19 @@ void snaplock_ticket::activate_lock()
  * This function can be called multiple times. It will send
  * the LOCKED message only once.
  */
-void snaplock_ticket::lock_activated()
+void ticket::lock_activated()
 {
     if(f_ticket_ready
     && !f_locked
     && !f_lock_failed)
     {
         f_locked = true;
-        f_lock_timeout = f_lock_duration + time(nullptr);
+        f_lock_timeout = f_lock_duration + snapdev::now();
 
-        if(f_owner == f_snaplock->get_server_name())
+        if(f_owner == f_cluckd->get_server_name())
         {
-            snap::snap_communicator_message locked_message;
-            locked_message.set_command("LOCKED");
+            ed::message locked_message;
+            locked_message.set_command(cluck::g_name_cluck_cmd_locked);
             locked_message.set_server(f_server_name);
             locked_message.set_service(f_service_name);
             locked_message.add_parameter("object_name", f_object_name);
@@ -791,19 +794,25 @@ void snaplock_ticket::lock_activated()
 
 /** \brief We are done with the ticket.
  *
- * This function sends the DROPTICKET message to get read of a ticket
+ * This function sends the DROP_TICKET message to get read of a ticket
  * from another leader's list of tickets.
  *
  * Another leader has a list of tickets as it receives LOCK and ADDTICKET
  * messages.
  */
-void snaplock_ticket::drop_ticket()
+void ticket::drop_ticket()
 {
-    SNAP_LOG_TRACE("Unlock on \"")(f_object_name)("\" with key \"")(f_entering_key)("\".");
+    SNAP_LOG_TRACE
+        << "Unlock on \""
+        << f_object_name
+        << "\" with key \""
+        << f_entering_key
+        << "\"."
+        << SNAP_LOG_SEND;
 
-    snap::snap_communicator_message drop_ticket_message;
-    drop_ticket_message.set_command("DROPTICKET");
-    drop_ticket_message.add_parameter("key", f_ticket_key.isEmpty() ? f_entering_key : f_ticket_key);
+    ed::message drop_ticket_message;
+    drop_ticket_message.set_command(cluck::g_name_cluck_cmd_drop_ticket);
+    drop_ticket_message.add_parameter("key", f_ticket_key.empty() ? f_entering_key : f_ticket_key);
     send_message_to_leaders(drop_ticket_message);
 
     if(!f_lock_failed)
@@ -827,8 +836,8 @@ void snaplock_ticket::drop_ticket()
             //       can happen after that... (i.e. we need a special case
             //       of the receiver for the UNLOCK, argh!)
             //
-            snap::snap_communicator_message unlocked_message;
-            unlocked_message.set_command("UNLOCKED");
+            ed::message unlocked_message;
+            unlocked_message.set_command(cluck::g_name_cluck_cmd_unlocked);
             unlocked_message.set_server(f_server_name);
             unlocked_message.set_service(f_service_name);
             unlocked_message.add_parameter("object_name", f_object_name);
@@ -843,7 +852,7 @@ void snaplock_ticket::drop_ticket()
  * This function sends a reply to the server that requested the lock to
  * let it know that it somehow failed.
  *
- * The function replies with a LOCKFAILED when the lock was never
+ * The function replies with a LOCK_FAILED when the lock was never
  * obtained. In this case the origin server cannot access the resources.
  *
  * The function rep[ies with UNLOCKED when the lock timed out. The
@@ -867,7 +876,7 @@ void snaplock_ticket::drop_ticket()
  * not marked as being owned by this snaplock and as a result this
  * function only marks the ticket as failed.
  */
-void snaplock_ticket::lock_failed()
+void ticket::lock_failed()
 {
     if(!f_lock_failed)
     {
@@ -883,17 +892,23 @@ void snaplock_ticket::lock_failed()
             f_lock_timeout += f_unlock_duration;
         }
 
-        if(f_owner == f_snaplock->get_server_name())
+        if(f_owner == f_cluckd->get_server_name())
         {
             if(f_locked)
             {
                 // if we were locked and reach here, then the lock
                 // timed out while locked
                 //
-                SNAP_LOG_INFO("Lock on \"")(f_object_name)("\" with key \"")(f_entering_key)("\" timed out.");
+                SNAP_LOG_INFO
+                    << "Lock on \""
+                    << f_object_name
+                    << "\" with key \""
+                    << f_entering_key
+                    << "\" timed out."
+                    << SNAP_LOG_SEND;
 
-                snap::snap_communicator_message lock_failed_message;
-                lock_failed_message.set_command("UNLOCKED");
+                ed::message lock_failed_message;
+                lock_failed_message.set_command(cluck::g_name_cluck_cmd_unlocked);
                 lock_failed_message.set_server(f_server_name);
                 lock_failed_message.set_service(f_service_name);
                 lock_failed_message.add_parameter("object_name", f_object_name);
@@ -902,10 +917,16 @@ void snaplock_ticket::lock_failed()
             }
             else
             {
-                SNAP_LOG_INFO("Lock on \"")(f_object_name)("\" with key \"")(f_entering_key)("\" failed.");
+                SNAP_LOG_INFO
+                    << "Lock on \""
+                    << f_object_name
+                    << "\" with key \""
+                    << f_entering_key
+                    << "\" failed."
+                    << SNAP_LOG_SEND;
 
-                snap::snap_communicator_message lock_failed_message;
-                lock_failed_message.set_command("LOCKFAILED");
+                ed::message lock_failed_message;
+                lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
                 lock_failed_message.set_server(f_server_name);
                 lock_failed_message.set_service(f_service_name);
                 lock_failed_message.add_parameter("object_name", f_object_name);
@@ -919,7 +940,7 @@ void snaplock_ticket::lock_failed()
 
 /** \brief Define whether this ticket is the owner of that lock.
  *
- * Whenever comes time to send the LOCK, UNLOCK, or LOCKFAILED messages,
+ * Whenever comes time to send the LOCK, UNLOCK, or LOCK_FAILED messages,
  * only the owner is expected to send it. This flag tells us who the
  * owner is and thus who is responsible for sending that message.
  *
@@ -928,7 +949,7 @@ void snaplock_ticket::lock_failed()
  *
  * \param[in] owner  The name of this ticket owner.
  */
-void snaplock_ticket::set_owner(QString const & owner)
+void ticket::set_owner(std::string const & owner)
 {
     f_owner = owner;
 }
@@ -942,7 +963,7 @@ void snaplock_ticket::set_owner(QString const & owner)
  *
  * \return  The name of this ticket owner.
  */
-QString const & snaplock_ticket::get_owner() const
+std::string const & ticket::get_owner() const
 {
     return f_owner;
 }
@@ -958,20 +979,21 @@ QString const & snaplock_ticket::get_owner() const
  * This is not really information that the ticket is supposed to know about
  * but well... there is now a case where we need to know this.
  *
- * \return The name of this ticket owner.
+ * \return The process identifier of this ticket owner.
  */
-pid_t snaplock_ticket::get_client_pid() const
+pid_t ticket::get_client_pid() const
 {
-    snap::snap_string_list const segments(f_entering_key.split('/'));
-    if(segments.size() != 2)
+    std::vector<std::string> segments;
+    if(snapdev::tokenize_string(segments, f_entering_key, "/") != 2)
     {
-        throw snaplock_exception_content_invalid_usage(
-                  "snaplock_ticket::get_owner() split f_entering_key "
+        throw cluck::invalid_parameter(
+                  "ticket::get_client_pid() split f_entering_key "
                 + f_entering_key
                 + " and did not get exactly two segments.");
     }
-    bool ok(false);
-    return segments[1].toInt(&ok, 10);
+    std::int64_t value;
+    advgetopt::validator_integer::convert_string(segments[1], value);
+    return static_cast<pid_t>(value);
 }
 
 
@@ -992,7 +1014,7 @@ pid_t snaplock_ticket::get_client_pid() const
  *
  * \param[in] serial  The serial number of the ticket.
  */
-void snaplock_ticket::set_serial(serial_t serial)
+void ticket::set_serial(serial_t serial)
 {
     f_serial = serial;
 }
@@ -1005,7 +1027,7 @@ void snaplock_ticket::set_serial(serial_t serial)
  *
  * \return  The serial number of the ticket.
  */
-snaplock_ticket::serial_t snaplock_ticket::get_serial() const
+ticket::serial_t ticket::get_serial() const
 {
     return f_serial;
 }
@@ -1031,28 +1053,20 @@ snaplock_ticket::serial_t snaplock_ticket::get_serial() const
  * doing so increases the risk that two or more processes access the same
  * resource simultaneously.
  *
- * \param[in] duration  The number of seconds to acknowledge an UNLOCKED
+ * \param[in] duration  The amount of time to acknowledge an UNLOCKED
  *            event; after that the lock is released no matter what.
  */
-void snaplock_ticket::set_unlock_duration(int32_t duration)
+void ticket::set_unlock_duration(cluck::timeout_t duration)
 {
-    if(duration == snap::snap_lock::SNAP_UNLOCK_USES_LOCK_TIMEOUT)
+    if(duration == cluck::CLUCK_DEFAULT_TIMEOUT)
     {
         duration = f_lock_duration;
     }
 
-    if(duration < snap::snap_lock::SNAP_UNLOCK_MINIMUM_TIMEOUT)
-    {
-        f_unlock_duration = snap::snap_lock::SNAP_UNLOCK_MINIMUM_TIMEOUT;
-    }
-    else if(duration > snap::snap_lock::SNAP_MAXIMUM_TIMEOUT)
-    {
-        f_unlock_duration = snap::snap_lock::SNAP_MAXIMUM_TIMEOUT;
-    }
-    else
-    {
-        f_unlock_duration = duration;
-    }
+    f_unlock_duration = std::clamp(
+                              duration
+                            , cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
+                            , cluck::CLUCK_MAXIMUM_TIMEOUT);
 }
 
 
@@ -1064,7 +1078,7 @@ void snaplock_ticket::set_unlock_duration(int32_t duration)
  *
  * \return The unlock acknowledgement timeout duration.
  */
-snap::snap_lock::timeout_t snaplock_ticket::get_unlock_duration() const
+cluck::timeout_t ticket::get_unlock_duration() const
 {
     return f_unlock_duration;
 }
@@ -1083,11 +1097,11 @@ snap::snap_lock::timeout_t snaplock_ticket::get_unlock_duration() const
  *
  * \param[in] number  The ticket number to save in f_our_ticket.
  */
-void snaplock_ticket::set_ticket_number(ticket_id_t number)
+void ticket::set_ticket_number(ticket_id_t const number)
 {
     if(f_our_ticket != 0)
     {
-        throw std::logic_error("snaplock_ticket::set_ticket_number() called with "
+        throw cluck::logic_error("ticket::set_ticket_number() called with "
                 + std::to_string(number)
                 + " when f_our_ticket is already set to "
                 + std::to_string(f_our_ticket)
@@ -1095,12 +1109,14 @@ void snaplock_ticket::set_ticket_number(ticket_id_t number)
     }
     if(f_added_ticket)
     {
-        throw std::logic_error("snaplock_ticket::set_ticket_number() called when f_added_ticket is already true.");
+        throw cluck::logic_error("ticket::set_ticket_number() called when f_added_ticket is already true.");
     }
     f_added_ticket = true;
 
     f_our_ticket = number;
-    f_ticket_key = QString("%1/%2").arg(f_our_ticket, 8, 16, QChar('0')).arg(f_entering_key);
+    f_ticket_key = snapdev::int_to_hex(f_our_ticket, false, 8)
+                 + '/'
+                 + f_entering_key;
 }
 
 
@@ -1112,7 +1128,7 @@ void snaplock_ticket::set_ticket_number(ticket_id_t number)
  * on the owning leader. On the other two leaders, the ticket gets marked
  * as being ready once they receive the LOCKEXITING message.
  */
-void snaplock_ticket::set_ready()
+void ticket::set_ready()
 {
     f_ticket_ready = true;
 }
@@ -1130,7 +1146,7 @@ void snaplock_ticket::set_ready()
  *
  * \return The current ticket number.
  */
-snaplock_ticket::ticket_id_t snaplock_ticket::get_ticket_number() const
+ticket::ticket_id_t ticket::get_ticket_number() const
 {
     return f_our_ticket;
 }
@@ -1142,7 +1158,7 @@ snaplock_ticket::ticket_id_t snaplock_ticket::get_ticket_number() const
  *
  * \return true when the ticket was successfully locked at some point.
  */
-bool snaplock_ticket::is_locked() const
+bool ticket::is_locked() const
 {
     return f_locked;
 }
@@ -1156,7 +1172,7 @@ bool snaplock_ticket::is_locked() const
  *
  * \return The date when the obtention of the ticket timeouts.
  */
-time_t snaplock_ticket::get_obtention_timeout() const
+cluck::timeout_t ticket::get_obtention_timeout() const
 {
     return f_obtention_timeout;
 }
@@ -1178,7 +1194,8 @@ time_t snaplock_ticket::get_obtention_timeout() const
  * we limit this to 5 seconds) then we consider that this service
  * is not responsive and we cancel the lock altogether.
  *
- * To cancel this timeout, call the function with 0 in \p timeout.
+ * To cancel this timeout, call the function with cluck::timeout_t()
+ * in \p timeout (i.e. zero duration).
  *
  * \note
  * Since that message should happen while the snap_lock object
@@ -1189,11 +1206,11 @@ time_t snaplock_ticket::get_obtention_timeout() const
  *
  * \param[in] timeout  The time when the ALIVE message times out.
  */
-void snaplock_ticket::set_alive_timeout(time_t timeout)
+void ticket::set_alive_timeout(cluck::timeout_t timeout)
 {
-    if(timeout < 0)
+    if(timeout < cluck::timeout_t())
     {
-        timeout = 0;
+        timeout = cluck::timeout_t();
     }
 
     if(timeout < f_obtention_timeout)
@@ -1202,7 +1219,7 @@ void snaplock_ticket::set_alive_timeout(time_t timeout)
     }
     else
     {
-        // use the obtension timeout if smaller because that was the
+        // use the obtention timeout if smaller because that was the
         // first premise that the client asked about
         //
         f_alive_timeout = f_obtention_timeout;
@@ -1217,7 +1234,7 @@ void snaplock_ticket::set_alive_timeout(time_t timeout)
  *
  * \return The lock duration in seconds.
  */
-snap::snap_lock::timeout_t snaplock_ticket::get_lock_duration() const
+cluck::timeout_t ticket::get_lock_duration() const
 {
     return f_lock_duration;
 }
@@ -1234,7 +1251,7 @@ snap::snap_lock::timeout_t snaplock_ticket::get_lock_duration() const
  *
  * \return The date when the ticket will timeout or zero.
  */
-time_t snaplock_ticket::get_lock_timeout() const
+cluck::timeout_t ticket::get_lock_timeout() const
 {
     return f_lock_timeout;
 }
@@ -1247,7 +1264,7 @@ time_t snaplock_ticket::get_lock_timeout() const
  * If the lock is being re-requested (after the loss of a leader) then
  * the ALIVE timeout may be returned for a short period of time.
  *
- * If the lock was not yet obtained, this function returns the obtension
+ * If the lock was not yet obtained, this function returns the obtention
  * timeout timestamp. Once the lock was obtained, the lock timeout gets
  * defined and that one is returned instead.
  *
@@ -1256,9 +1273,9 @@ time_t snaplock_ticket::get_lock_timeout() const
  *
  * \return The date when the ticket will timeout or zero.
  */
-time_t snaplock_ticket::get_current_timeout() const
+cluck::timeout_t ticket::get_current_timeout() const
 {
-    if(f_alive_timeout > 0)
+    if(f_alive_timeout > cluck::timeout_t())
     {
         return f_alive_timeout;
     }
@@ -1284,11 +1301,11 @@ time_t snaplock_ticket::get_current_timeout() const
  *
  * \return true if the ticket timed out.
  */
-bool snaplock_ticket::timed_out() const
+bool ticket::timed_out() const
 {
     // Note: as long as f_locked is false, the f_lock_timeout value is zero
     //
-    return get_current_timeout() <= time(nullptr);
+    return get_current_timeout() <= snapdev::now();
 }
 
 
@@ -1299,7 +1316,7 @@ bool snaplock_ticket::timed_out() const
  *
  * \return The object name of the ticket.
  */
-QString const & snaplock_ticket::get_object_name() const
+std::string const & ticket::get_object_name() const
 {
     return f_object_name;
 }
@@ -1316,7 +1333,7 @@ QString const & snaplock_ticket::get_object_name() const
  *
  * \return The server name of the ticket.
  */
-QString const & snaplock_ticket::get_server_name() const
+std::string const & ticket::get_server_name() const
 {
     return f_server_name;
 }
@@ -1333,7 +1350,7 @@ QString const & snaplock_ticket::get_server_name() const
  *
  * \return The service name of the ticket.
  */
-QString const & snaplock_ticket::get_service_name() const
+std::string const & ticket::get_service_name() const
 {
     return f_service_name;
 }
@@ -1350,7 +1367,7 @@ QString const & snaplock_ticket::get_service_name() const
  *
  * \return The entering key of this ticket.
  */
-QString const & snaplock_ticket::get_entering_key() const
+std::string const & ticket::get_entering_key() const
 {
     return f_entering_key;
 }
@@ -1371,7 +1388,7 @@ QString const & snaplock_ticket::get_entering_key() const
  *
  * \return The ticket key.
  */
-QString const & snaplock_ticket::get_ticket_key() const
+std::string const & ticket::get_ticket_key() const
 {
     return f_ticket_key;
 }
@@ -1393,46 +1410,46 @@ QString const & snaplock_ticket::get_ticket_key() const
  *
  * \sa unserialize()
  */
-QString snaplock_ticket::serialize() const
+std::string ticket::serialize() const
 {
-    std::map<QString, QString> data;
+    std::map<std::string, std::string> data;
 
     data["object_name"]         = f_object_name;
-    data["obtention_timeout"]   = QString("%1").arg(f_obtention_timeout);
-    //data["alive_timeout"]       = QString("%1").arg(f_alive_timeout); -- we do not want to transfer this one
-    data["lock_duration"]       = QString("%1").arg(f_lock_duration);
-    data["unlock_duration"]     = QString("%1").arg(f_unlock_duration);
+    data["obtention_timeout"]   = f_obtention_timeout.to_timestamp(true);
+    //data["alive_timeout"]       = f_alive_timeout.to_timestamp(true); -- we do not want to transfer this one
+    data["lock_duration"]       = f_lock_duration.to_timestamp(true);
+    data["unlock_duration"]     = f_unlock_duration.to_timestamp(true);
     data["server_name"]         = f_server_name;
     data["service_name"]        = f_service_name;
     data["owner"]               = f_owner;
     if(f_serial != NO_SERIAL)
     {
-        data["serial"]          = QString("%1").arg(f_serial);
+        data["serial"]          = std::to_string(f_serial);
     }
     data["entering_key"]        = f_entering_key;
     data["get_max_ticket"]      = f_get_max_ticket ? "true" : "false";
-    data["our_ticket"]          = QString("%1").arg(f_our_ticket);
+    data["our_ticket"]          = std::to_string(f_our_ticket);
     data["added_ticket"]        = f_added_ticket ? "true" : "false";
     data["ticket_key"]          = f_ticket_key;
     data["added_ticket_quorum"] = f_added_ticket_quorum ? "true" : "false";
 
     // this is a map
-    //names["still_entering"]   = f_still_entering;
-    //snaplock_ticket::key_map_t      f_still_entering = snaplock_ticket::key_map_t();
+    //data["still_entering"]      = f_still_entering;
+    //ticket::key_map_t  f_still_entering = key_map_t();
 
     data["ticket_ready"]        = f_ticket_ready ? "true" : "false";
     data["locked"]              = f_locked ? "true" : "false";
-    data["lock_timeout"]        = QString("%1").arg(f_lock_timeout);
+    data["lock_timeout"]        = f_lock_timeout.to_timestamp(true);
     data["lock_failed"]         = f_lock_failed ? "true" : "false";
 
-    QString result;
+    std::string result;
     for(auto & it : data)
     {
         result += it.first;
-        result += QChar('=');
-        it.second.replace("|", "%7C");  // make sure the value does not include any ';'
-        result += it.second;
-        result += QChar('|');
+        result += '=';
+        // make sure the value does not include any '|'
+        result += snapdev::string_replace_many(it.second, {{"|", "%7C"}});
+        result += '|';
     }
 
     return result;
@@ -1452,131 +1469,155 @@ QString snaplock_ticket::serialize() const
  *
  * \param[in] data  The serialized data.
  */
-void snaplock_ticket::unserialize(QString const & data)
+void ticket::unserialize(std::string const & data)
 {
-    bool ok(false);
-    snap::snap_string_list const vars(data.split('|'));
+    std::vector<std::string> vars;
+    snapdev::NOT_USED(snapdev::tokenize_string(vars, data, "|"));
     for(auto const & d : vars)
     {
-        int const pos(d.indexOf('='));
-        QString const name(d.mid(0, pos));
-        QString const value(d.mid(pos + 1));
-        if(name == "object_name")
+        std::string::size_type const pos(d.find('='));
+        std::string const name(d.substr(0, pos));
+        std::string const value(d.substr(pos + 1));
+        switch(name[0])
         {
-#ifdef _DEBUG
-            if(f_object_name != value)
+        case 'a':
+            if(name == "added_ticket")
             {
-                throw std::logic_error(
-                            "snaplock_ticket::unserialize() not unserializing object name \""
-                            + std::string(value.toUtf8().data())
-                            + "\" over itself \""
-                            + std::string(f_object_name.toUtf8().data())
-                            + "\" (object name mismatch)."
-                        );
+                f_added_ticket = f_added_ticket || value == "true";
             }
-#endif
-            f_object_name = value;
-        }
-        else if(name == "obtention_timeout")
-        {
-            f_obtention_timeout = value.toLong(&ok, 10);
-        }
-        //else if(name == "alive_timeout") -- we do not transfer this one (not required, and could actually cause problems)
-        //{
-        //    f_alive_timeout = value.toLong(&ok, 10);
-        //}
-        else if(name == "lock_duration")
-        {
-            f_lock_duration = value.toLong(&ok, 10);
-        }
-        else if(name == "unlock_duration")
-        {
-            f_unlock_duration = value.toLong(&ok, 10);
-        }
-        else if(name == "server_name")
-        {
-            f_server_name = value;
-        }
-        else if(name == "service_name")
-        {
-            f_service_name = value;
-        }
-        else if(name == "owner")
-        {
-            f_owner = value;
-        }
-        else if(name == "serial")
-        {
-            f_serial = value.toLong(&ok, 10);
-        }
-        else if(name == "entering_key")
-        {
-#ifdef _DEBUG
-            if(f_entering_key != value)
+            else if(name == "added_ticket_quorum")
             {
-                throw std::logic_error(
-                            "snaplock_ticket::unserialize() not unserializing entering key \""
-                            + std::string(value.toUtf8().data())
-                            + "\" over itself \""
-                            + std::string(f_entering_key.toUtf8().data())
-                            + "\" (entering key mismatch)."
-                        );
+                f_added_ticket_quorum = f_added_ticket_quorum || value == "true";
             }
-#endif
-            f_entering_key = value;
-        }
-        else if(name == "get_max_ticket")
-        {
-            f_get_max_ticket = f_get_max_ticket || value == "true";
-        }
-        else if(name == "our_ticket")
-        {
-            f_our_ticket = value.toLong(&ok, 10);
-        }
-        else if(name == "added_ticket")
-        {
-            f_added_ticket = f_added_ticket || value == "true";
-        }
-        else if(name == "ticket_key")
-        {
-            f_ticket_key = value;
-        }
-        else if(name == "added_ticket_quorum")
-        {
-            f_added_ticket_quorum = f_added_ticket_quorum || value == "true";
-        }
+            //else if(name == "alive_timeout") -- we do not transfer this one (not required, and could actually cause problems)
+            //{
+            //    f_alive_timeout = cluck::timeout_t(value);
+            //}
+            break;
 
-        // this is a map
-        //names["still_entering"]   = f_still_entering;
-        //snaplock_ticket::key_map_t      f_still_entering = snaplock_ticket::key_map_t();
-
-        else if(name == "ticket_ready")
-        {
-            f_ticket_ready = f_ticket_ready || value == "true";
-        }
-        else if(name == "locked")
-        {
-            f_locked = f_locked || value == "true";
-        }
-        else if(name == "lock_timeout")
-        {
-            // the time may be larger because of an UNLOCK so we keep
-            // the largest value
-            //
-            time_t const timeout(value.toLong(&ok, 10));
-            if(timeout > f_lock_timeout)
+        case 'e':
+            if(name == "entering_key")
             {
-                f_lock_timeout = timeout;
+#ifdef _DEBUG
+                if(f_entering_key != value)
+                {
+                    throw cluck::logic_error(
+                                "ticket::unserialize() not unserializing entering key \""
+                                + value
+                                + "\" over itself \""
+                                + f_entering_key
+                                + "\" (entering key mismatch).");
+                }
+#endif
+                f_entering_key = value;
             }
-        }
-        else if(name == "lock_failed")
-        {
-            f_lock_failed = f_lock_failed || value == "true";
+            break;
+
+        case 'g':
+            if(name == "get_max_ticket")
+            {
+                f_get_max_ticket = f_get_max_ticket || value == "true";
+            }
+            break;
+
+        case 'l':
+            if(name == "lock_duration")
+            {
+                f_lock_duration = cluck::timeout_t(value);
+            }
+            else if(name == "locked")
+            {
+                f_locked = f_locked || value == "true";
+            }
+            else if(name == "lock_timeout")
+            {
+                // the time may be larger because of an UNLOCK so we keep
+                // the largest value
+                //
+                cluck::timeout_t const timeout(value);
+                if(timeout > f_lock_timeout)
+                {
+                    f_lock_timeout = timeout;
+                }
+            }
+            else if(name == "lock_failed")
+            {
+                f_lock_failed = f_lock_failed || value == "true";
+            }
+            break;
+
+        case 'o':
+            if(name == "object_name")
+            {
+#ifdef _DEBUG
+                if(f_object_name != value)
+                {
+                    throw cluck::logic_error(
+                                "ticket::unserialize() not unserializing object name \""
+                                + value
+                                + "\" over itself \""
+                                + f_object_name
+                                + "\" (object name mismatch).");
+                }
+#endif
+                f_object_name = value;
+            }
+            else if(name == "obtention_timeout")
+            {
+                f_obtention_timeout = cluck::timeout_t(value);
+            }
+            else if(name == "owner")
+            {
+                f_owner = value;
+            }
+            else if(name == "our_ticket")
+            {
+                std::int64_t v;
+                advgetopt::validator_integer::convert_string(value, v);
+                f_our_ticket = v;
+            }
+            break;
+
+        case 's':
+            if(name == "server_name")
+            {
+                f_server_name = value;
+            }
+            else if(name == "service_name")
+            {
+                f_service_name = value;
+            }
+            else if(name == "serial")
+            {
+                std::int64_t v;
+                advgetopt::validator_integer::convert_string(value, v);
+                f_serial = v;
+            }
+            break;
+
+        case 't':
+            if(name == "ticket_key")
+            {
+                f_ticket_key = value;
+            }
+            else if(name == "ticket_ready")
+            {
+                f_ticket_ready = f_ticket_ready || value == "true";
+            }
+            break;
+
+        case 'u':
+            if(name == "unlock_duration")
+            {
+                f_unlock_duration = cluck::timeout_t(value);
+            }
+            break;
+
         }
     }
 }
 
 
-}
-// snaplock namespace
+
+} // namespace cluck_daemon
 // vim: ts=4 sw=4 et
