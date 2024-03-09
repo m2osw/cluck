@@ -1,15 +1,15 @@
-# - Find AdvGetOpt
+# - Find Cluck
 #
-# ADVGETOPT_FOUND        - System has AdvGetOpt
-# ADVGETOPT_INCLUDE_DIRS - The AdvGetOpt include directories
-# ADVGETOPT_LIBRARIES    - The libraries needed to use AdvGetOpt
-# ADVGETOPT_DEFINITIONS  - Compiler switches required for using AdvGetOpt
+# CLUCK_FOUND        - System has Cluck
+# CLUCK_INCLUDE_DIRS - The Cluck include directories
+# CLUCK_LIBRARIES    - The libraries needed to use Cluck
+# CLUCK_DEFINITIONS  - Compiler switches required for using Cluck
 #
 # License:
 #
-# Copyright (c) 2011-2023  Made to Order Software Corp.  All Rights Reserved
+# Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
 #
-# https://snapwebsites.org/project/advgetopt
+# https://snapwebsites.org/project/cluck
 # contact@m2osw.com
 #
 # This program is free software: you can redistribute it and/or modify
@@ -26,37 +26,37 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 find_path(
-    ADVGETOPT_INCLUDE_DIR
-        advgetopt/advgetopt.h
+    CLUCK_INCLUDE_DIR
+        cluck/cluck.h
 
     PATHS
-        ENV ADVGETOPT_INCLUDE_DIR
+        ENV CLUCK_INCLUDE_DIR
 )
 
 find_library(
-    ADVGETOPT_LIBRARY
-        advgetopt
+    CLUCK_LIBRARY
+        cluck
 
     PATHS
-        ${ADVGETOPT_LIBRARY_DIR}
-        ENV ADVGETOPT_LIBRARY
+        ${CLUCK_LIBRARY_DIR}
+        ENV CLUCK_LIBRARY
 )    
 
 mark_as_advanced(
-    ADVGETOPT_INCLUDE_DIR
-    ADVGETOPT_LIBRARY
+    CLUCK_INCLUDE_DIR
+    CLUCK_LIBRARY
 )
 
-set(ADVGETOPT_INCLUDE_DIRS ${ADVGETOPT_INCLUDE_DIR})
-set(ADVGETOPT_LIBRARIES    ${ADVGETOPT_LIBRARY})
+set(CLUCK_INCLUDE_DIRS ${CLUCK_INCLUDE_DIR})
+set(CLUCK_LIBRARIES    ${CLUCK_LIBRARY})
 
 include(FindPackageHandleStandardArgs)
 
 find_package_handle_standard_args(
-    AdvGetOpt
+    Cluck
     REQUIRED_VARS
-        ADVGETOPT_INCLUDE_DIR
-        ADVGETOPT_LIBRARY
+        CLUCK_INCLUDE_DIR
+        CLUCK_LIBRARY
 )
 
 # vim: ts=4 sw=4 et nocindent
