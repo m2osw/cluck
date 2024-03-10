@@ -134,7 +134,11 @@ bool computer::set_id(std::string const & id)
     || value > PRIORITY_MAX)
     {
         SNAP_LOG_ERROR
-            << "priority is limited to a number between 0 and 15 inclusive."
+            << "priority is limited to a number between "
+            << PRIORITY_USER_MIN
+            << " and "
+            << PRIORITY_MAX
+            << " inclusive."
             << SNAP_LOG_SEND;
         return false;
     }

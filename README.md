@@ -82,9 +82,9 @@ are required (unless your cluster is only 1 or 2 nodes). Yet, using the
 ## Valid Election
 
 Our [election process](https://snapwebsites.org/project/cluckd)
-is probably better described online.
+is probably better described on our Snap! C++ website.
 
-A valid election ends by entering the _"Known Leaders"_ state.
+A valid election ends by entering the _"Leaders Known"_ state.
 
 The basics of the algorithm is a _minima_. Each node is given a unique
 identifier. The final three leaders are the three nodes with the

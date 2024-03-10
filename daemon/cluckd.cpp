@@ -514,9 +514,11 @@ cluckd::cluckd(int argc, char * argv[])
 
     // add ourselves to the list of computers
     //
-    // mark ourselves as connected, obviously
+    // mark ourselves as connected
     //
     // as a side effect: it generates our identifier
+    //
+    // TODO: this is too early because we do not yet have our IP address
     //
     f_computers[f_server_name] = std::make_shared<computer>(f_server_name, priority);
     f_computers[f_server_name]->set_start_time(f_start_time);
