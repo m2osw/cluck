@@ -86,18 +86,18 @@ public:
     std::string                 ticket_list() const;
     void                        send_lock_started(ed::message const * msg);
     void                        election_status();
-    void                        cluster_down();
-    void                        set_neighbors_count(int count);
 
     // messages received by the messenger which then calls the cluckd functions
+    // however, the messenger accesses all of them to setup the dispatcher
     //
     void                        msg_absolutely(ed::message & msg);
     void                        msg_activate_lock(ed::message & msg);
     void                        msg_add_ticket(ed::message & msg);
-    //void                        msg_cluster_up(snap::snap_communicator_message & message);
-    //void                        msg_cluster_down(snap::snap_communicator_message & message);
+    void                        msg_cluster_up(ed::message & msg);
+    void                        msg_cluster_down(ed::message & msg);
     void                        msg_drop_ticket(ed::message & msg);
     void                        msg_get_max_ticket(ed::message & msg);
+    void                        msg_list_tickets(ed::message & msg);
     void                        msg_lock(ed::message & msg);
     void                        msg_lock_activated(ed::message & msg);
     void                        msg_lock_entered(ed::message & msg);
@@ -106,6 +106,7 @@ public:
     void                        msg_lock_failed(ed::message & msg);
     void                        msg_lock_leaders(ed::message & msg);
     void                        msg_lock_started(ed::message & msg);
+    void                        msg_lock_status(ed::message & msg);
     void                        msg_lock_tickets(ed::message & msg);
     void                        msg_max_ticket(ed::message & msg);
     void                        msg_server_gone(ed::message & msg);
@@ -132,22 +133,22 @@ private:
 
     advgetopt::getopt                   f_opts;
     //snap::snap_config                   f_config;
+
     time_t                              f_start_time = -1;
-    std::string                         f_log_conf = std::string("/etc/cluck/logger/cluck.conf");
     std::string                         f_server_name = std::string();
-    std::string                         f_service_name = std::string("cluckd");
-    std::string                         f_communicator_addr = std::string("localhost");
-    int                                 f_communicator_port = 4040;
+//    std::string                         f_service_name = std::string("cluckd");
+//    std::string                         f_communicator_addr = std::string("localhost");
+//    int                                 f_communicator_port = 4040;
     ed::communicator::pointer_t         f_communicator = ed::communicator::pointer_t();
-    std::string                         f_host_list = std::string("localhost");
+//    std::string                         f_host_list = std::string("localhost");
     messenger::pointer_t                f_messenger = messenger::pointer_t();
     interrupt::pointer_t                f_interrupt = interrupt::pointer_t();
     timer::pointer_t                    f_timer = timer::pointer_t();
     info::pointer_t                     f_info = info::pointer_t();
     debug_info::pointer_t               f_debug_info = debug_info::pointer_t();
-    bool                                f_stop_received = false;
-    bool                                f_debug = false;
-    bool                                f_debug_lock_messages = false;
+//    bool                                f_stop_received = false;
+//    bool                                f_debug = false;
+//    bool                                f_debug_lock_messages = false;
     std::size_t                         f_neighbors_count = 0;
     std::size_t                         f_neighbors_quorum = 0;
     std::string                         f_my_id = std::string();

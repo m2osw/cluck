@@ -109,9 +109,11 @@ public:
 private:
     // this is owned by a snaplock function so no need for a smart pointer
     // (and it would create a loop)
+    //
     cluckd *                        f_cluckd = nullptr;
 
     // initialization
+    //
     messenger::pointer_t            f_messenger = messenger::pointer_t();
     std::string                     f_object_name = std::string();
     cluck::timeout_t                f_obtention_timeout = cluck::timeout_t();
@@ -124,26 +126,32 @@ private:
     serial_t                        f_serial = NO_SERIAL;
 
     // initialized, entering
+    //
     std::string                     f_entering_key = std::string();
     bool                            f_get_max_ticket = false;
 
     // entered, adding ticket
+    //
     ticket_id_t                     f_our_ticket = NO_TICKET;
     bool                            f_added_ticket = false;
     std::string                     f_ticket_key = std::string();
 
     // ticket added, exiting
+    //
     bool                            f_added_ticket_quorum = false;
     key_map_t                       f_still_entering = key_map_t();
 
     // exited, ticket ready
+    //
     bool                            f_ticket_ready = false;
 
     // locked
+    //
     bool                            f_locked = false;
     cluck::timeout_t                f_lock_timeout = cluck::timeout_t();
 
     // the lock did not take (in most cases, this is because of a timeout)
+    //
     bool                            f_lock_failed = false;
 };
 

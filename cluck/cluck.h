@@ -36,8 +36,8 @@ namespace cluck
 
 enum class mode_t
 {
-    CLUCK_MODE_SIMPLE,      // code executes without the need for events
-    CLUCK_MODE_EXTENDED     // code requires further message to be sent/received
+    CLUCK_MODE_SIMPLE,      // safe code executes without the need for additional asynchronous messages
+    CLUCK_MODE_EXTENDED     // safe code requires further messages to be sent/received
 };
 
 
@@ -47,6 +47,8 @@ enum class reason_t
     CLUCK_REASON_LOCAL_TIMEOUT,      // process_timeout() was called
     CLUCK_REASON_REMOTE_TIMEOUT,     // FAILED_LOCK was received with a "timeout" error
     CLUCK_REASON_DEADLOCK,           // FAILED_LOCK was received with a "deadlock" error
+    CLUCK_REASON_TRANSMISSION_ERROR, // communicatord could not forward the message to a cluckd
+    CLUCK_REASON_INVALID,            // communicatord did not like our message
 };
 
 
@@ -54,7 +56,8 @@ enum class type_t
 {
     CLUCK_TYPE_READ_WRITE,
     CLUCK_TYPE_READ_ONLY,
-    CLUCK_TYPE_READ_WRITE_PRIORITY, // prevent further READ-ONLY until done with this lock
+    CLUCK_TYPE_READ_WRITE_PRIORITY,     // prevent further READ-ONLY until done with this lock
+    CLUCK_TYPE_READ_WRITE_GENTLE,       // wait N seconds after the last READ-ONLY before attempting the READ-WRITE lock
 };
 
 
@@ -174,6 +177,7 @@ private:
     bool                is_cluck_msg(ed::message & msg) const;
     void                msg_locked(ed::message & msg);
     void                msg_lock_failed(ed::message & msg);
+    void                msg_transmission_report(ed::message & msg);
     void                msg_unlocked(ed::message & msg);
     void                msg_unlocking(ed::message & msg);
     void                set_reason(reason_t reason);

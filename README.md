@@ -2,82 +2,86 @@
 Inter Computer Exclusive Lock
 =============================
 
-The `snaplock` tool is used to quickly obtain locks between computers.
+The `cluck` project is used to obtain locks between computers.
 
 The implementation makes uses of two technologies for very high availability:
 
 1. The [Lamport's bakery algorithm](https://en.wikipedia.org/wiki/Lamport's_bakery_algorithm)
-which allows us to obtain the exclusive lock itself.
+   which allows us to obtain the exclusive lock itself.
 
 2. The QUORUM voting system which allows us to lose any number of computers
-participating to the bakery algorithm and still get locks.
+   participating to the bakery algorithm and still get locks.
+
+Contrary to most cluster lock, our implementation does not use one leader.
+Instead, it uses three which means losing one of the leaders does not
+prevent locks from being obtained as expected.
 
 
 Election Algorithm
 ==================
 
-Before locks can be provided, the `snaplock` service must reach a valid
-state. A valid `snaplock` state means:
+Before locks can be provided, the `cluckd` service must reach a valid
+state. A valid `cluckd` state means:
 
 * Cluster Up
-* Quorum of snaplocks
-* Enough snaplock that can be elected
-* Valid Elections
+* Quorum of cluckd services
+* Enough cluckd that can be elected
+* Valid Election
 
-Until the valid state is reached, `LOCK` requests can't be answered
-positively. What `snaplock` does during that time is register the lock
+Until the valid state is reached, `LOCK` requests cannot be answered
+positively. What `cluckd` does during that time is register the `LOCK`
 requests and if they don't time out before the valid state is reached,
-then an attempt is made in obtaining the lock.
+then attempts are made in obtaining the lock.
 
 
 ## Cluster Up
 
-Whenever a snapcommunicator daemon connects to another, it adds one to
+Whenever a `communicatord` daemon connects to another, it adds one to
 the total number of connections it has. Once that number is large enough
 (reaches a quorum) the cluster is considered to be up.
 
-Note that the cluster up status is enough to ensure valid election, however,
-we decided to also have a quorum of snaplocks before we move forward with
-the election.
+Note that the cluster up status is enough to ensure a valid election,
+however, we decided to also have a quorum of `cluckd` before we move
+forward with the election.
 
-The quorum for the cluster up even is calculated using the total number
-of snapcommunicators in your cluster. Say that number is `n`, the
+The quorum for the cluster up event is calculated using the total number
+of `communicatord` in your cluster. Say that number is `n`, the
 calculation is:
 
              n
     quorum = - + 1
              2
 
-In case you have a dynamic cluster, `n` may change over time. This is not
-currently supported, though. In this case, the snaplock daemons on
-those dynamic instances have to be removed from the list of candidates
-(i.e. by giving them a priority of 15.)
+In case you have a dynamic cluster, `n` may change over time and this is not
+currently supported. In this case, the `cluckd` daemons on those dynamic
+instances have to be removed from the list of candidates (i.e. by giving
+them the `"off"` priority).
 
 
-## Quorum of snaplocks
+## Quorum of `cluckd`
 
-This means have a number of snaplocks that are interconnected (have sent
-each others a LOCKREADY message) equal or larger than the quorum number
+This means have a number of `cluckd` that are interconnected (have sent
+each others a `LOCK_READY` message) equal or larger than the quorum number
 of nodes in your cluster. So if you have `n` nodes total, you must have:
 
              n
     quorum = - + 1
              2
 
-nodes that are interconnected before the election can even start.
+nodes that are interconnected before the election can start.
 
-**Note:** in reality, the number of snaplock daemons that are interconnected
-does not need to reach that quorum to get valid elections, yet our
-implementation still uses that quorum. A snaplock election would still be
+**Note:** in reality, the number of `cluckd` daemons that are interconnected
+does not need to reach that quorum to get a valid election, yet our
+implementation still uses that quorum. A `cluckd` election would still be
 valid whatever the number of candidates, although at least three candidates
-are required (unless your cluster is only 1 or 2 nodes.) Yet, using the
-snaplock daemon quorum is a much easier implementation than only a
-Cluster Up quorum.
+are required (unless your cluster is only 1 or 2 nodes). Yet, using the
+`cluckd` daemon quorum is a much easier implementation than only a
+**Cluster Up** quorum.
 
 
-## Valid Elections
+## Valid Election
 
-Our [election process](https://snapwebsites.org/project/snaplock)
+Our [election process](https://snapwebsites.org/project/cluckd)
 is probably better described online.
 
 A valid election ends by entering the _"Known Leaders"_ state.
@@ -86,7 +90,7 @@ The basics of the algorithm is a _minima_. Each node is given a unique
 identifier. The final three leaders are the three nodes with the
 smallest identifier. To reach the concensus, the node with the smallest
 IP address is in charge of calculating the results of the election.
-There can be only one such node within the snaplock quorum.
+There can be only one such node within the `cluckd` quorum.
 
 Just in case, we include an election date parameter. The election with
 the largest election date wins.
@@ -96,17 +100,18 @@ The identifiers are composed of the following parts:
 * priority -- a number from 0 to 15
     * a priority of 0 means that this instance is a leader
     * a priority of 15 means that this computer never participate in elections
+      (i.e. `"off"`)
 * random number -- a random number (32 bits)
 * IP address -- the IP and port of this computer to make the identifier unique
 * pid -- the process identifier, to make the identifier more unique
 * server name -- the name of the server that owns this node, useful to sort
-this out when the name is not otherwise available and also makes the
-identifier even more unique
+  this out when the name is not otherwise available and also makes the
+  identifier even more unique
 
-Whenever a snaplock daemon is started, it calculates its own identifier
+Whenever a `cluckd` daemon is started, it calculates its own identifier
 once at initialization time.
 
-Note: the priority of 15 should be used on nodes that should never become
+**Note:** the priority of 15 should be used on nodes that should never become
 leaders. This is particularly useful on dynamic nodes if you do not want
 leaders to come and go as those nodes are added and removed. Note also
 that means your cluster may need a greater connectivity than just a quorum
@@ -116,63 +121,63 @@ election.
 
 ## Messages Involved in the Election Process
 
-The election process mainly works using the LOCKREADY and
-LOCKLEADERS messages.
+The election process mainly works using the `LOCK_READY` and
+`LOCK_LEADERS` messages.
 
-It also uses the STATUS and CLUTERUP messages as these give the
-snaplock daemon an idea of which snaplock processes are still alive
-and which died.
+It also uses the `STATUS` and `CLUTER_UP` messages as these give the
+`cluckd` daemon an idea of which `cluckd` processes are alive and
+which are dead.
 
-The LOCKREADY message connects all the snaplock together.
+The `LOCK_READY` message connects all the `cluckd` together.
 
-The LOCKLEADERS is used whenever one of the nodes decided on the
+The `LOCK_LEADERS` is used whenever one of the nodes decided on the
 leaders. It broadcasts that information to the rest of the cluster.
-As soon as that happens, all the LOCKREADY messages will also
+As soon as that happens, all the `LOCK_READY` messages will also
 include the list of leaders to make sure no additional elections
 take place (which is important because the _minima_ is very likely
-to change each time an additional computer is added to the cluster.)
+to change each time an additional computer is added to the cluster).
 
 The basic process is as follow:
 
-     1. snaplock starts and gets initialized
+     1. `cluckd` starts and gets initialized
 
-     2. snaplock connects to snapcommunicator
+     2. `cluckd` connects to `communicatord`
 
-     3. snaplock sends a REGISTER message
+     3. `cluckd` sends a `REGISTER` message
 
-     4. snapcommunicator replies with READY
+     4. `communicatord` replies with `READY`
 
-     5. snaplock checks for the CLUSTERSTATUS with that message
+     5. `cluckd` checks for the `CLUSTER_STATUS` by sending that message
 
-     6. snaplock accepts STATUS messages, if too many go down, we may
-        drop the leaders
+     6. `cluckd` accepts `STATUS` messages, if too many `cluckd` go down,
+        we may drop the leaders
 
-     7. snaplock accepts CLUSTERDOWN messages, if received, kill the
+     7. `cluckd` accepts `CLUSTER_DOWN` messages, if received, kill the
         current status since it cannot be valid anymore, this instance
         cannot create locks anymore
 
-     8. snaplock receives a CLUSTERUP message, check the election status
-        and start sending LOCKREADY messages
+     8. `cluckd` receives a `CLUSTER_UP` message, check the election status
+        and start sending `LOCK_READY` messages
 
-     9. whenever snaplock receives a LOCKREADY, record the information
+     9. whenever `cluckd` receives a `LOCK_READY`, record the information
         if it was not yet available and then check the election status
 
-    10. if the election status changes to valid in a LOCKREADY, then
-        elect the leaders and send a LOCKLEADERS
+    10. if the election status changes to valid in a `LOCK_READY`, then
+        elect the leaders and send a `LOCK_LEADERS`
 
-    11. when receiving a LOCKLEADERS, register the new leaders
+    11. when receiving a `LOCK_LEADERS`, register the new leaders
 
 This is a rather simplified list of steps that are used to handle the
-snaplock elections. Steps 1 through 4 are initialization and should
+`cluckd` elections. Steps 1 through 4 are initialization and should
 happen only once. The other steps are asynchronous and happen as
 new messages are received.
-
 
 
 Lamport's bakery algorithm for the Lock
 =======================================
 
-This algorithm is shown on Wikipedia. However, we have two major differences:
+The [Lamport's bakery algorithm](https://en.wikipedia.org/wiki/Lamport's_bakery_algorithm)
+is shown on Wikipedia. However, we have two major differences:
 
 1. We use the algorithm to lock between any number of computers, not just
 one computer with multiple threads. Our algorithm is used to lock processes
@@ -191,10 +196,10 @@ sure that each computer has a different name. The index (`j` in the
 Wikipedia example) must be unique and we use the computer name for that
 purpose.
 
-In the Snap! environment, the `snapcommunicator` daemon is responsible
-for connecting computers together. If a `snapcommunicator` receives
-two requests from two different computers to `CONNECT` themselves to
-it and both have the same name, the second connection is always refused.
+In the Snap! environment, the `communicatord` daemon is responsible
+for connecting remote computers together. If a `communicatord` receives
+two requests from two different computers to `CONNECT` and both have the
+same name, the second connection is always refused.
 
 
 The QUORUM Agreement
@@ -206,7 +211,7 @@ of a Boolean (`Entering`) or an integer (`Number`).
 
 Since our implementation has one constraint: continue to function without
 interruption even when a computer goes down, we use a voting system
-between the `snaplock` daemons that are currently running.
+between the `cluckd` daemons that are currently running.
 
 This works in a way which is very similar to the Cassandra consistency
 level named QUORUM. We expect at least `N / 2 + 1` computers to accept
@@ -215,13 +220,13 @@ writes the value we sent to it and replies to the message with an
 acknowledgement. Once we get at least `N / 2 + 1` acknowledgement replies,
 we can move on to the next step.
 
-For example, the `ENTERING` message is sent by the `snaplock` daemon
+For example, the `ENTERING` message is sent by the `cluckd` daemon
 requiring a lock. This marks the specified computer and lock (each lock
-is given a "name" which most often is a URI) as `ENTERING`. So `snaplock`
-broadcast the message to all the other `snaplock` it knows about and waits
+is given a "name" which most often is a URI) as `ENTERING`. So `cluckd`
+broadcast the message to all the other `cluckd` it knows about and waits
 for them to reply with `ENTERED`. When they do so, they also save an
 object saying that this specific computer and lock are being entered.
-Once the first `snaplock` received enough `ENTERED` messages, it views
+Once the first `cluckd` received enough `ENTERED` messages, it views
 that one lock request as entered and it can start the next process:
 retrieve the largest ticket number. This works in a similar fashion,
 by sending another event and waiting for its acknowledgement.
@@ -258,23 +263,29 @@ We want to look into offering several ways to enter the `READ/WRITE`
 mode in order to make it nicer:
 
 1. hard locking--in this mode a `READ/WRITE` request is given a spot
-in the list of incoming locks. It blocks any further `READ-ONLY`
-locks so it gets its turn as fast as possible (as soon as all the
-existing `READ-ONLY` are done.) This is the default.
+   in the list of incoming locks. It blocks any further `READ-ONLY`
+   locks so it gets its turn as fast as possible (as soon as all the
+   existing `READ-ONLY` are done). This is the default.
+
+       cluck::type_t::CLUCK_TYPE_READ_WRITE_PRIORITY
 
 2. soft locking--in this mode, the `READ/WRITE` lock does not prevent
-further clients from obtaining the `READ-ONLY` lock. This means the
-`READ/WRITE` may not happen for some time (it does not lock its position
-in the lock FIFO.)
+   further clients from obtaining the `READ-ONLY` lock. This means the
+   `READ/WRITE` may not happen for some time (it does not lock its position
+   in the lock FIFO).
+
+       cluck::type_t::CLUCK_TYPE_READ_WRITE
 
 3. timed soft locking--like the _soft locking_ but further waits for a
-little while after the lock is obtainable before trying to obtain the
-lock. The idea behind this one is to allow a client to finish browsing,
-because one we get the `READ/WRITE` lock, the client won't be able to
-access the site for a while. The wait is calculated from the last
-`READ-ONLY` lock to the new `READ/WRITE` lock. It could be as long
-as 10 minutes. If no other `READ-ONLY` happened within 10 minutes,
-then go ahead and try to obtain the `READ/WRITE` lock and do your work.
+   little while after the lock is obtainable before trying to obtain the
+   lock. The idea behind this one is to allow a client to finish browsing,
+   because once we get the `READ/WRITE` lock, the client won't be able to
+   access the site for a while. The wait is calculated from the last
+   `READ-ONLY` lock to the new `READ/WRITE` lock. It could be as long
+   as 10 minutes. If no other `READ-ONLY` happened within 10 minutes,
+   then go ahead and try to obtain the `READ/WRITE` lock and do your work.
+
+       cluck::type_t::CLUCK_TYPE_READ_WRITE_GENTLE
 
 Any of these locks will have timeouts. If the timeout is passed before
 the lock can be obtained, the lock fails.

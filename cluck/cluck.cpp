@@ -27,6 +27,11 @@
 #include    <eventdispatcher/names.h>
 
 
+// communicatord
+//
+#include    <communicatord/names.h>
+
+
 // cppthread
 //
 #include    <cppthread/guard.h>
@@ -1151,6 +1156,56 @@ void set_unlock_timeout(timeout_t timeout)
  * CLUCK_DEFAULT_TIMEOUT. In that case, the corresponding global durations
  * are used at the time the corresponding timeout is necessary.
  *
+ * The following shows the preparation and demantlement of your client
+ * and the successful path of a cluck lock:
+ *
+ * \msc
+ *    client,communicatord,cluckd;
+ *
+ *    client->communicatord [label="REGISTER"];
+ *    communicatord->client [label="READY"];
+ *    communicatord->client [label="HELP"];
+ *    client->communicatord [label="COMMANDS"];
+ *    ...;
+ *    client->communicatord [label="LOCK"];
+ *    communicatord->cluckd [label="LOCK"];
+ *    cluckd->communicatord [label="LOCKED"];
+ *    communicatord->client [label="LOCKED"];
+ *    client=>client [label="lock_obtained_callbacks"];
+ *    client=>client [label="finally_callbacks"];
+ *    ...;
+ *    client->communicatord [label="UNLOCK"];
+ *    communicatord->cluckd [label="UNLOCK"];
+ *    cluckd->communicatord [label="UNLOCKED"];
+ *    communicatord->client [label="UNLOCKED"];
+ *    ...;
+ *    client->communicatord [label="UNREGISTER"];
+ * \endmsc
+ *
+ * \note
+ * If you use a simple lock, then the finally_callbacks are called after
+ * your client send an UNLOCK but before it received the UNLOCKED message.
+ *
+ * The following shows an unsuccessful lock:
+ *
+ * \msc
+ *    client,communicatord,cluckd;
+ *
+ *    client->communicatord [label="REGISTER"];
+ *    communicatord->client [label="READY"];
+ *    communicatord->client [label="HELP"];
+ *    client->communicatord [label="COMMANDS"];
+ *    ...;
+ *    client->communicatord [label="LOCK"];
+ *    communicatord->cluckd [label="LOCK"];
+ *    cluckd->communicatord [label="LOCK_FAILED"];
+ *    communicatord->client [label="LOCK_FAILED"];
+ *    client=>client [label="lock_failed_callbacks"];
+ *    client=>client [label="finally_callbacks"];
+ *    ...;
+ *    client->communicatord [label="UNREGISTER"];
+ * \endmsc
+ *
  * \param[in] object_name  The name of the lock.
  * \param[in] connection  The connection used to send messages.
  * \param[in] dispatcher  The dispatcher used to receive messages.
@@ -1612,6 +1667,14 @@ bool cluck::lock()
             , ed::Tag(f_tag)));
     f_dispatcher->add_match(unlocking);
 
+    ed::dispatcher_match transmission_report(ed::define_match(
+              ed::Expression(communicatord::g_name_communicatord_cmd_transmission_report)
+            , ed::Callback(std::bind(&cluck::msg_transmission_report, this, std::placeholders::_1))
+            , ed::MatchFunc(&ed::one_to_one_callback_match)
+            , ed::Tag(f_tag)
+            , ed::Priority(ed::dispatcher_match::DISPATCHER_MATCH_CALLBACK_PRIORITY)));
+    f_dispatcher->add_match(transmission_report);
+
     return true;
 }
 
@@ -1803,7 +1866,7 @@ bool cluck::is_cluck_msg(ed::message & msg) const
     }
 
     // the tag must match our tag -- this allows your process to support
-    // multiple locks (as long as each one has a different object name)
+    // more than one lock (as long as each one has a different object name)
     //
     if(msg.get_integer_parameter("tag") != f_tag)
     {
@@ -1927,6 +1990,13 @@ void cluck::lock_obtained()
  */
 void cluck::lock_failed()
 {
+    f_state = state_t::CLUCK_STATE_FAILED;
+
+    // disable our timer, we don't need to time out if the lock failed
+    // since we're done in this case
+    //
+    set_enable(false);
+
     f_lock_failed_callbacks.call(this);
 }
 
@@ -1994,14 +2064,63 @@ void cluck::msg_lock_failed(ed::message & msg)
         return;
     }
 
-    f_state = state_t::CLUCK_STATE_FAILED;
+    if(msg.has_parameter(g_name_cluck_param_error))
+    {
+        std::string const error(msg.get_parameter(g_name_cluck_param_error));
+        if(error == g_name_cluck_value_timedout)
+        {
+            set_reason(reason_t::CLUCK_REASON_REMOTE_TIMEOUT);
+        }
+        else
+        {
+            // this may be a programmer error that need fixing
+            //
+            SNAP_LOG_WARNING
+                << "communicatord did not like our LOCK message: "
+                << error
+                << '.'
+                << SNAP_LOG_SEND;
 
-    // disable our timer, we don't need to time out if the lock failed
-    // since we're done in this case
-    //
-    set_enable(false);
+            set_reason(reason_t::CLUCK_REASON_INVALID);
+        }
+    }
 
     lock_failed();
+}
+
+
+/** \brief Get a transmission report on errors.
+ *
+ * If the LOCK message cannot be sent, we receive a transmission error.
+ * At the moment, there are two possible reasons:
+ *
+ * \li The destination is not currently available and the message was cached
+ * \li The transmission failed because the requested service is not registered
+ *
+ * In case of a plain failure, we cancel the whole process.
+ *
+ * In case the message was cached, we can ignored the report since the
+ * message will eventually make it so it is not an immediate failure.
+ * In most cases, if cached, the timeout will let us know if the message
+ * does not make it.
+ *
+ * \param[in] msg  The TRANSMISSION_REPORT message.
+ */
+void cluck::msg_transmission_report(ed::message & msg)
+{
+    std::string const status(msg.get_parameter(communicatord::g_name_communicatord_param_status));
+    if(msg.get_command() == g_name_cluck_cmd_lock
+    && status == communicatord::g_name_communicatord_value_failed)
+    {
+        SNAP_LOG_RECOVERABLE_ERROR
+            << "the transmission of our \""
+            << msg.get_command()
+            << "\" message failed to travel to a cluckd service."
+            << SNAP_LOG_SEND;
+
+        set_reason(reason_t::CLUCK_REASON_TRANSMISSION_ERROR);
+        lock_failed();
+    }
 }
 
 

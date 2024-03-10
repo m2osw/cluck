@@ -151,7 +151,7 @@ void messenger::fluid_settings_changed(
         list_message.set_service(cluck::g_name_cluck_service_name);
         list_message.set_server(f_server_name);
         list_message.add_parameter("cache", "no");
-        list_message.add_parameter("transmission_report", "failure");
+        request_failure(list_message);
         send_message(list_message);
     }
 }
@@ -215,13 +215,13 @@ void messenger::msg_ticket_list(ed::message & msg)
  */
 void messenger::msg_transmission_report(ed::message & msg)
 {
-    std::string const status(msg.get_parameter("status"));
-    if(status == "failed")
+    std::string const status(msg.get_parameter(communicatord::g_name_communicatord_param_status));
+    if(status == communicatord::g_name_communicatord_value_failed)
     {
         SNAP_LOG_ERROR
-            << "the transmission of our "
+            << "the transmission of our \""
             << f_command
-            << " message failed to travel to a cluckd service"
+            << "\" message failed to travel to a cluckd service."
             << SNAP_LOG_SEND;
 
         stop(false);

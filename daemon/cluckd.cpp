@@ -452,7 +452,7 @@ cluckd::cluckd(int argc, char * argv[])
 //#ifdef _DEBUG
 //    // for test purposes (i.e. to run any number of snaplock on a single
 //    // computer) we allow the administrator to change the name of the
-//    // server, but only in a debug version
+//    // service, but only in a debug version
 //    //
 //    if(f_config.has_parameter("service_name"))
 //    {
@@ -985,40 +985,6 @@ std::string cluckd::ticket_list() const
 }
 
 
-void cluckd::set_neighbors_count(int count)
-{
-    f_neighbors_count = count;
-    f_neighbors_quorum = count / 2 + 1;
-
-    SNAP_LOG_INFO
-        << "cluster is up with "
-        << count
-        << " neighbors, attempt an election"
-           " then check for leaders by sending a LOCK_STARTED message."
-        << SNAP_LOG_SEND;
-}
-
-
-void cluckd::cluster_down()
-{
-    SNAP_LOG_INFO
-        << "cluster is down, canceling existing locks and we have to"
-           " refuse any further lock requests for a while."
-        << SNAP_LOG_SEND;
-
-    // in this case we cannot safely keep the leaders
-    //
-    f_leaders.clear();
-
-    // in case services listen to the NO_LOCK, let them know it's gone
-    //
-    check_lock_status();
-
-    // we do not call the lock_gone() because the HANGUP will be sent
-    // if required so we do not have to do that twice
-}
-
-
 void cluckd::election_status()
 {
     // we already have election results?
@@ -1274,451 +1240,6 @@ void cluckd::send_lock_started(ed::message const * msg)
 }
 
 
-void cluckd::msg_lock_leaders(ed::message & msg)
-{
-    f_election_date = msg.get_integer_parameter("election_date");
-
-    // save the new leaders in our own list
-    //
-    f_leaders.clear();
-    for(int idx(0); idx < 3; ++idx)
-    {
-        std::string const param_name("leader" + std::to_string(idx));
-        if(msg.has_parameter(param_name))
-        {
-            computer::pointer_t leader(std::make_shared<computer>());
-            std::string const lockid(msg.get_parameter(param_name));
-            if(leader->set_id(lockid))
-            {
-                computer::map_t::iterator exists(f_computers.find(leader->get_name()));
-                if(exists != f_computers.end())
-                {
-                    // it already exists, use our existing instance
-                    //
-                    f_leaders.push_back(exists->second);
-                }
-                else
-                {
-                    // we do not yet know of that computer, even though
-                    // it is a leader! (i.e. we are not yet aware that
-                    // somehow we are connected to it)
-                    //
-                    leader->set_connected(false);
-                    f_computers[leader->get_name()] = leader;
-
-                    f_leaders.push_back(leader);
-                }
-            }
-        }
-    }
-
-    if(!f_leaders.empty())
-    {
-        synchronize_leaders();
-
-        // set the round-robin position to a random value
-        //
-        // note: I know the result is likely skewed, c will be set to
-        // a number between 0 and 255 and modulo 3 means that you get
-        // one extra zero (255 % 3 == 0); however, there are 85 times
-        // 3 in 255 so it probably won't be noticeable.
-        //
-        std::uint8_t c;
-        RAND_bytes(reinterpret_cast<unsigned char *>(&c), sizeof(c));
-        f_next_leader = c % f_leaders.size();
-    }
-
-    // the is_ready() function depends on having f_leaders defined
-    // and when that happens we may need to empty our cache
-    //
-    check_lock_status();
-}
-
-
-/** \brief Called whenever a snaplock computer is acknowledging itself.
- *
- * This function gets called on a LOCK_STARTED event which is sent whenever
- * a snaplock process is initialized on a computer.
- *
- * The message is expected to include the computer name. At this time
- * we cannot handle having more than one instance one the same computer.
- *
- * \param[in] message  The LOCK_STARTED message.
- */
-void cluckd::msg_lock_started(ed::message & msg)
-{
-    // get the server name (that other server telling us it is ready)
-    //
-    std::string const server_name(msg.get_parameter("server_name"));
-    if(server_name.empty())
-    {
-        // name missing
-        //
-        throw cluck::invalid_message("cluckd::msg_lock_started(): Invalid server name (empty).");
-    }
-
-    // I do not think we would even message ourselves, but in case it happens
-    // the rest of the function does not support that case well
-    //
-    if(server_name == f_server_name)
-    {
-        return;
-    }
-
-    time_t const start_time(msg.get_integer_parameter("starttime"));
-
-    computer::map_t::iterator it(f_computers.find(server_name));
-    bool new_computer(it == f_computers.end());
-    if(new_computer)
-    {
-        // create a computer instance so we know it exists
-        //
-        computer::pointer_t computer(std::make_shared<computer>());
-
-        // fill the fields from the "lockid" parameter
-        //
-        if(!computer->set_id(msg.get_parameter("lockid")))
-        {
-            // this is not a valid identifier, ignore altogether
-            //
-            return;
-        }
-        computer->set_start_time(start_time);
-
-        f_computers[computer->get_name()] = computer;
-    }
-    else
-    {
-        if(!it->second->get_connected())
-        {
-            // we heard of this computer (because it is/was a leader) but
-            // we had not yet received a LOCKSTARTED message from it; so here
-            // we consider it a new computer and will reply to the LOCKSTARTED
-            //
-            new_computer = true;
-            it->second->set_connected(true);
-        }
-
-        if(it->second->get_start_time() != start_time)
-        {
-            // when the start time changes that means snaplock
-            // restarted which can happen without snapcommunicator
-            // restarting so here we would not know about the feat
-            // without this parameter and in this case it is very
-            // much the same as a new computer so send it a
-            // LOCKSTARTED message back!
-            //
-            new_computer = true;
-            it->second->set_start_time(start_time);
-        }
-    }
-
-    // keep the newest election results
-    //
-    if(msg.has_parameter("election_date"))
-    {
-        snapdev::timespec_ex const election_date(msg.get_timespec_parameter("election_date"));
-        if(election_date > f_election_date)
-        {
-            f_election_date = election_date;
-            f_leaders.clear();
-        }
-    }
-
-    bool const set_my_leaders(f_leaders.empty());
-    if(set_my_leaders)
-    {
-        for(int idx(0); idx < 3; ++idx)
-        {
-            std::string const param_name("leader" + std::to_string(idx));
-            if(msg.has_parameter(param_name))
-            {
-                computer::pointer_t leader(std::make_shared<computer>());
-                std::string const lockid(msg.get_parameter(param_name));
-                if(leader->set_id(lockid))
-                {
-                    computer::map_t::iterator exists(f_computers.find(leader->get_name()));
-                    if(exists != f_computers.end())
-                    {
-                        // it already exists, use our existing instance
-                        //
-                        f_leaders.push_back(exists->second);
-                    }
-                    else
-                    {
-                        // we do not yet know of that computer, even though
-                        // it is a leader! (i.e. we are not yet aware that
-                        // somehow we are connected to it)
-                        //
-                        leader->set_connected(false);
-                        f_computers[leader->get_name()] = leader;
-
-                        f_leaders.push_back(leader);
-                    }
-                }
-            }
-        }
-    }
-
-    election_status();
-
-    // this can have an effect on the lock statuses
-    //
-    check_lock_status();
-
-    if(new_computer)
-    {
-        // send a reply if that was a new computer
-        //
-        send_lock_started(&msg);
-    }
-}
-
-
-/** \brief Another snaplock is sending us its list of tickets.
- *
- * Whenever a snaplock dies, a new one is quickly promoted as a leader
- * and that new leader would have no idea about the existing tickets
- * (locks) so the other two send it a LOCKTICKETS message.
- *
- * The tickets are defined in the parameter of the same name using
- * the serialization function to transform the objects in a string.
- * Here we can unserialize that string accordingly.
- *
- * First we extract the object name and entering key to see whether
- * we have that ticket already defined. If so, then we unserialize
- * in that existing object. The extraction is additive so we can do
- * it any number of times.
- *
- * \param[in] msg  The message to reply to.
- */
-void cluckd::msg_lock_tickets(ed::message & msg)
-{
-    std::string const tickets(msg.get_parameter("tickets"));
-
-    // we have one ticket per line, so we first split per line and then
-    // work on lines one at a time
-    //
-    std::list<std::string> lines;
-    snapdev::tokenize_string(lines, tickets, "\n", true);
-    for(auto const & l : lines)
-    {
-        ticket::pointer_t t;
-        std::list<std::string> vars;
-        snapdev::tokenize_string(vars, tickets, "|", true);
-        auto object_name_value(std::find_if(
-                  vars.begin()
-                , vars.end()
-                , [](std::string const & vv)
-                {
-                    return vv.starts_with("object_name=");
-                }));
-        if(object_name_value != vars.end())
-        {
-            auto entering_key_value(std::find_if(
-                      vars.begin()
-                    , vars.end()
-                    , [](std::string const & vv)
-                    {
-                        return vv.starts_with("entering_key=");
-                    }));
-            if(entering_key_value != vars.end())
-            {
-                // extract the values which start after the '=' sign
-                //
-                std::string const object_name(object_name_value->substr(12));
-                std::string const entering_key(entering_key_value->substr(13));
-
-                auto entering_ticket(f_entering_tickets.find(object_name));
-                if(entering_ticket != f_entering_tickets.end())
-                {
-                    auto key_ticket(entering_ticket->second.find(entering_key));
-                    if(key_ticket != entering_ticket->second.end())
-                    {
-                        t = key_ticket->second;
-                    }
-                }
-                if(t == nullptr)
-                {
-                    auto obj_ticket(f_tickets.find(object_name));
-                    if(obj_ticket != f_tickets.end())
-                    {
-                        auto key_ticket(std::find_if(
-                                  obj_ticket->second.begin()
-                                , obj_ticket->second.end()
-                                , [&entering_key](auto const & o)
-                                {
-                                    return o.second->get_entering_key() == entering_key;
-                                }));
-                        if(key_ticket != obj_ticket->second.end())
-                        {
-                            t = key_ticket->second;
-                        }
-                    }
-                }
-
-                // ticket exists? if not create a new one
-                //
-                bool const new_ticket(t == nullptr);
-                if(new_ticket)
-                {
-                    // creaet a new ticket, some of the parameters are there just
-                    // because they are required; they will be replaced by the
-                    // unserialize call...
-                    //
-                    t = std::make_shared<ticket>(
-                                  this
-                                , f_messenger
-                                , object_name
-                                , entering_key
-                                , cluck::CLUCK_DEFAULT_TIMEOUT + snapdev::now()
-                                , cluck::CLUCK_DEFAULT_TIMEOUT
-                                , f_server_name
-                                , cluck::g_name_cluck_service_name);
-                }
-
-                t->unserialize(l);
-
-                // do a couple of additional sanity tests to
-                // make sure that we want to keep new tickets
-                //
-                // first make sure it is marked as "locked"
-                //
-                // second check that the owner is a leader that
-                // exists (the sender uses a LOCK message for
-                // locks that are not yet locked or require
-                // a new owner)
-                //
-                if(new_ticket
-                && t->is_locked())
-                {
-                    auto li(std::find_if(
-                              f_leaders.begin()
-                            , f_leaders.end()
-                            , [&t](auto const & c)
-                            {
-                                return t->get_owner() == c->get_name();
-                            }));
-                    if(li != f_leaders.end())
-                    {
-                        f_tickets[object_name][t->get_ticket_key()] = t;
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-/** \brief With the STATUS message we know of new communicatord services.
- *
- * This function captures the STATUS message and if it sees that the
- * name of the service is "remote communicator connection" then it
- * sends a new LOCK_STARTED message to make sure that all snaplock's
- * are aware of us.
- *
- * \param[in] msg  The LOCK_STARTED message.
- */
-void cluckd::msg_status(ed::message & msg)
-{
-    // check the service name, it has to be one that means it is a remote
-    // connection with another snapcommunicator
-    //
-    std::string const service(msg.get_parameter(communicatord::g_name_communicatord_param_service));
-
-    // TODO: the names probably changed as per the comments below...
-    //       we also want those names to be defined in names.an
-    if(service == "remote connection"                   // remote host connected to us
-    // "communicator local listener" ?
-    || service == "remote communicator connection")     // we connected to remote host
-    // "communicator remote listener" ?
-    {
-        // check what the status is now: "up" or "down"
-        //
-        std::string const status(msg.get_parameter(communicatord::g_name_communicatord_param_status));
-        if(status == communicatord::g_name_communicatord_value_up)
-        {
-            // we already broadcast a LOCK_STARTED from CLUSTER_UP
-            // and that's enough
-            //
-        }
-        else
-        {
-            // host is down, remove from our list of hosts
-            //
-            msg_server_gone(msg);
-        }
-    }
-}
-
-
-/** \brief Called whenever a remote connection is disconnected.
- *
- * This function is used to know that a remote connection was
- * disconnected.
- *
- * This function handles the HANGUP, DISCONNECTED, and STATUS(down)
- * nessages as required.
- *
- * This allows us to manage the f_computers list of computers running
- * cluckd services.
- *
- * \param[in] msg  The LOCK_STARTED message.
- */
-void cluckd::msg_server_gone(ed::message & msg)
-{
-    // was it a cluckd service at least?
-    //
-    std::string const server_name(msg.get_parameter("server_name"));
-    if(server_name.empty()
-    || server_name == f_server_name)
-    {
-        // we never want to remove ourselves?!
-        //
-        return;
-    }
-
-    // is "server_name" known?
-    //
-    auto it(f_computers.find(server_name));
-    if(it == f_computers.end())
-    {
-        // no computer found, nothing else to do here
-        //
-        return;
-    }
-
-    // got it, remove it
-    //
-    f_computers.erase(it);
-
-    // is that computer a leader?
-    //
-    auto li(std::find(
-              f_leaders.begin()
-            , f_leaders.end()
-            , it->second));
-    if(li != f_leaders.end())
-    {
-        f_leaders.erase(li);
-
-        // elect another computer in case the one we just erased was a leader
-        //
-        // (of course, no elections occur unless we are the computer with the
-        // smallest IP address)
-        //
-        election_status();
-
-        // if too many leaders were dropped, we may go back to the NO_LOCK status
-        //
-        // we only send a NO_LOCK if the election could not re-assign another
-        // computer as the missing leader(s)
-        //
-        check_lock_status();
-    }
-}
-
-
 /** \brief Called whenever we receive the STOP command or equivalent.
  *
  * This function makes sure the snaplock exits as quickly as
@@ -1768,1441 +1289,6 @@ void cluckd::stop(bool quitting)
         f_communicator->remove_connection(f_timer);
         f_timer.reset();
     }
-}
-
-
-/** \brief Try to get a set of parameters.
- *
- * This function attempts to get the specified set of parameters from the
- * specified message.
- *
- * The function throws if a parameter is missing or invalid (i.e. an
- * integer is not valid).
- *
- * \note
- * The timeout parameter is always viewed as optional. It is set to
- * "now + cluck::CLUCK_LOCK_DEFAULT_TIMEOUT" if undefined in the message.
- * If specified in the message, there is no minimum or maximum
- * (i.e. it may already have timed out).
- *
- * \exception snap_communicator_invalid_message
- * If a required parameter (object_name, client_pid, or key) is missing
- * then this exception is raised. You will have to fix your software
- * to avoid the exception.
- *
- * \param[in] message  The message from which we get parameters.
- * \param[out] object_name  A pointer to a QString that receives the object name.
- * \param[out] client_pid  A pointer to a pid_t that receives the client pid.
- * \param[out] timeout  A pointer to an cluck::timeout_t that receives the timeout date.
- * \param[out] key  A pointer to a QString that receives the key parameter.
- * \param[out] source  A pointer to a QString that receives the source parameter.
- *
- * \return true if all specified parameters could be retrieved.
- */
-void cluckd::get_parameters(
-      ed::message const & msg
-    , std::string * object_name
-    , pid_t * client_pid
-    , cluck::timeout_t * timeout
-    , std::string * key
-    , std::string * source)
-{
-    // get the "object name" (what we are locking)
-    // in Snap, the object name is often a URI plus the action we are performing
-    //
-    if(object_name != nullptr)
-    {
-        *object_name = msg.get_parameter("object_name");
-        if(object_name->empty())
-        {
-            // name missing
-            //
-            throw cluck::invalid_message(
-                  "cluckd::get_parameters(): Invalid object name."
-                  " We cannot lock the empty string.");
-        }
-    }
-
-    // get the pid (process identifier) of the process that is
-    // requesting the lock; this is important to be able to distinguish
-    // multiple processes on the same computer requesting a lock
-    //
-    if(client_pid != nullptr)
-    {
-        *client_pid = msg.get_integer_parameter("pid");
-        if(*client_pid < 1)
-        {
-            // invalid pid
-            //
-            throw cluck::invalid_message(
-                  "cluckd::get_parameters(): Invalid pid specified for a lock ("
-                + std::to_string(*client_pid)
-                + "). It must be a positive decimal number.");
-        }
-    }
-
-    // get the time limit we will wait up to before we decide we
-    // cannot obtain that lock
-    //
-    if(timeout != nullptr)
-    {
-        if(msg.has_parameter("timeout"))
-        {
-            // this timeout may already be out of date in which case
-            // the lock immediately fails
-            //
-            *timeout = msg.get_timespec_parameter("timeout");
-        }
-        else
-        {
-            *timeout = snapdev::now() + cluck::CLUCK_UNLOCK_DEFAULT_TIMEOUT;
-        }
-    }
-
-    // get the key of a ticket or entering object
-    //
-    if(key != nullptr)
-    {
-        *key = msg.get_parameter("key");
-        if(key->empty())
-        {
-            // key missing
-            //
-            throw cluck::invalid_message("cluckd::get_parameters(): A key cannot be an empty string.");
-        }
-    }
-
-    // get the key of a ticket or entering object
-    //
-    if(source != nullptr)
-    {
-        *source = msg.get_parameter("source");
-        if(source->empty())
-        {
-            // source missing
-            //
-            throw cluck::invalid_message("cluckd::get_parameters(): A source cannot be an empty string.");
-        }
-    }
-}
-
-
-/** \brief Lock the resource after confirmation that client is alive.
- *
- * This message is expected just after we sent an ALIVE message to
- * the client.
- *
- * Whenever a leader dies, we suspect that the client may have died
- * with it so we send it an ALIVE message to know whether it is worth
- * the trouble of entering that lock.
- *
- * \param[in] msg  The ABSOLUTELY message to handle.
- */
-void cluckd::msg_absolutely(ed::message & msg)
-{
-    std::string const serial(msg.get_parameter("serial"));
-    std::vector<std::string> segments;
-    snapdev::tokenize_string(segments, serial, "/");
-
-    if(segments[0] == "relock")
-    {
-        // check serial as defined in msg_lock()
-        // alive_message.add_parameter("serial", QString("relock/%1/%2").arg(object_name).arg(entering_key));
-        //
-        if(segments.size() != 4)
-        {
-            SNAP_LOG_WARNING
-                << "ABSOLUTELY reply has an invalid relock serial parameters \""
-                << serial
-                << "\" was expected to have exactly 4 segments."
-                << SNAP_LOG_SEND;
-
-            ed::message lock_failed_message;
-            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-            lock_failed_message.reply_to(msg);
-            lock_failed_message.add_parameter("object_name", "unknown");
-            lock_failed_message.add_parameter("error", "invalid");
-            f_messenger->send_message(lock_failed_message);
-
-            return;
-        }
-
-        // notice how the split() re-split the entering key
-        //
-        std::string const object_name(segments[1]);
-        std::string const server_name(segments[2]);
-        std::string const client_pid(segments[3]);
-
-        auto entering_ticket(f_entering_tickets.find(object_name));
-        if(entering_ticket != f_entering_tickets.end())
-        {
-            std::string const entering_key(server_name + '/' + client_pid);
-            auto key_ticket(entering_ticket->second.find(entering_key));
-            if(key_ticket != entering_ticket->second.end())
-            {
-                // remove the alive timeout
-                //
-                key_ticket->second->set_alive_timeout(cluck::timeout_t());
-
-                // got it! start the bakery algorithm
-                //
-                key_ticket->second->entering();
-            }
-        }
-    }
-
-    // ignore other messages
-}
-
-
-/** \brief Lock the named resource.
- *
- * This function locks the specified resource \p object_name. It returns
- * when the resource is locked or when the lock timeout is reached.
- *
- * See the snaplock_ticket class for more details about the locking
- * mechanisms (algorithm and MSC implementation).
- *
- * Note that if lock() is called with an empty string then the function
- * unlocks the lock and returns immediately with false. This is equivalent
- * to calling unlock().
- *
- * \note
- * The function reloads all the parameters (outside of the table) because
- * we need to support a certain amount of dynamism. For example, an
- * administrator may want to add a new host on the system. In that case,
- * the list of host changes and it has to be detected here.
- *
- * \attention
- * The function accepts a "serial" parameter in the message. This is only
- * used internally when a leader is lost and a new one is assigned a lock
- * which would otherwise fail.
- *
- * \warning
- * The object name is left available in the lock table. Do not use any
- * secure/secret name/word, etc. as the object name.
- *
- * \bug
- * At this point there is no proper protection to recover from errors
- * that would happen while working on locking this entry. This means
- * failures may result in a lock that never ends.
- *
- * \param[in] msg  The lock message.
- *
- * \return true if the lock was successful, false otherwise.
- *
- * \sa unlock()
- */
-void cluckd::msg_lock(ed::message & msg)
-{
-    std::string object_name;
-    pid_t client_pid(0);
-    cluck::timeout_t timeout;
-    get_parameters(msg, &object_name, &client_pid, &timeout, nullptr, nullptr);
-
-    // do some cleanup as well
-    //
-    cleanup();
-
-    // if we are a leader, create an entering key
-    //
-    std::string const server_name(msg.has_parameter("lock_proxy_server_name")
-                                ? msg.get_parameter("lock_proxy_server_name")
-                                : msg.get_sent_from_server());
-
-    std::string const service_name(msg.has_parameter("lock_proxy_service_name")
-                                ? msg.get_parameter("lock_proxy_service_name")
-                                : msg.get_sent_from_service());
-
-    std::string const entering_key(server_name + '/' + std::to_string(client_pid));
-
-    if(timeout <= snapdev::now())
-    {
-        SNAP_LOG_WARNING
-            << "Lock on \""
-            << object_name
-            << "\" / \""
-            << client_pid
-            << "\" timed out before we could start the locking process."
-            << SNAP_LOG_SEND;
-
-        ed::message lock_failed_message;
-        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-        lock_failed_message.reply_to(msg);
-        lock_failed_message.add_parameter("object_name", object_name);
-        lock_failed_message.add_parameter("key", entering_key);
-        lock_failed_message.add_parameter("error", "timedout");
-        f_messenger->send_message(lock_failed_message);
-
-        return;
-    }
-
-    cluck::timeout_t const duration(msg.get_timespec_parameter("duration"));
-    if(duration < cluck::CLUCK_MINIMUM_TIMEOUT)
-    {
-        // duration too small
-        //
-        SNAP_LOG_ERROR
-            << duration
-            << " is an invalid duration, the minimum accepted is "
-            << cluck::CLUCK_MINIMUM_TIMEOUT
-            << '.'
-            << SNAP_LOG_SEND;
-
-        ed::message lock_failed_message;
-        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-        lock_failed_message.reply_to(msg);
-        lock_failed_message.add_parameter("object_name", object_name);
-        lock_failed_message.add_parameter("key", entering_key);
-        lock_failed_message.add_parameter("error", "invalid");
-        f_messenger->send_message(lock_failed_message);
-
-        return;
-    }
-
-    cluck::timeout_t unlock_duration(cluck::CLUCK_DEFAULT_TIMEOUT);
-    if(msg.has_parameter("unlock_duration"))
-    {
-        unlock_duration = msg.get_timespec_parameter("unlock_duration");
-        if(unlock_duration < cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT)
-        {
-            // invalid duration, minimum is cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
-            //
-            SNAP_LOG_ERROR
-                << unlock_duration
-                << " is an invalid unlock duration, the minimum accepted is "
-                << cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
-                << '.'
-                << SNAP_LOG_SEND;
-
-            ed::message lock_failed_message;
-            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-            lock_failed_message.reply_to(msg);
-            lock_failed_message.add_parameter("object_name", object_name);
-            lock_failed_message.add_parameter("key", entering_key);
-            lock_failed_message.add_parameter("error", "invalid");
-            f_messenger->send_message(lock_failed_message);
-
-            return;
-        }
-    }
-
-    if(!is_ready())
-    {
-        SNAP_LOG_TRACE
-            << "caching LOCK message for \""
-            << object_name
-            << "\" as the cluck system is not yet considered ready."
-            << SNAP_LOG_SEND;
-
-        f_message_cache.emplace_back(timeout, msg);
-
-        // make sure the cache gets cleaned up if the message times out
-        //
-        std::int64_t const timeout_date(f_timer->get_timeout_date());
-        if(timeout_date == -1
-        || cluck::timeout_t(timeout_date / 1'000'000, timeout_date % 1'000'000) > timeout)
-        {
-            f_timer->set_timeout_date(timeout);
-        }
-        return;
-    }
-
-    if(is_leader() == nullptr)
-    {
-        // we are not a leader, we need to forward the message to one
-        // of the leaders instead
-        //
-        forward_message_to_leader(msg);
-        return;
-    }
-
-    // make sure this is a new ticket
-    //
-    auto entering_ticket(f_entering_tickets.find(object_name));
-    if(entering_ticket != f_entering_tickets.end())
-    {
-        auto key_ticket(entering_ticket->second.find(entering_key));
-        if(key_ticket != entering_ticket->second.end())
-        {
-            // if this is a re-LOCK, then it may be a legitimate duplicate
-            // in which case we do not want to generate a LOCK_FAILED error
-            //
-            if(msg.has_parameter("serial"))
-            {
-                ticket::serial_t const serial(msg.get_integer_parameter("serial"));
-                if(key_ticket->second->get_serial() == serial)
-                {
-                    // legitimate double request from leaders
-                    // (this happens when a leader dies and we have to restart
-                    // a lock negotiation)
-                    //
-                    return;
-                }
-            }
-
-            // the object already exists... do not allow duplicates
-            //
-            SNAP_LOG_ERROR
-                << "an entering ticket has the same object name \""
-                << object_name
-                << "\" and entering key \""
-                << entering_key
-                << "\"."
-                << SNAP_LOG_SEND;
-
-            ed::message lock_failed_message;
-            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-            lock_failed_message.reply_to(msg);
-            lock_failed_message.add_parameter("object_name", object_name);
-            lock_failed_message.add_parameter("key", entering_key);
-            lock_failed_message.add_parameter("error", "duplicate");
-            f_messenger->send_message(lock_failed_message);
-
-            return;
-        }
-    }
-
-    // make sure there is not a ticket with the same name already defined
-    //
-    // (this is is really important so we can actually properly UNLOCK an
-    // existing lock since we use the same search and if two entries were
-    // to be the same we could not know which to unlock; there are a few
-    // other places where such a search is used actually...)
-    //
-    auto obj_ticket(f_tickets.find(object_name));
-    if(obj_ticket != f_tickets.end())
-    {
-        auto key_ticket(std::find_if(
-                  obj_ticket->second.begin()
-                , obj_ticket->second.end()
-                , [&entering_key](auto const & t)
-                {
-                    return t.second->get_entering_key() == entering_key;
-                }));
-        if(key_ticket != obj_ticket->second.end())
-        {
-            // there is already a ticket with this name/entering key
-            //
-            SNAP_LOG_ERROR
-                << "a ticket has the same object name \""
-                << object_name
-                << "\" and entering key \""
-                << entering_key
-                << "\"."
-                << SNAP_LOG_SEND;
-
-            ed::message lock_failed_message;
-            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-            lock_failed_message.reply_to(msg);
-            lock_failed_message.add_parameter("object_name", object_name);
-            lock_failed_message.add_parameter("key", entering_key);
-            lock_failed_message.add_parameter("error", "duplicate");
-            f_messenger->send_message(lock_failed_message);
-
-            return;
-        }
-    }
-
-    ticket::pointer_t ticket(std::make_shared<ticket>(
-                                  this
-                                , f_messenger
-                                , object_name
-                                , entering_key
-                                , timeout
-                                , duration
-                                , server_name
-                                , service_name));
-
-    f_entering_tickets[object_name][entering_key] = ticket;
-
-    // finish up ticket initialization
-    //
-    ticket->set_unlock_duration(unlock_duration);
-
-    // generate a serial number for that ticket
-    //
-    f_ticket_serial = (f_ticket_serial + 1) & 0x00FFFFFF;
-    if(f_leaders[0]->get_id() != f_my_id)
-    {
-        if(f_leaders.size() >= 2
-        && f_leaders[1]->get_id() != f_my_id)
-        {
-            f_ticket_serial |= 1 << 24;
-        }
-        else if(f_leaders.size() >= 3
-             && f_leaders[2]->get_id() != f_my_id)
-        {
-            f_ticket_serial |= 2 << 24;
-        }
-    }
-    ticket->set_serial(f_ticket_serial);
-
-    if(msg.has_parameter("serial"))
-    {
-        // if we have a "serial" number in that message, we lost a leader
-        // and when that happens we are not unlikely to have lost the
-        // client that requested the LOCK, send an ALIVE message to make
-        // sure that the client still exists before entering the ticket
-        //
-        ticket->set_alive_timeout(snapdev::now() + cluck::timeout_t(5, 0));
-
-        ed::message alive_message;
-        alive_message.set_command(ed::g_name_ed_cmd_alive);
-        alive_message.set_server(server_name);
-        alive_message.set_service(service_name);
-        alive_message.add_parameter("serial", "relock/" + object_name + '/' + entering_key);
-        alive_message.add_parameter("timestamp", time(nullptr));
-        f_messenger->send_message(alive_message);
-    }
-    else
-    {
-        // act on the new ticket
-        //
-        ticket->entering();
-    }
-
-    // the list of tickets changed, make sure we update timeout timer
-    //
-    cleanup();
-}
-
-
-/** \brief Unlock the resource.
- *
- * This function unlocks the resource specified in the call to lock().
- *
- * \param[in] msg  The unlock message.
- *
- * \sa msg_lock()
- */
-void cluckd::msg_unlock(ed::message & msg)
-{
-    if(!is_ready())
-    {
-        SNAP_LOG_ERROR
-            << "received an UNLOCK when cluckd is not ready to receive lock related messages."
-            << SNAP_LOG_SEND;
-        return;
-    }
-
-    if(is_leader() == nullptr)
-    {
-        // we are not a leader, we need to forward to a leader to handle
-        // the message properly
-        //
-        forward_message_to_leader(msg);
-        return;
-    }
-
-    std::string object_name;
-    pid_t client_pid(0);
-    get_parameters(msg, &object_name, &client_pid, nullptr, nullptr, nullptr);
-
-    // if the ticket still exists, send the UNLOCKED and then erase it
-    //
-    auto obj_ticket(f_tickets.find(object_name));
-    if(obj_ticket != f_tickets.end())
-    {
-        std::string const server_name(msg.has_parameter("lock_proxy_server_name")
-                                    ? msg.get_parameter("lock_proxy_server_name")
-                                    : msg.get_sent_from_server());
-
-        //std::string const service_name(msg.has_parameter("lock_proxy_service_name")
-        //                            ? msg.get_parameter("lock_proxy_service_name")
-        //                            : msg.get_sent_from_service());
-
-        std::string const entering_key(server_name + '/' + std::to_string(client_pid));
-        auto key_ticket(std::find_if(
-                  obj_ticket->second.begin()
-                , obj_ticket->second.end()
-                , [&entering_key](auto const & t)
-                {
-                    return t.second->get_entering_key() == entering_key;
-                }));
-        if(key_ticket != obj_ticket->second.end())
-        {
-            // this function will send a DROPTICKET to the other leaders
-            // and the UNLOCKED to the source (unless we already sent the
-            // UNLOCKED which gets sent at most once.)
-            //
-            key_ticket->second->drop_ticket();
-
-            obj_ticket->second.erase(key_ticket);
-            if(obj_ticket->second.empty())
-            {
-                // we are done with this one!
-                //
-                f_tickets.erase(obj_ticket);
-            }
-        }
-else SNAP_LOG_WARNING << "and we could not find that key in that object's map..." << SNAP_LOG_SEND;
-    }
-
-    // reset the timeout with the other locks
-    //
-    cleanup();
-}
-
-
-/** \brief Remove a ticket we are done with (i.e. unlocked).
- *
- * This command drops the specified ticket (object_name).
- *
- * \param[in] msg  The entering message.
- */
-void cluckd::msg_lock_entering(ed::message & msg)
-{
-    std::string object_name;
-    cluck::timeout_t timeout;
-    std::string key;
-    std::string source;
-    get_parameters(msg, &object_name, nullptr, &timeout, &key, &source);
-
-    // the server_name and client_pid never include a slash so using
-    // such as separators is safe
-    //
-    if(timeout > snapdev::now())  // lock still in the future?
-    {
-        if(is_ready())              // still have leaders?
-        {
-            // the entering is just a flag (i.e. entering[i] = true)
-            // in our case the existance of a ticket is enough to know
-            // that we entered
-            //
-            bool allocate(true);
-            auto const obj_ticket(f_entering_tickets.find(object_name));
-            if(obj_ticket != f_entering_tickets.end())
-            {
-                auto const key_ticket(obj_ticket->second.find(key));
-                allocate = key_ticket == obj_ticket->second.end();
-            }
-            if(allocate)
-            {
-                // ticket does not exist, so create it now
-                // (note: ticket should only exist on originator)
-                //
-                cluck::timeout_t const duration(msg.get_timespec_parameter("duration"));
-                if(duration < cluck::CLUCK_MINIMUM_TIMEOUT)
-                {
-                    // invalid duration
-                    //
-                    SNAP_LOG_ERROR
-                        << duration
-                        << " is an invalid duration, the minimum accepted is "
-                        << cluck::CLUCK_MINIMUM_TIMEOUT
-                        << "."
-                        << SNAP_LOG_SEND;
-
-                    ed::message lock_failed_message;
-                    lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-                    lock_failed_message.reply_to(msg);
-                    lock_failed_message.add_parameter("object_name", object_name);
-                    lock_failed_message.add_parameter("key", key);
-                    lock_failed_message.add_parameter("error", "invalid");
-                    f_messenger->send_message(lock_failed_message);
-
-                    return;
-                }
-
-                cluck::timeout_t unlock_duration(cluck::CLUCK_DEFAULT_TIMEOUT);
-                if(msg.has_parameter("unlock_duration"))
-                {
-                    unlock_duration = msg.get_timespec_parameter("unlock_duration");
-                    if(unlock_duration != cluck::CLUCK_DEFAULT_TIMEOUT
-                    && unlock_duration < cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT)
-                    {
-                        // invalid duration, minimum is 60
-                        //
-                        SNAP_LOG_ERROR
-                            << duration
-                            << " is an invalid unlock duration, the minimum accepted is "
-                            << cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
-                            << "."
-                            << SNAP_LOG_SEND;
-
-                        ed::message lock_failed_message;
-                        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-                        lock_failed_message.reply_to(msg);
-                        lock_failed_message.add_parameter("object_name", object_name);
-                        lock_failed_message.add_parameter("key", key);
-                        lock_failed_message.add_parameter("error", "invalid");
-                        f_messenger->send_message(lock_failed_message);
-
-                        return;
-                    }
-                }
-
-                // we have to know where this message comes from
-                //
-                std::vector<std::string> source_segments;
-                if(snapdev::tokenize_string(source_segments, source, "/") != 2)
-                {
-                    SNAP_LOG_ERROR
-                        << "Invalid number of parameters in source parameter (found "
-                        << source_segments.size()
-                        << ", expected 2)."
-                        << SNAP_LOG_SEND;
-
-                    ed::message lock_failed_message;
-                    lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-                    lock_failed_message.reply_to(msg);
-                    lock_failed_message.add_parameter("object_name", object_name);
-                    lock_failed_message.add_parameter("key", key);
-                    lock_failed_message.add_parameter("error", "invalid");
-                    f_messenger->send_message(lock_failed_message);
-
-                    return;
-                }
-
-                ticket::pointer_t ticket(std::make_shared<ticket>(
-                                          this
-                                        , f_messenger
-                                        , object_name
-                                        , key
-                                        , timeout
-                                        , duration
-                                        , source_segments[0]
-                                        , source_segments[1]));
-
-                f_entering_tickets[object_name][key] = ticket;
-
-                // finish up on ticket initialization
-                //
-                ticket->set_owner(msg.get_sent_from_server());
-                ticket->set_unlock_duration(unlock_duration);
-                ticket->set_serial(msg.get_integer_parameter("serial"));
-            }
-
-            ed::message reply;
-            reply.set_command(cluck::g_name_cluck_cmd_lock_entered);
-            reply.reply_to(msg);
-            reply.add_parameter("object_name", object_name);
-            reply.add_parameter("key", key);
-            f_messenger->send_message(reply);
-        }
-        else
-        {
-            SNAP_LOG_DEBUG
-                << "received LOCK_ENTERING while we are thinking we are not ready."
-                << SNAP_LOG_SEND;
-        }
-    }
-
-    cleanup();
-}
-
-
-/** \brief Tell all the tickets that we received a LOCK_ENTERED message.
- *
- * This function calls all the tickets entered() function which
- * processes the LOCK_ENTERED message.
- *
- * We pass the key and "our ticket" number along so it can actually
- * create the ticket if required.
- *
- * \param[in] msg  The LOCK_ENTERED message.
- */
-void cluckd::msg_lock_entered(ed::message & msg)
-{
-    std::string object_name;
-    std::string key;
-    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
-
-    auto const obj_entering_ticket(f_entering_tickets.find(object_name));
-    if(obj_entering_ticket != f_entering_tickets.end())
-    {
-        auto const key_entering_ticket(obj_entering_ticket->second.find(key));
-        if(key_entering_ticket != obj_entering_ticket->second.end())
-        {
-            key_entering_ticket->second->entered();
-        }
-    }
-}
-
-
-/** \brief Remove a ticket we are done with (i.e. unlocked).
- *
- * This command drops the specified ticket (object_name).
- *
- * \param[in] msg  The entering message.
- */
-void cluckd::msg_lock_exiting(ed::message & msg)
-{
-    std::string object_name;
-    std::string key;
-    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
-
-    // when exiting we just remove the entry with that key
-    //
-    auto const obj_entering(f_entering_tickets.find(object_name));
-    if(obj_entering != f_entering_tickets.end())
-    {
-        auto const key_entering(obj_entering->second.find(key));
-        if(key_entering != obj_entering->second.end())
-        {
-            obj_entering->second.erase(key_entering);
-
-            // we also want to remove it from the ticket f_entering
-            // map if it is there (older ones are there!)
-            //
-            bool run_activation(false);
-            auto const obj_ticket(f_tickets.find(object_name));
-            if(obj_ticket != f_tickets.end())
-            {
-                for(auto const & key_ticket : obj_ticket->second)
-                {
-                    key_ticket.second->remove_entering(key);
-                    run_activation = true;
-                }
-            }
-            if(run_activation)
-            {
-                // try to activate the lock right now since it could
-                // very well be the only ticket and that is exactly
-                // when it is viewed as active!
-                //
-                // Note: this is from my old version, if I am correct
-                //       it cannot happen anymore because (1) this is
-                //       not the owner so the activation would not
-                //       take anyway and (2) the ticket is not going
-                //       to be marked as being ready at this point
-                //       (that happens later)
-                //
-                //       XXX we probably should remove this statement
-                //           and the run_activation flag which would
-                //           then be useless
-                //
-                activate_first_lock(object_name);
-            }
-
-            if(obj_entering->second.empty())
-            {
-                f_entering_tickets.erase(obj_entering);
-            }
-        }
-    }
-
-    // the list of tickets is not unlikely changed so we need to make
-    // a call to cleanup to make sure the timer is reset appropriately
-    //
-    cleanup();
-}
-
-
-/** \brief One of the snaplock processes asked for a ticket to be dropped.
- *
- * This function searches for the specified ticket and removes it from
- * this snaplock.
- *
- * If the specified ticket does not exist, nothing happens.
- *
- * \warning
- * The DROP_TICKET event receives either the ticket key (if available)
- * or the entering key (when the ticket key was not yet available.)
- * Note that the ticket key should always exists by the time a DROP_TICKET
- * happens, but just in case this allows the drop a ticket at any time.
- *
- * \param[in] msg  The message just received.
- */
-void cluckd::msg_drop_ticket(ed::message & msg)
-{
-    std::string object_name;
-    std::string key;
-    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
-
-    std::vector<std::string> segments;
-    snapdev::tokenize_string(segments, key, "/");
-
-    // drop the regular ticket
-    //
-    // if we have only 2 segments, then there is no corresponding ticket
-    // since tickets are added only once we have a ticket_id
-    //
-    std::string entering_key;
-    if(segments.size() == 3)
-    {
-        auto obj_ticket(f_tickets.find(object_name));
-        if(obj_ticket != f_tickets.end())
-        {
-            auto key_ticket(obj_ticket->second.find(key));
-            if(key_ticket != obj_ticket->second.end())
-            {
-                obj_ticket->second.erase(key_ticket);
-            }
-
-            if(obj_ticket->second.empty())
-            {
-                f_tickets.erase(obj_ticket);
-            }
-
-            // one ticket was erased, another may be first now
-            //
-            activate_first_lock(object_name);
-        }
-
-        // we received the ticket_id in the message, so
-        // we have to regenerate the entering_key without
-        // the ticket_id (which is the first element)
-        //
-        entering_key = segments[1] + '/' + segments[2];
-    }
-    else
-    {
-        // we received the entering_key in the message, use as is
-        //
-        entering_key = key;
-    }
-
-    // drop the entering ticket
-    //
-    auto obj_entering_ticket(f_entering_tickets.find(object_name));
-    if(obj_entering_ticket != f_entering_tickets.end())
-    {
-        auto key_entering_ticket(obj_entering_ticket->second.find(entering_key));
-        if(key_entering_ticket != obj_entering_ticket->second.end())
-        {
-            obj_entering_ticket->second.erase(key_entering_ticket);
-        }
-
-        if(obj_entering_ticket->second.empty())
-        {
-            f_entering_tickets.erase(obj_entering_ticket);
-        }
-    }
-
-    // the list of tickets is not unlikely changed so we need to make
-    // a call to cleanup to make sure the timer is reset appropriately
-    //
-    cleanup();
-}
-
-
-/** \brief Search for the largest ticket.
- *
- * This function searches the list of tickets for the largest one
- * and returns that number.
- *
- * \param[in] msg  The message just received.
- *
- * \return The largest ticket number that currently exist in the list
- *         of tickets.
- */
-void cluckd::msg_get_max_ticket(ed::message & msg)
-{
-    std::string object_name;
-    std::string key;
-    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
-
-    // remove any f_tickets that timed out by now because these should
-    // not be taken in account in the max. computation
-    //
-    cleanup();
-
-    ticket::ticket_id_t last_ticket(get_last_ticket(object_name));
-
-    ed::message reply;
-    reply.set_command(cluck::g_name_cluck_cmd_max_ticket);
-    reply.reply_to(msg);
-    reply.add_parameter("object_name", object_name);
-    reply.add_parameter("key", key);
-    reply.add_parameter("ticket_id", last_ticket);
-    f_messenger->send_message(reply);
-}
-
-
-/** \brief Search for the largest ticket.
- *
- * This function searches the list of tickets for the largest one
- * and records that number.
- *
- * If a quorum is reached when adding this ticket, then an ADD_TICKET reply
- * is sent back to the sender.
- *
- * \param[in] msg  The MAX_TICKET message being handled.
- */
-void cluckd::msg_max_ticket(ed::message & msg)
-{
-    std::string object_name;
-    std::string key;
-    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
-
-    // the MAX_TICKET is an answer that has to go in a still un-added ticket
-    //
-    auto const obj_entering_ticket(f_entering_tickets.find(object_name));
-    if(obj_entering_ticket != f_entering_tickets.end())
-    {
-        auto const key_entering_ticket(obj_entering_ticket->second.find(key));
-        if(key_entering_ticket != obj_entering_ticket->second.end())
-        {
-            key_entering_ticket->second->max_ticket(msg.get_integer_parameter("ticket_id"));
-        }
-    }
-}
-
-
-/** \brief Add a ticket from another snaplock.
- *
- * Tickets get duplicated on the snaplock leaders.
- *
- * \note
- * Although we only need a QUORUM number of nodes to receive a copy of
- * the data, the data still get broadcast to all the snaplock leaders.
- * After this message arrives any one of the snaplock process can
- * handle the unlock if the UNLOCK message gets sent to another process
- * instead of the one which first created the ticket. This is the point
- * of the implementation since we want to be fault tolerant (as in if one
- * of the leaders goes down, the locking mechanism still works.)
- *
- * \param[in] msg  The ADDTICKET message being handled.
- */
-void cluckd::msg_add_ticket(ed::message & msg)
-{
-    std::string object_name;
-    std::string key;
-    cluck::timeout_t timeout;
-    get_parameters(msg, &object_name, nullptr, &timeout, &key, nullptr);
-
-#ifdef _DEBUG
-    {
-        auto const obj_ticket(f_tickets.find(object_name));
-        if(obj_ticket != f_tickets.end())
-        {
-            auto const key_ticket(obj_ticket->second.find(key));
-            if(key_ticket != obj_ticket->second.end())
-            {
-                // this ticket exists on this system
-                //
-                throw cluck::logic_error("cluck::add_ticket() ticket already exists");
-            }
-        }
-    }
-#endif
-
-    // the client_pid parameter is part of the key (3rd segment)
-    //
-    std::vector<std::string> segments;
-    snapdev::tokenize_string(segments, key, "/");
-    if(segments.size() != 3)
-    {
-        SNAP_LOG_ERROR
-            << "Expected exactly 3 segments in \""
-            << key
-            << "\" to add a ticket."
-            << SNAP_LOG_SEND;
-
-        ed::message lock_failed_message;
-        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-        lock_failed_message.reply_to(msg);
-        lock_failed_message.add_parameter("object_name", object_name);
-        lock_failed_message.add_parameter("key", key);
-        lock_failed_message.add_parameter("error", "invalid");
-        f_messenger->send_message(lock_failed_message);
-
-        return;
-    }
-
-    // TODO: we probably want to look in a function which returns false
-    //       instead of having to do a try/catch
-    //
-    bool ok(true);
-    std::uint32_t number(0);
-    try
-    {
-        number = snapdev::hex_to_int<std::uint32_t>(segments[0]);
-    }
-    catch(snapdev::hexadecimal_string_exception const &)
-    {
-        ok = false;
-    }
-    catch(snapdev::hexadecimal_string_out_of_range const &)
-    {
-        ok = false;
-    }
-    if(!ok)
-    {
-        SNAP_LOG_ERROR
-            << "somehow ticket number \""
-            << segments[0]
-            << "\" is not a valid hexadecimal number"
-            << SNAP_LOG_SEND;
-
-        ed::message lock_failed_message;
-        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-        lock_failed_message.reply_to(msg);
-        lock_failed_message.add_parameter("object_name", object_name);
-        lock_failed_message.add_parameter("key", key);
-        lock_failed_message.add_parameter("error", "invalid");
-        f_messenger->send_message(lock_failed_message);
-
-        return;
-    }
-
-    // by now all the leaders should already have
-    // an entering ticket for that one ticket
-    //
-    auto const obj_entering_ticket(f_entering_tickets.find(object_name));
-    if(obj_entering_ticket == f_entering_tickets.end())
-    {
-        SNAP_LOG_ERROR
-            << "Expected entering ticket object for \""
-            << object_name
-            << "\" not found when adding a ticket."
-            << SNAP_LOG_SEND;
-
-        ed::message lock_failed_message;
-        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-        lock_failed_message.reply_to(msg);
-        lock_failed_message.add_parameter("object_name", object_name);
-        lock_failed_message.add_parameter("key", key);
-        lock_failed_message.add_parameter("error", "invalid");
-        f_messenger->send_message(lock_failed_message);
-
-        return;
-    }
-
-    // the key we need to search is not the new ticket key but the
-    // entering key, build it from the segments
-    //
-    std::string const entering_key(segments[1] + '/' + segments[2]);
-    auto const key_entering_ticket(obj_entering_ticket->second.find(entering_key));
-    if(key_entering_ticket == obj_entering_ticket->second.end())
-    {
-        SNAP_LOG_ERROR
-            << "Expected entering ticket key for \""
-            << object_name
-            << "\" not found when adding a ticket."
-            << SNAP_LOG_SEND;
-
-        ed::message lock_failed_message;
-        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-        lock_failed_message.reply_to(msg);
-        lock_failed_message.add_parameter("object_name", object_name);
-        lock_failed_message.add_parameter("key", key);
-        lock_failed_message.add_parameter("error", "invalid");
-        f_messenger->send_message(lock_failed_message);
-
-        return;
-    }
-
-    // make it an official ticket now
-    //
-    // this should happen on all snaplock other than the one that
-    // first received the LOCK message
-    //
-    set_ticket(object_name, key, key_entering_ticket->second);
-
-    // WARNING: the set_ticket_number() function has the same side
-    //          effects as the add_ticket() function without the
-    //          f_messenger->send_message() call
-    //
-    f_tickets[object_name][key]->set_ticket_number(number);
-
-    ed::message ticket_added_message;
-    ticket_added_message.set_command(cluck::g_name_cluck_cmd_ticket_added);
-    ticket_added_message.reply_to(msg);
-    ticket_added_message.add_parameter("object_name", object_name);
-    ticket_added_message.add_parameter("key", key);
-    f_messenger->send_message(ticket_added_message);
-}
-
-
-/** \brief Acknowledgement that the ticket was properly added.
- *
- * This function gets called whenever the ticket was added on another
- * leader.
- *
- * \param[in] msg  The TICKET_ADDED message being handled.
- */
-void cluckd::msg_ticket_added(ed::message & msg)
-{
-    std::string object_name;
-    std::string key;
-    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
-
-    auto const obj_ticket(f_tickets.find(object_name));
-    if(obj_ticket != f_tickets.end())
-    {
-        auto const key_ticket(obj_ticket->second.find(key));
-        if(key_ticket != obj_ticket->second.end())
-        {
-            // this ticket exists on this system
-            //
-            auto const obj_entering_ticket(f_entering_tickets.find(object_name));
-            if(obj_entering_ticket == f_entering_tickets.end())
-            {
-                // this happens all the time because the entering ticket
-                // gets removed on the first TICKETADDED we receive so
-                // on the second one we get here...
-                //
-                SNAP_LOG_TRACE
-                    << "called with object \""
-                    << object_name
-                    << "\" not present in f_entering_ticket (key: \""
-                    << key
-                    << "\".)"
-                    << SNAP_LOG_SEND;
-                return;
-            }
-            key_ticket->second->ticket_added(obj_entering_ticket->second);
-        }
-        else
-        {
-            SNAP_LOG_DEBUG
-                << "found object \""
-                << object_name
-                << "\" but could not find a ticket with key \""
-                << key
-                << "\"..."
-                << SNAP_LOG_SEND;
-        }
-    }
-    else
-    {
-        SNAP_LOG_DEBUG
-            << "object \""
-            << object_name
-            << "\" not found."
-            << SNAP_LOG_SEND;
-    }
-}
-
-
-/** \brief Let other leaders know that the ticket is ready.
- *
- * This message is received when the owner of a ticket marks a
- * ticket as ready. This means the ticket is available for locking.
- *
- * \param[in] msg  The TICKET_READY message.
- */
-void cluckd::msg_ticket_ready(ed::message & msg)
-{
-    std::string object_name;
-    std::string key;
-    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
-
-    auto obj_ticket(f_tickets.find(object_name));
-    if(obj_ticket != f_tickets.end())
-    {
-        auto key_ticket(obj_ticket->second.find(key));
-        if(key_ticket != obj_ticket->second.end())
-        {
-            // we can mark this ticket as activated
-            //
-            key_ticket->second->set_ready();
-        }
-    }
-}
-
-
-/** \brief Acknowledge the ACTIVATELOCK with what we think is our first lock.
- *
- * This function replies to an ACTIVATELOCK request with what we think is
- * the first lock for the spcified object.
- *
- * Right now, we disregard the specified key. There is nothing we can really
- * do with it here.
- *
- * If we do not have a ticket for the specified object (something that could
- * happen if the ticket just timed out) then we still have to reply, only
- * we let the other leader know that we have no clue what he is talking about.
- *
- * \param[in] msg  The message being processed.
- */
-void cluckd::msg_activate_lock(ed::message & msg)
-{
-    std::string object_name;
-    std::string key;
-    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
-
-    std::string first_key("no-key");
-
-    auto ticket(find_first_lock(object_name));
-    if(ticket != nullptr)
-    {
-        // found it!
-        //
-        first_key = ticket->get_ticket_key();
-
-        if(key == first_key)
-        {
-            // we can mark this ticket as activated
-            //
-            ticket->lock_activated();
-        }
-    }
-
-    // always reply, if we could not find the key, then we returned 'no-key'
-    // as the key parameter
-    //
-    ed::message lock_activated_message;
-    lock_activated_message.set_command(cluck::g_name_cluck_cmd_lock_activated);
-    lock_activated_message.reply_to(msg);
-    lock_activated_message.add_parameter("object_name", object_name);
-    lock_activated_message.add_parameter("key", key);
-    lock_activated_message.add_parameter("other_key", first_key);
-    f_messenger->send_message(lock_activated_message);
-
-    // the list of tickets is not unlikely changed so we need to make
-    // a call to cleanup to make sure the timer is reset appropriately
-    //
-    cleanup();
-}
-
-
-/** \brief Acknowledgement of the lock to activate.
- *
- * This function is an acknowledgement that the lock can now be
- * activated. This is true only if the 'key' and 'other_key'
- * are a match, though.
- *
- * \param[in] msg  The message to be managed.
- */
-void cluckd::msg_lock_activated(ed::message & msg)
-{
-    std::string object_name;
-    std::string key;
-    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
-
-    std::string const & other_key(msg.get_parameter("other_key"));
-    if(other_key == key)
-    {
-        auto obj_ticket(f_tickets.find(object_name));
-        if(obj_ticket != f_tickets.end())
-        {
-            auto key_ticket(obj_ticket->second.find(key));
-            if(key_ticket != obj_ticket->second.end())
-            {
-                // that key is still here!
-                // time to activate
-                //
-                key_ticket->second->lock_activated();
-            }
-        }
-    }
-}
-
-
-/** \brief Acknowledgement a lock failure.
- *
- * This function handles the LOCKFAILED event that another leader may send
- * to us. In that case we have to stop the process.
- *
- * LOCKFAILED can happen mainly because of tainted data so we should never
- * get here within a leader. However, with time we may add a few errors
- * which could happen for other reasons than just tainted data.
- *
- * When this function finds an entering ticket or a plain ticket to remove
- * according to the object name and key found in the LOCKFAILED message,
- * it forwards the LOCKFAILED message to the server and service found in
- * the ticket.
- *
- * \todo
- * This function destroys a ticket even if it is already considered locked.
- * Make double sure that this is okay with a LOCKFAILED sent to the client.
- *
- * \warning
- * Although this event should not occur, it is problematic since anyone
- * can send a LOCKFAILED message here and as a side effect destroy a
- * perfectly valid ticket.
- *
- * \param[in] msg  The message to be managed.
- */
-void cluckd::msg_lock_failed(ed::message & msg)
-{
-    std::string object_name;
-    std::string key;
-    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
-
-    std::string forward_server;
-    std::string forward_service;
-
-    // remove f_entering_tickets entries if we find matches there
-    //
-    auto obj_entering(f_entering_tickets.find(object_name));
-    if(obj_entering != f_entering_tickets.end())
-    {
-        auto key_entering(obj_entering->second.find(key));
-        if(key_entering != obj_entering->second.end())
-        {
-            forward_server = key_entering->second->get_server_name();
-            forward_service = key_entering->second->get_service_name();
-
-            obj_entering->second.erase(key_entering);
-        }
-
-        if(obj_entering->second.empty())
-        {
-            obj_entering = f_entering_tickets.erase(obj_entering);
-        }
-        else
-        {
-            ++obj_entering;
-        }
-    }
-
-    // remove any f_tickets entries if we find matches there
-    //
-    auto obj_ticket(f_tickets.find(object_name));
-    if(obj_ticket != f_tickets.end())
-    {
-        bool try_activate(false);
-        auto key_ticket(obj_ticket->second.find(key));
-        if(key_ticket == obj_ticket->second.end())
-        {
-            key_ticket = std::find_if(
-                      obj_ticket->second.begin()
-                    , obj_ticket->second.end()
-                    , [&key](auto const & t)
-                    {
-                        return t.second->get_entering_key() == key;
-                    });
-        }
-        if(key_ticket != obj_ticket->second.end())
-        {
-            // Note: if we already found it in the f_entering_tickets then
-            //       the server and service names are going to be exactly
-            //       the same so there is no need to test that here
-            //
-            forward_server = key_ticket->second->get_server_name();
-            forward_service = key_ticket->second->get_service_name();
-
-            obj_ticket->second.erase(key_ticket);
-            try_activate = true;
-        }
-
-        if(obj_ticket->second.empty())
-        {
-            obj_ticket = f_tickets.erase(obj_ticket);
-        }
-        else
-        {
-            if(try_activate)
-            {
-                // something was erased, a new ticket may be first
-                //
-                activate_first_lock(obj_ticket->first);
-            }
-
-            ++obj_ticket;
-        }
-    }
-
-    if(!forward_server.empty()
-    && !forward_service.empty())
-    {
-        // we deleted an entry, forward the message to the service
-        // that requested that lock
-        //
-        msg.set_server(forward_server);
-        msg.set_service(forward_service);
-        f_messenger->send_message(msg);
-    }
-
-    // the list of tickets is not unlikely changed so we need to make
-    // a call to cleanup to make sure the timer is reset appropriately
-    //
-    cleanup();
 }
 
 
@@ -3604,7 +1690,7 @@ void cluckd::cleanup()
             lock_failed_message.reply_to(c->f_message);
             lock_failed_message.add_parameter("object_name", object_name);
             lock_failed_message.add_parameter("key", entering_key);
-            lock_failed_message.add_parameter("error", "timedout");
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_timedout);
             f_messenger->send_message(lock_failed_message);
 
             c = f_message_cache.erase(c);
@@ -3837,6 +1923,1987 @@ std::string cluckd::serialized_tickets()
     }
 
     return result.str();
+}
+
+
+/** \brief Try to get a set of parameters.
+ *
+ * This function attempts to get the specified set of parameters from the
+ * specified message.
+ *
+ * The function throws if a parameter is missing or invalid (i.e. an
+ * integer is not valid).
+ *
+ * \note
+ * The timeout parameter is always viewed as optional. It is set to
+ * "now + cluck::CLUCK_LOCK_DEFAULT_TIMEOUT" if undefined in the message.
+ * If specified in the message, there is no minimum or maximum
+ * (i.e. it may already have timed out).
+ *
+ * \exception snap_communicator_invalid_message
+ * If a required parameter (object_name, client_pid, or key) is missing
+ * then this exception is raised. You will have to fix your software
+ * to avoid the exception.
+ *
+ * \param[in] message  The message from which we get parameters.
+ * \param[out] object_name  A pointer to a QString that receives the object name.
+ * \param[out] client_pid  A pointer to a pid_t that receives the client pid.
+ * \param[out] timeout  A pointer to an cluck::timeout_t that receives the timeout date.
+ * \param[out] key  A pointer to a QString that receives the key parameter.
+ * \param[out] source  A pointer to a QString that receives the source parameter.
+ *
+ * \return true if all specified parameters could be retrieved.
+ */
+void cluckd::get_parameters(
+      ed::message const & msg
+    , std::string * object_name
+    , pid_t * client_pid
+    , cluck::timeout_t * timeout
+    , std::string * key
+    , std::string * source)
+{
+    // get the "object name" (what we are locking)
+    // in Snap, the object name is often a URI plus the action we are performing
+    //
+    if(object_name != nullptr)
+    {
+        *object_name = msg.get_parameter("object_name");
+        if(object_name->empty())
+        {
+            // name missing
+            //
+            throw cluck::invalid_message(
+                  "cluckd::get_parameters(): Invalid object name."
+                  " We cannot lock the empty string.");
+        }
+    }
+
+    // get the pid (process identifier) of the process that is
+    // requesting the lock; this is important to be able to distinguish
+    // multiple processes on the same computer requesting a lock
+    //
+    if(client_pid != nullptr)
+    {
+        *client_pid = msg.get_integer_parameter("pid");
+        if(*client_pid < 1)
+        {
+            // invalid pid
+            //
+            throw cluck::invalid_message(
+                  "cluckd::get_parameters(): Invalid pid specified for a lock ("
+                + std::to_string(*client_pid)
+                + "). It must be a positive decimal number.");
+        }
+    }
+
+    // get the time limit we will wait up to before we decide we
+    // cannot obtain that lock
+    //
+    if(timeout != nullptr)
+    {
+        if(msg.has_parameter("timeout"))
+        {
+            // this timeout may already be out of date in which case
+            // the lock immediately fails
+            //
+            *timeout = msg.get_timespec_parameter("timeout");
+        }
+        else
+        {
+            *timeout = snapdev::now() + cluck::CLUCK_UNLOCK_DEFAULT_TIMEOUT;
+        }
+    }
+
+    // get the key of a ticket or entering object
+    //
+    if(key != nullptr)
+    {
+        *key = msg.get_parameter("key");
+        if(key->empty())
+        {
+            // key missing
+            //
+            throw cluck::invalid_message("cluckd::get_parameters(): A key cannot be an empty string.");
+        }
+    }
+
+    // get the key of a ticket or entering object
+    //
+    if(source != nullptr)
+    {
+        *source = msg.get_parameter("source");
+        if(source->empty())
+        {
+            // source missing
+            //
+            throw cluck::invalid_message("cluckd::get_parameters(): A source cannot be an empty string.");
+        }
+    }
+}
+
+
+/** \brief Lock the resource after confirmation that client is alive.
+ *
+ * This message is expected just after we sent an ALIVE message to
+ * the client.
+ *
+ * Whenever a leader dies, we suspect that the client may have died
+ * with it so we send it an ALIVE message to know whether it is worth
+ * the trouble of entering that lock.
+ *
+ * \param[in] msg  The ABSOLUTELY message to handle.
+ */
+void cluckd::msg_absolutely(ed::message & msg)
+{
+    std::string const serial(msg.get_parameter("serial"));
+    std::vector<std::string> segments;
+    snapdev::tokenize_string(segments, serial, "/");
+
+    if(segments[0] == "relock")
+    {
+        // check serial as defined in msg_lock()
+        // alive_message.add_parameter("serial", "relock/" + object_name + '/' + entering_key);
+        //
+        if(segments.size() != 4)
+        {
+            SNAP_LOG_WARNING
+                << "ABSOLUTELY reply has an invalid relock serial parameters \""
+                << serial
+                << "\" was expected to have exactly 4 segments."
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
+            lock_failed_message.add_parameter("object_name", "unknown");
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+            f_messenger->send_message(lock_failed_message);
+
+            return;
+        }
+
+        // notice how the split() re-split the entering key
+        //
+        std::string const object_name(segments[1]);
+        std::string const server_name(segments[2]);
+        std::string const client_pid(segments[3]);
+
+        auto entering_ticket(f_entering_tickets.find(object_name));
+        if(entering_ticket != f_entering_tickets.end())
+        {
+            std::string const entering_key(server_name + '/' + client_pid);
+            auto key_ticket(entering_ticket->second.find(entering_key));
+            if(key_ticket != entering_ticket->second.end())
+            {
+                // remove the alive timeout
+                //
+                key_ticket->second->set_alive_timeout(cluck::timeout_t());
+
+                // got it! start the bakery algorithm
+                //
+                key_ticket->second->entering();
+            }
+        }
+    }
+
+    // ignore other messages
+}
+
+
+/** \brief Acknowledge the ACTIVATE_LOCK with what we think is our first lock.
+ *
+ * This function replies to an ACTIVATE_LOCK request with what we think is
+ * the first lock for the specified object.
+ *
+ * Right now, we disregard the specified key. There is nothing we can really
+ * do with it here.
+ *
+ * If we do not have a ticket for the specified object (something that could
+ * happen if the ticket just timed out) then we still have to reply, only
+ * we let the other leader know that we have no clue what he is talking about.
+ *
+ * \param[in] msg  The ACTIVATE_LOCK message.
+ */
+void cluckd::msg_activate_lock(ed::message & msg)
+{
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
+
+    std::string first_key("no-key");
+
+    auto ticket(find_first_lock(object_name));
+    if(ticket != nullptr)
+    {
+        // found it!
+        //
+        first_key = ticket->get_ticket_key();
+
+        if(key == first_key)
+        {
+            // we can mark this ticket as activated
+            //
+            ticket->lock_activated();
+        }
+    }
+
+    // always reply, if we could not find the key, then we returned 'no-key'
+    // as the key parameter
+    //
+    ed::message lock_activated_message;
+    lock_activated_message.set_command(cluck::g_name_cluck_cmd_lock_activated);
+    lock_activated_message.reply_to(msg);
+    lock_activated_message.add_parameter("object_name", object_name);
+    lock_activated_message.add_parameter("key", key);
+    lock_activated_message.add_parameter("other_key", first_key);
+    f_messenger->send_message(lock_activated_message);
+
+    // the list of tickets is not unlikely changed so we need to make
+    // a call to cleanup to make sure the timer is reset appropriately
+    //
+    cleanup();
+}
+
+
+/** \brief Add a ticket from another cluckd.
+ *
+ * Tickets get duplicated on the cluckd leaders.
+ *
+ * \note
+ * Although we only need a QUORUM number of nodes to receive a copy of
+ * the data, the data still get broadcast to all the snaplock leaders.
+ * After this message arrives any one of the snaplock process can
+ * handle the unlock if the UNLOCK message gets sent to another process
+ * instead of the one which first created the ticket. This is the point
+ * of the implementation since we want to be fault tolerant (as in if one
+ * of the leaders goes down, the locking mechanism still works.)
+ *
+ * \param[in] msg  The ADDTICKET message being handled.
+ */
+void cluckd::msg_add_ticket(ed::message & msg)
+{
+    std::string object_name;
+    std::string key;
+    cluck::timeout_t timeout;
+    get_parameters(msg, &object_name, nullptr, &timeout, &key, nullptr);
+
+#ifdef _DEBUG
+    {
+        auto const obj_ticket(f_tickets.find(object_name));
+        if(obj_ticket != f_tickets.end())
+        {
+            auto const key_ticket(obj_ticket->second.find(key));
+            if(key_ticket != obj_ticket->second.end())
+            {
+                // this ticket exists on this system
+                //
+                throw cluck::logic_error("cluck::add_ticket() ticket already exists");
+            }
+        }
+    }
+#endif
+
+    // the client_pid parameter is part of the key (3rd segment)
+    //
+    std::vector<std::string> segments;
+    snapdev::tokenize_string(segments, key, "/");
+    if(segments.size() != 3)
+    {
+        SNAP_LOG_ERROR
+            << "Expected exactly 3 segments in \""
+            << key
+            << "\" to add a ticket."
+            << SNAP_LOG_SEND;
+
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
+        lock_failed_message.add_parameter("object_name", object_name);
+        lock_failed_message.add_parameter("key", key);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+        f_messenger->send_message(lock_failed_message);
+
+        return;
+    }
+
+    // TODO: we probably want to look in a function which returns false
+    //       instead of having to do a try/catch
+    //
+    bool ok(true);
+    std::uint32_t number(0);
+    try
+    {
+        number = snapdev::hex_to_int<std::uint32_t>(segments[0]);
+    }
+    catch(snapdev::hexadecimal_string_exception const &)
+    {
+        ok = false;
+    }
+    catch(snapdev::hexadecimal_string_out_of_range const &)
+    {
+        ok = false;
+    }
+    if(!ok)
+    {
+        SNAP_LOG_ERROR
+            << "somehow ticket number \""
+            << segments[0]
+            << "\" is not a valid hexadecimal number"
+            << SNAP_LOG_SEND;
+
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
+        lock_failed_message.add_parameter("object_name", object_name);
+        lock_failed_message.add_parameter("key", key);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+        f_messenger->send_message(lock_failed_message);
+
+        return;
+    }
+
+    // by now all the leaders should already have
+    // an entering ticket for that one ticket
+    //
+    auto const obj_entering_ticket(f_entering_tickets.find(object_name));
+    if(obj_entering_ticket == f_entering_tickets.end())
+    {
+        SNAP_LOG_ERROR
+            << "Expected entering ticket object for \""
+            << object_name
+            << "\" not found when adding a ticket."
+            << SNAP_LOG_SEND;
+
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
+        lock_failed_message.add_parameter("object_name", object_name);
+        lock_failed_message.add_parameter("key", key);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+        f_messenger->send_message(lock_failed_message);
+
+        return;
+    }
+
+    // the key we need to search is not the new ticket key but the
+    // entering key, build it from the segments
+    //
+    std::string const entering_key(segments[1] + '/' + segments[2]);
+    auto const key_entering_ticket(obj_entering_ticket->second.find(entering_key));
+    if(key_entering_ticket == obj_entering_ticket->second.end())
+    {
+        SNAP_LOG_ERROR
+            << "Expected entering ticket key for \""
+            << object_name
+            << "\" not found when adding a ticket."
+            << SNAP_LOG_SEND;
+
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
+        lock_failed_message.add_parameter("object_name", object_name);
+        lock_failed_message.add_parameter("key", key);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+        f_messenger->send_message(lock_failed_message);
+
+        return;
+    }
+
+    // make it an official ticket now
+    //
+    // this should happen on all snaplock other than the one that
+    // first received the LOCK message
+    //
+    set_ticket(object_name, key, key_entering_ticket->second);
+
+    // WARNING: the set_ticket_number() function has the same side
+    //          effects as the add_ticket() function without the
+    //          f_messenger->send_message() call
+    //
+    f_tickets[object_name][key]->set_ticket_number(number);
+
+    ed::message ticket_added_message;
+    ticket_added_message.set_command(cluck::g_name_cluck_cmd_ticket_added);
+    ticket_added_message.reply_to(msg);
+    ticket_added_message.add_parameter("object_name", object_name);
+    ticket_added_message.add_parameter("key", key);
+    f_messenger->send_message(ticket_added_message);
+}
+
+
+/** \brief The communicatord lost too many connections.
+ *
+ * When the cluster is not complete, the CLUSTER_DOWN message gets sent
+ * by the communicatord. We need to stop offering locks at that point.
+ * Locks that are up are fine, but new locks are not possible.
+ *
+ * \param[in] msg  The CLUSTER_DOWN message.
+ */
+void cluckd::msg_cluster_down(ed::message & msg)
+{
+    snapdev::NOT_USED(msg);
+
+    SNAP_LOG_INFO
+        << "cluster is down, canceling existing locks and we have to"
+           " refuse any further lock requests for a while."
+        << SNAP_LOG_SEND;
+
+    // in this case we cannot safely keep the leaders
+    //
+    f_leaders.clear();
+
+    // in case services listen to the NO_LOCK, let them know it's gone
+    //
+    check_lock_status();
+
+    // we do not call the lock_gone() because the HANGUP will be sent
+    // if required so we do not have to do that twice
+}
+
+
+/** \brief Cluster is ready, send the LOCK_STARTED message.
+ *
+ * Our cluster is finally ready, so we can send the LOCK_STARTED and work
+ * on a leader election if still required.
+ */
+void cluckd::msg_cluster_up(ed::message & msg)
+{
+    f_neighbors_count = msg.get_integer_parameter("neighbors_count");
+    f_neighbors_quorum = f_neighbors_count / 2 + 1;
+
+    SNAP_LOG_INFO
+        << "cluster is up with "
+        << f_neighbors_count
+        << " neighbors, attempt an election"
+           " then check for leaders by sending a LOCK_STARTED message."
+        << SNAP_LOG_SEND;
+
+    election_status();
+    send_lock_started(nullptr);
+}
+
+
+/** \brief One of the cluckd processes asked for a ticket to be dropped.
+ *
+ * This function searches for the specified ticket and removes it from
+ * this cluckd.
+ *
+ * If the specified ticket does not exist, nothing happens.
+ *
+ * \warning
+ * The DROP_TICKET event includes either the ticket key (if available)
+ * or the entering key (when the ticket key was not yet available).
+ * Note that the ticket key should always exists by the time a DROP_TICKET
+ * happens, but just in case this allows the dropping of a ticket at any
+ * time.
+ *
+ * \param[in] msg  The DROP_TICKET message.
+ */
+void cluckd::msg_drop_ticket(ed::message & msg)
+{
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
+
+    std::vector<std::string> segments;
+    snapdev::tokenize_string(segments, key, "/");
+
+    // drop the regular ticket
+    //
+    // if we have only 2 segments, then there is no corresponding ticket
+    // since tickets are added only once we have a ticket_id
+    //
+    std::string entering_key;
+    if(segments.size() == 3)
+    {
+        auto obj_ticket(f_tickets.find(object_name));
+        if(obj_ticket != f_tickets.end())
+        {
+            auto key_ticket(obj_ticket->second.find(key));
+            if(key_ticket != obj_ticket->second.end())
+            {
+                obj_ticket->second.erase(key_ticket);
+            }
+
+            if(obj_ticket->second.empty())
+            {
+                f_tickets.erase(obj_ticket);
+            }
+
+            // one ticket was erased, another may be first now
+            //
+            activate_first_lock(object_name);
+        }
+
+        // we received the ticket_id in the message, so
+        // we have to regenerate the entering_key without
+        // the ticket_id (which is the first element)
+        //
+        entering_key = segments[1] + '/' + segments[2];
+    }
+    else
+    {
+        // we received the entering_key in the message, use as is
+        //
+        entering_key = key;
+    }
+
+    // drop the entering ticket
+    //
+    auto obj_entering_ticket(f_entering_tickets.find(object_name));
+    if(obj_entering_ticket != f_entering_tickets.end())
+    {
+        auto key_entering_ticket(obj_entering_ticket->second.find(entering_key));
+        if(key_entering_ticket != obj_entering_ticket->second.end())
+        {
+            obj_entering_ticket->second.erase(key_entering_ticket);
+        }
+
+        if(obj_entering_ticket->second.empty())
+        {
+            f_entering_tickets.erase(obj_entering_ticket);
+        }
+    }
+
+    // the list of tickets is not unlikely changed so we need to make
+    // a call to cleanup to make sure the timer is reset appropriately
+    //
+    cleanup();
+}
+
+
+/** \brief Search for the largest ticket.
+ *
+ * This function searches the list of tickets for the largest one
+ * and returns that number.
+ *
+ * \param[in] msg  The message just received.
+ *
+ * \return The largest ticket number that currently exist in the list
+ *         of tickets.
+ */
+void cluckd::msg_get_max_ticket(ed::message & msg)
+{
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
+
+    // remove any f_tickets that timed out by now because these should
+    // not be taken in account in the max. computation
+    //
+    cleanup();
+
+    ticket::ticket_id_t last_ticket(get_last_ticket(object_name));
+
+    ed::message reply;
+    reply.set_command(cluck::g_name_cluck_cmd_max_ticket);
+    reply.reply_to(msg);
+    reply.add_parameter("object_name", object_name);
+    reply.add_parameter("key", key);
+    reply.add_parameter("ticket_id", last_ticket);
+    f_messenger->send_message(reply);
+}
+
+
+/** \brief Reply to the LIST_TICKETS message with the TICKET_LIST.
+ *
+ * This function gets called whenever the command line tool (`cluckd`)
+ * is run with the `--list` command line option. It generates a list of
+ * tickets and sends that back to the tool as a TICKET_LIST message.
+ *
+ * \param[in] msg  The LIST_TICKETS message.
+ */
+void cluckd::msg_list_tickets(ed::message & msg)
+{
+    ed::message list_message;
+    list_message.set_command(cluck::g_name_cluck_cmd_ticket_list);
+    list_message.reply_to(msg);
+    list_message.add_parameter("list", ticket_list());
+    f_messenger->send_message(list_message);
+}
+
+
+/** \brief Lock the named resource.
+ *
+ * This function locks the specified resource \p object_name. It returns
+ * when the resource is locked or when the lock timeout is reached.
+ *
+ * See the snaplock_ticket class for more details about the locking
+ * mechanisms (algorithm and MSC implementation).
+ *
+ * Note that if lock() is called with an empty string then the function
+ * unlocks the lock and returns immediately with false. This is equivalent
+ * to calling unlock().
+ *
+ * \note
+ * The function reloads all the parameters (outside of the table) because
+ * we need to support a certain amount of dynamism. For example, an
+ * administrator may want to add a new host on the system. In that case,
+ * the list of host changes and it has to be detected here.
+ *
+ * \attention
+ * The function accepts a "serial" parameter in the message. This is only
+ * used internally when a leader is lost and a new one is assigned a lock
+ * which would otherwise fail.
+ *
+ * \warning
+ * The object name is left available in the lock table. Do not use any
+ * secure/secret name/word, etc. as the object name.
+ *
+ * \bug
+ * At this point there is no proper protection to recover from errors
+ * that would happen while working on locking this entry. This means
+ * failures may result in a lock that never ends.
+ *
+ * \param[in] msg  The lock message.
+ *
+ * \return true if the lock was successful, false otherwise.
+ *
+ * \sa unlock()
+ */
+void cluckd::msg_lock(ed::message & msg)
+{
+    std::string object_name;
+    pid_t client_pid(0);
+    cluck::timeout_t timeout;
+    get_parameters(msg, &object_name, &client_pid, &timeout, nullptr, nullptr);
+
+    // do some cleanup as well
+    //
+    cleanup();
+
+    // if we are a leader, create an entering key
+    //
+    std::string const server_name(msg.has_parameter("lock_proxy_server_name")
+                                ? msg.get_parameter("lock_proxy_server_name")
+                                : msg.get_sent_from_server());
+
+    std::string const service_name(msg.has_parameter("lock_proxy_service_name")
+                                ? msg.get_parameter("lock_proxy_service_name")
+                                : msg.get_sent_from_service());
+
+    std::string const entering_key(server_name + '/' + std::to_string(client_pid));
+
+    if(timeout <= snapdev::now())
+    {
+        SNAP_LOG_WARNING
+            << "Lock on \""
+            << object_name
+            << "\" / \""
+            << client_pid
+            << "\" timed out before we could start the locking process."
+            << SNAP_LOG_SEND;
+
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
+        lock_failed_message.add_parameter("object_name", object_name);
+        lock_failed_message.add_parameter("key", entering_key);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_timedout);
+        f_messenger->send_message(lock_failed_message);
+
+        return;
+    }
+
+    cluck::timeout_t const duration(msg.get_timespec_parameter("duration"));
+    if(duration < cluck::CLUCK_MINIMUM_TIMEOUT)
+    {
+        // duration too small
+        //
+        SNAP_LOG_ERROR
+            << duration
+            << " is an invalid duration, the minimum accepted is "
+            << cluck::CLUCK_MINIMUM_TIMEOUT
+            << '.'
+            << SNAP_LOG_SEND;
+
+        ed::message lock_failed_message;
+        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+        lock_failed_message.reply_to(msg);
+        lock_failed_message.add_parameter("object_name", object_name);
+        lock_failed_message.add_parameter("key", entering_key);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+        f_messenger->send_message(lock_failed_message);
+
+        return;
+    }
+
+    cluck::timeout_t unlock_duration(cluck::CLUCK_DEFAULT_TIMEOUT);
+    if(msg.has_parameter("unlock_duration"))
+    {
+        unlock_duration = msg.get_timespec_parameter("unlock_duration");
+        if(unlock_duration < cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT)
+        {
+            // invalid duration, minimum is cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
+            //
+            SNAP_LOG_ERROR
+                << unlock_duration
+                << " is an invalid unlock duration, the minimum accepted is "
+                << cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
+                << '.'
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
+            lock_failed_message.add_parameter("object_name", object_name);
+            lock_failed_message.add_parameter("key", entering_key);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+            f_messenger->send_message(lock_failed_message);
+
+            return;
+        }
+    }
+
+    if(!is_ready())
+    {
+        SNAP_LOG_TRACE
+            << "caching LOCK message for \""
+            << object_name
+            << "\" as the cluck system is not yet considered ready."
+            << SNAP_LOG_SEND;
+
+        f_message_cache.emplace_back(timeout, msg);
+
+        // make sure the cache gets cleaned up if the message times out
+        //
+        std::int64_t const timeout_date(f_timer->get_timeout_date());
+        if(timeout_date == -1
+        || cluck::timeout_t(timeout_date / 1'000'000, timeout_date % 1'000'000) > timeout)
+        {
+            f_timer->set_timeout_date(timeout);
+        }
+        return;
+    }
+
+    if(is_leader() == nullptr)
+    {
+        // we are not a leader, we need to forward the message to one
+        // of the leaders instead
+        //
+        forward_message_to_leader(msg);
+        return;
+    }
+
+    // make sure this is a new ticket
+    //
+    auto entering_ticket(f_entering_tickets.find(object_name));
+    if(entering_ticket != f_entering_tickets.end())
+    {
+        auto key_ticket(entering_ticket->second.find(entering_key));
+        if(key_ticket != entering_ticket->second.end())
+        {
+            // if this is a re-LOCK, then it may be a legitimate duplicate
+            // in which case we do not want to generate a LOCK_FAILED error
+            //
+            if(msg.has_parameter("serial"))
+            {
+                ticket::serial_t const serial(msg.get_integer_parameter("serial"));
+                if(key_ticket->second->get_serial() == serial)
+                {
+                    // legitimate double request from leaders
+                    // (this happens when a leader dies and we have to restart
+                    // a lock negotiation)
+                    //
+                    return;
+                }
+            }
+
+            // the object already exists... do not allow duplicates
+            //
+            SNAP_LOG_ERROR
+                << "an entering ticket has the same object name \""
+                << object_name
+                << "\" and entering key \""
+                << entering_key
+                << "\"."
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
+            lock_failed_message.add_parameter("object_name", object_name);
+            lock_failed_message.add_parameter("key", entering_key);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_duplicate);
+            f_messenger->send_message(lock_failed_message);
+
+            return;
+        }
+    }
+
+    // make sure there is not a ticket with the same name already defined
+    //
+    // (this is is really important so we can actually properly UNLOCK an
+    // existing lock since we use the same search and if two entries were
+    // to be the same we could not know which to unlock; there are a few
+    // other places where such a search is used actually...)
+    //
+    auto obj_ticket(f_tickets.find(object_name));
+    if(obj_ticket != f_tickets.end())
+    {
+        auto key_ticket(std::find_if(
+                  obj_ticket->second.begin()
+                , obj_ticket->second.end()
+                , [&entering_key](auto const & t)
+                {
+                    return t.second->get_entering_key() == entering_key;
+                }));
+        if(key_ticket != obj_ticket->second.end())
+        {
+            // there is already a ticket with this name/entering key
+            //
+            SNAP_LOG_ERROR
+                << "a ticket has the same object name \""
+                << object_name
+                << "\" and entering key \""
+                << entering_key
+                << "\"."
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
+            lock_failed_message.add_parameter("object_name", object_name);
+            lock_failed_message.add_parameter("key", entering_key);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_duplicate);
+            f_messenger->send_message(lock_failed_message);
+
+            return;
+        }
+    }
+
+    ticket::pointer_t ticket(std::make_shared<ticket>(
+                                  this
+                                , f_messenger
+                                , object_name
+                                , entering_key
+                                , timeout
+                                , duration
+                                , server_name
+                                , service_name));
+
+    f_entering_tickets[object_name][entering_key] = ticket;
+
+    // finish up ticket initialization
+    //
+    ticket->set_unlock_duration(unlock_duration);
+
+    // generate a serial number for that ticket
+    //
+    f_ticket_serial = (f_ticket_serial + 1) & 0x00FFFFFF;
+    if(f_leaders[0]->get_id() != f_my_id)
+    {
+        if(f_leaders.size() >= 2
+        && f_leaders[1]->get_id() != f_my_id)
+        {
+            f_ticket_serial |= 1 << 24;
+        }
+        else if(f_leaders.size() >= 3
+             && f_leaders[2]->get_id() != f_my_id)
+        {
+            f_ticket_serial |= 2 << 24;
+        }
+    }
+    ticket->set_serial(f_ticket_serial);
+
+    if(msg.has_parameter("serial"))
+    {
+        // if we have a "serial" number in that message, we lost a leader
+        // and when that happens we are not unlikely to have lost the
+        // client that requested the LOCK, send an ALIVE message to make
+        // sure that the client still exists before entering the ticket
+        //
+        ticket->set_alive_timeout(snapdev::now() + cluck::timeout_t(5, 0));
+
+        ed::message alive_message;
+        alive_message.set_command(ed::g_name_ed_cmd_alive);
+        alive_message.set_server(server_name);
+        alive_message.set_service(service_name);
+        alive_message.add_parameter("serial", "relock/" + object_name + '/' + entering_key);
+        alive_message.add_parameter("timestamp", time(nullptr));
+        f_messenger->send_message(alive_message);
+    }
+    else
+    {
+        // act on the new ticket
+        //
+        ticket->entering();
+    }
+
+    // the list of tickets changed, make sure we update timeout timer
+    //
+    cleanup();
+}
+
+
+/** \brief Acknowledgement of the lock to activate.
+ *
+ * This function is an acknowledgement that the lock can now be
+ * activated. This is true only if the 'key' and 'other_key'
+ * are a match, though.
+ *
+ * \param[in] msg  The LOCK_ACTIVATED message.
+ */
+void cluckd::msg_lock_activated(ed::message & msg)
+{
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
+
+    std::string const & other_key(msg.get_parameter("other_key"));
+    if(other_key == key)
+    {
+        auto obj_ticket(f_tickets.find(object_name));
+        if(obj_ticket != f_tickets.end())
+        {
+            auto key_ticket(obj_ticket->second.find(key));
+            if(key_ticket != obj_ticket->second.end())
+            {
+                // that key is still here!
+                // time to activate
+                //
+                key_ticket->second->lock_activated();
+            }
+        }
+    }
+}
+
+
+/** \brief Tell all the tickets that we received a LOCK_ENTERED message.
+ *
+ * This function calls all the tickets entered() function which
+ * processes the LOCK_ENTERED message.
+ *
+ * We pass the key and "our ticket" number along so it can actually
+ * create the ticket if required.
+ *
+ * \param[in] msg  The LOCK_ENTERED message.
+ */
+void cluckd::msg_lock_entered(ed::message & msg)
+{
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
+
+    auto const obj_entering_ticket(f_entering_tickets.find(object_name));
+    if(obj_entering_ticket != f_entering_tickets.end())
+    {
+        auto const key_entering_ticket(obj_entering_ticket->second.find(key));
+        if(key_entering_ticket != obj_entering_ticket->second.end())
+        {
+            key_entering_ticket->second->entered();
+        }
+    }
+}
+
+
+/** \brief Remove a ticket we are done with (i.e. unlocked).
+ *
+ * This command drops the specified ticket (object_name).
+ *
+ * \param[in] msg  The entering message.
+ */
+void cluckd::msg_lock_entering(ed::message & msg)
+{
+    std::string object_name;
+    cluck::timeout_t timeout;
+    std::string key;
+    std::string source;
+    get_parameters(msg, &object_name, nullptr, &timeout, &key, &source);
+
+    // the server_name and client_pid never include a slash so using
+    // such as separators is safe
+    //
+    if(timeout > snapdev::now())  // lock still in the future?
+    {
+        if(is_ready())              // still have leaders?
+        {
+            // the entering is just a flag (i.e. entering[i] = true)
+            // in our case the existance of a ticket is enough to know
+            // that we entered
+            //
+            bool allocate(true);
+            auto const obj_ticket(f_entering_tickets.find(object_name));
+            if(obj_ticket != f_entering_tickets.end())
+            {
+                auto const key_ticket(obj_ticket->second.find(key));
+                allocate = key_ticket == obj_ticket->second.end();
+            }
+            if(allocate)
+            {
+                // ticket does not exist, so create it now
+                // (note: ticket should only exist on originator)
+                //
+                cluck::timeout_t const duration(msg.get_timespec_parameter("duration"));
+                if(duration < cluck::CLUCK_MINIMUM_TIMEOUT)
+                {
+                    // invalid duration
+                    //
+                    SNAP_LOG_ERROR
+                        << duration
+                        << " is an invalid duration, the minimum accepted is "
+                        << cluck::CLUCK_MINIMUM_TIMEOUT
+                        << "."
+                        << SNAP_LOG_SEND;
+
+                    ed::message lock_failed_message;
+                    lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+                    lock_failed_message.reply_to(msg);
+                    lock_failed_message.add_parameter("object_name", object_name);
+                    lock_failed_message.add_parameter("key", key);
+                    lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+                    f_messenger->send_message(lock_failed_message);
+
+                    return;
+                }
+
+                cluck::timeout_t unlock_duration(cluck::CLUCK_DEFAULT_TIMEOUT);
+                if(msg.has_parameter("unlock_duration"))
+                {
+                    unlock_duration = msg.get_timespec_parameter("unlock_duration");
+                    if(unlock_duration != cluck::CLUCK_DEFAULT_TIMEOUT
+                    && unlock_duration < cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT)
+                    {
+                        // invalid duration, minimum is 60
+                        //
+                        SNAP_LOG_ERROR
+                            << duration
+                            << " is an invalid unlock duration, the minimum accepted is "
+                            << cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
+                            << "."
+                            << SNAP_LOG_SEND;
+
+                        ed::message lock_failed_message;
+                        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+                        lock_failed_message.reply_to(msg);
+                        lock_failed_message.add_parameter("object_name", object_name);
+                        lock_failed_message.add_parameter("key", key);
+                        lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+                        f_messenger->send_message(lock_failed_message);
+
+                        return;
+                    }
+                }
+
+                // we have to know where this message comes from
+                //
+                std::vector<std::string> source_segments;
+                if(snapdev::tokenize_string(source_segments, source, "/") != 2)
+                {
+                    SNAP_LOG_ERROR
+                        << "Invalid number of parameters in source parameter (found "
+                        << source_segments.size()
+                        << ", expected 2)."
+                        << SNAP_LOG_SEND;
+
+                    ed::message lock_failed_message;
+                    lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+                    lock_failed_message.reply_to(msg);
+                    lock_failed_message.add_parameter("object_name", object_name);
+                    lock_failed_message.add_parameter("key", key);
+                    lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+                    f_messenger->send_message(lock_failed_message);
+
+                    return;
+                }
+
+                ticket::pointer_t ticket(std::make_shared<ticket>(
+                                          this
+                                        , f_messenger
+                                        , object_name
+                                        , key
+                                        , timeout
+                                        , duration
+                                        , source_segments[0]
+                                        , source_segments[1]));
+
+                f_entering_tickets[object_name][key] = ticket;
+
+                // finish up on ticket initialization
+                //
+                ticket->set_owner(msg.get_sent_from_server());
+                ticket->set_unlock_duration(unlock_duration);
+                ticket->set_serial(msg.get_integer_parameter("serial"));
+            }
+
+            ed::message reply;
+            reply.set_command(cluck::g_name_cluck_cmd_lock_entered);
+            reply.reply_to(msg);
+            reply.add_parameter("object_name", object_name);
+            reply.add_parameter("key", key);
+            f_messenger->send_message(reply);
+        }
+        else
+        {
+            SNAP_LOG_DEBUG
+                << "received LOCK_ENTERING while we are thinking we are not ready."
+                << SNAP_LOG_SEND;
+        }
+    }
+
+    cleanup();
+}
+
+
+/** \brief Remove a ticket we are done with (i.e. unlocked).
+ *
+ * This command drops the specified ticket (object_name).
+ *
+ * \param[in] msg  The entering message.
+ */
+void cluckd::msg_lock_exiting(ed::message & msg)
+{
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
+
+    // when exiting we just remove the entry with that key
+    //
+    auto const obj_entering(f_entering_tickets.find(object_name));
+    if(obj_entering != f_entering_tickets.end())
+    {
+        auto const key_entering(obj_entering->second.find(key));
+        if(key_entering != obj_entering->second.end())
+        {
+            obj_entering->second.erase(key_entering);
+
+            // we also want to remove it from the ticket f_entering
+            // map if it is there (older ones are there!)
+            //
+            bool run_activation(false);
+            auto const obj_ticket(f_tickets.find(object_name));
+            if(obj_ticket != f_tickets.end())
+            {
+                for(auto const & key_ticket : obj_ticket->second)
+                {
+                    key_ticket.second->remove_entering(key);
+                    run_activation = true;
+                }
+            }
+            if(run_activation)
+            {
+                // try to activate the lock right now since it could
+                // very well be the only ticket and that is exactly
+                // when it is viewed as active!
+                //
+                // Note: this is from my old version, if I am correct
+                //       it cannot happen anymore because (1) this is
+                //       not the owner so the activation would not
+                //       take anyway and (2) the ticket is not going
+                //       to be marked as being ready at this point
+                //       (that happens later)
+                //
+                //       XXX we probably should remove this statement
+                //           and the run_activation flag which would
+                //           then be useless
+                //
+                activate_first_lock(object_name);
+            }
+
+            if(obj_entering->second.empty())
+            {
+                f_entering_tickets.erase(obj_entering);
+            }
+        }
+    }
+
+    // the list of tickets is not unlikely changed so we need to make
+    // a call to cleanup to make sure the timer is reset appropriately
+    //
+    cleanup();
+}
+
+
+/** \brief Acknowledgement a lock failure.
+ *
+ * This function handles the LOCK_FAILED event that another leader may send
+ * to us. In that case we have to stop the process.
+ *
+ * LOCK_FAILED can happen mainly because of tainted data so we should never
+ * get here within a leader. However, with time we may add a few errors
+ * which could happen for other reasons than just tainted data.
+ *
+ * When this function finds an entering ticket or a plain ticket to remove
+ * according to the object name and key found in the LOCK_FAILED message,
+ * it forwards the LOCK_FAILED message to the server and service found in
+ * the ticket.
+ *
+ * \todo
+ * This function destroys a ticket even if it is already considered locked.
+ * Make double sure that this is okay with a LOCK_FAILED sent to the client.
+ *
+ * \warning
+ * Although this event should not occur, it is problematic since anyone
+ * can send a LOCK_FAILED message here and as a side effect destroy a
+ * perfectly valid ticket.
+ *
+ * \param[in] msg  The LOCK_FAILED message.
+ */
+void cluckd::msg_lock_failed(ed::message & msg)
+{
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
+
+    std::string forward_server;
+    std::string forward_service;
+
+    // remove f_entering_tickets entries if we find matches there
+    //
+    auto obj_entering(f_entering_tickets.find(object_name));
+    if(obj_entering != f_entering_tickets.end())
+    {
+        auto key_entering(obj_entering->second.find(key));
+        if(key_entering != obj_entering->second.end())
+        {
+            forward_server = key_entering->second->get_server_name();
+            forward_service = key_entering->second->get_service_name();
+
+            obj_entering->second.erase(key_entering);
+        }
+
+        if(obj_entering->second.empty())
+        {
+            obj_entering = f_entering_tickets.erase(obj_entering);
+        }
+        else
+        {
+            ++obj_entering;
+        }
+    }
+
+    // remove any f_tickets entries if we find matches there
+    //
+    auto obj_ticket(f_tickets.find(object_name));
+    if(obj_ticket != f_tickets.end())
+    {
+        bool try_activate(false);
+        auto key_ticket(obj_ticket->second.find(key));
+        if(key_ticket == obj_ticket->second.end())
+        {
+            key_ticket = std::find_if(
+                      obj_ticket->second.begin()
+                    , obj_ticket->second.end()
+                    , [&key](auto const & t)
+                    {
+                        return t.second->get_entering_key() == key;
+                    });
+        }
+        if(key_ticket != obj_ticket->second.end())
+        {
+            // Note: if we already found it in the f_entering_tickets then
+            //       the server and service names are going to be exactly
+            //       the same so there is no need to test that here
+            //
+            forward_server = key_ticket->second->get_server_name();
+            forward_service = key_ticket->second->get_service_name();
+
+            obj_ticket->second.erase(key_ticket);
+            try_activate = true;
+        }
+
+        if(obj_ticket->second.empty())
+        {
+            obj_ticket = f_tickets.erase(obj_ticket);
+        }
+        else
+        {
+            if(try_activate)
+            {
+                // something was erased, a new ticket may be first
+                //
+                activate_first_lock(obj_ticket->first);
+            }
+
+            ++obj_ticket;
+        }
+    }
+
+    if(!forward_server.empty()
+    && !forward_service.empty())
+    {
+        // we deleted an entry, forward the message to the service
+        // that requested that lock
+        //
+        msg.set_server(forward_server);
+        msg.set_service(forward_service);
+        f_messenger->send_message(msg);
+    }
+
+    // the list of tickets is not unlikely changed so we need to make
+    // a call to cleanup to make sure the timer is reset appropriately
+    //
+    cleanup();
+}
+
+
+/** \brief The list of leaders.
+ *
+ * This function receives the list of leaders after an election.
+ *
+ * \param[in] msg  The LOCK_LEADERS message.
+ */
+void cluckd::msg_lock_leaders(ed::message & msg)
+{
+    f_election_date = msg.get_integer_parameter("election_date");
+
+    // save the new leaders in our own list
+    //
+    f_leaders.clear();
+    for(int idx(0); idx < 3; ++idx)
+    {
+        std::string const param_name("leader" + std::to_string(idx));
+        if(msg.has_parameter(param_name))
+        {
+            computer::pointer_t leader(std::make_shared<computer>());
+            std::string const lockid(msg.get_parameter(param_name));
+            if(leader->set_id(lockid))
+            {
+                computer::map_t::iterator exists(f_computers.find(leader->get_name()));
+                if(exists != f_computers.end())
+                {
+                    // it already exists, use our existing instance
+                    //
+                    f_leaders.push_back(exists->second);
+                }
+                else
+                {
+                    // we do not yet know of that computer, even though
+                    // it is a leader! (i.e. we are not yet aware that
+                    // somehow we are connected to it)
+                    //
+                    leader->set_connected(false);
+                    f_computers[leader->get_name()] = leader;
+
+                    f_leaders.push_back(leader);
+                }
+            }
+        }
+    }
+
+    if(!f_leaders.empty())
+    {
+        synchronize_leaders();
+
+        // set the round-robin position to a random value
+        //
+        // note: I know the result is likely skewed, c will be set to
+        // a number between 0 and 255 and modulo 3 means that you get
+        // one extra zero (255 % 3 == 0); however, there are 85 times
+        // 3 in 255 so it probably won't be noticeable.
+        //
+        std::uint8_t c;
+        RAND_bytes(reinterpret_cast<unsigned char *>(&c), sizeof(c));
+        f_next_leader = c % f_leaders.size();
+    }
+
+    // the is_ready() function depends on having f_leaders defined
+    // and when that happens we may need to empty our cache
+    //
+    check_lock_status();
+}
+
+
+/** \brief Called whenever a snaplock computer is acknowledging itself.
+ *
+ * This function gets called on a LOCK_STARTED event which is sent whenever
+ * a snaplock process is initialized on a computer.
+ *
+ * The message is expected to include the computer name. At this time
+ * we cannot handle having more than one instance one the same computer.
+ *
+ * \param[in] message  The LOCK_STARTED message.
+ */
+void cluckd::msg_lock_started(ed::message & msg)
+{
+    // get the server name (that other server telling us it is ready)
+    //
+    std::string const server_name(msg.get_parameter("server_name"));
+    if(server_name.empty())
+    {
+        // name missing
+        //
+        throw cluck::invalid_message("cluckd::msg_lock_started(): Invalid server name (empty).");
+    }
+
+    // I do not think we would even message ourselves, but in case it happens
+    // the rest of the function does not support that case well
+    //
+    if(server_name == f_server_name)
+    {
+        return;
+    }
+
+    time_t const start_time(msg.get_integer_parameter("starttime"));
+
+    computer::map_t::iterator it(f_computers.find(server_name));
+    bool new_computer(it == f_computers.end());
+    if(new_computer)
+    {
+        // create a computer instance so we know it exists
+        //
+        computer::pointer_t computer(std::make_shared<computer>());
+
+        // fill the fields from the "lockid" parameter
+        //
+        if(!computer->set_id(msg.get_parameter("lockid")))
+        {
+            // this is not a valid identifier, ignore altogether
+            //
+            return;
+        }
+        computer->set_start_time(start_time);
+
+        f_computers[computer->get_name()] = computer;
+    }
+    else
+    {
+        if(!it->second->get_connected())
+        {
+            // we heard of this computer (because it is/was a leader) but
+            // we had not yet received a LOCKSTARTED message from it; so here
+            // we consider it a new computer and will reply to the LOCKSTARTED
+            //
+            new_computer = true;
+            it->second->set_connected(true);
+        }
+
+        if(it->second->get_start_time() != start_time)
+        {
+            // when the start time changes that means snaplock
+            // restarted which can happen without snapcommunicator
+            // restarting so here we would not know about the feat
+            // without this parameter and in this case it is very
+            // much the same as a new computer so send it a
+            // LOCKSTARTED message back!
+            //
+            new_computer = true;
+            it->second->set_start_time(start_time);
+        }
+    }
+
+    // keep the newest election results
+    //
+    if(msg.has_parameter("election_date"))
+    {
+        snapdev::timespec_ex const election_date(msg.get_timespec_parameter("election_date"));
+        if(election_date > f_election_date)
+        {
+            f_election_date = election_date;
+            f_leaders.clear();
+        }
+    }
+
+    bool const set_my_leaders(f_leaders.empty());
+    if(set_my_leaders)
+    {
+        for(int idx(0); idx < 3; ++idx)
+        {
+            std::string const param_name("leader" + std::to_string(idx));
+            if(msg.has_parameter(param_name))
+            {
+                computer::pointer_t leader(std::make_shared<computer>());
+                std::string const lockid(msg.get_parameter(param_name));
+                if(leader->set_id(lockid))
+                {
+                    computer::map_t::iterator exists(f_computers.find(leader->get_name()));
+                    if(exists != f_computers.end())
+                    {
+                        // it already exists, use our existing instance
+                        //
+                        f_leaders.push_back(exists->second);
+                    }
+                    else
+                    {
+                        // we do not yet know of that computer, even though
+                        // it is a leader! (i.e. we are not yet aware that
+                        // somehow we are connected to it)
+                        //
+                        leader->set_connected(false);
+                        f_computers[leader->get_name()] = leader;
+
+                        f_leaders.push_back(leader);
+                    }
+                }
+            }
+        }
+    }
+
+    election_status();
+
+    // this can have an effect on the lock statuses
+    //
+    check_lock_status();
+
+    if(new_computer)
+    {
+        // send a reply if that was a new computer
+        //
+        send_lock_started(&msg);
+    }
+}
+
+
+/** \brief A service asked about the lock status.
+ *
+ * The lock status is whether the cluck service is ready to receive
+ * LOCK messages (LOCK_READY) or is still waiting on a CLUSTER_UP and
+ * LOCK_LEADERS to happen (NO_LOCK).
+ *
+ * Note that LOCK messages are accepted while the lock service is not
+ * yet ready, however, those are cached and it is more likely that they
+ * timeout before the system is ready to process the request.
+ *
+ * \param[in] msg  The message to reply to.
+ */
+void cluckd::msg_lock_status(ed::message & msg)
+{
+    ed::message status_message;
+    status_message.set_command(is_ready()
+            ? cluck::g_name_cluck_cmd_lock_ready
+            : cluck::g_name_cluck_cmd_no_lock);
+    status_message.reply_to(msg);
+    status_message.add_parameter("cache", "no");
+    f_messenger->send_message(status_message);
+}
+
+
+/** \brief Another cluckd is sending us its list of tickets.
+ *
+ * Whenever a cluckd dies, a new one is quickly promoted as a leader
+ * and that new leader would have no idea about the existing tickets
+ * (locks) so the other two send it a LOCK_TICKETS message.
+ *
+ * The tickets are defined in the parameter of the same name using
+ * the serialization function to transform the objects in a string.
+ * Here we can unserialize that string accordingly.
+ *
+ * First we extract the object name and entering key to see whether
+ * we have that ticket already defined. If so, then we unserialize
+ * in that existing object. The extraction is additive so we can do
+ * it any number of times.
+ *
+ * \param[in] msg  The message to reply to.
+ */
+void cluckd::msg_lock_tickets(ed::message & msg)
+{
+    std::string const tickets(msg.get_parameter("tickets"));
+
+    // we have one ticket per line, so we first split per line and then
+    // work on lines one at a time
+    //
+    std::list<std::string> lines;
+    snapdev::tokenize_string(lines, tickets, "\n", true);
+    for(auto const & l : lines)
+    {
+        ticket::pointer_t t;
+        std::list<std::string> vars;
+        snapdev::tokenize_string(vars, tickets, "|", true);
+        auto object_name_value(std::find_if(
+                  vars.begin()
+                , vars.end()
+                , [](std::string const & vv)
+                {
+                    return vv.starts_with("object_name=");
+                }));
+        if(object_name_value != vars.end())
+        {
+            auto entering_key_value(std::find_if(
+                      vars.begin()
+                    , vars.end()
+                    , [](std::string const & vv)
+                    {
+                        return vv.starts_with("entering_key=");
+                    }));
+            if(entering_key_value != vars.end())
+            {
+                // extract the values which start after the '=' sign
+                //
+                std::string const object_name(object_name_value->substr(12));
+                std::string const entering_key(entering_key_value->substr(13));
+
+                auto entering_ticket(f_entering_tickets.find(object_name));
+                if(entering_ticket != f_entering_tickets.end())
+                {
+                    auto key_ticket(entering_ticket->second.find(entering_key));
+                    if(key_ticket != entering_ticket->second.end())
+                    {
+                        t = key_ticket->second;
+                    }
+                }
+                if(t == nullptr)
+                {
+                    auto obj_ticket(f_tickets.find(object_name));
+                    if(obj_ticket != f_tickets.end())
+                    {
+                        auto key_ticket(std::find_if(
+                                  obj_ticket->second.begin()
+                                , obj_ticket->second.end()
+                                , [&entering_key](auto const & o)
+                                {
+                                    return o.second->get_entering_key() == entering_key;
+                                }));
+                        if(key_ticket != obj_ticket->second.end())
+                        {
+                            t = key_ticket->second;
+                        }
+                    }
+                }
+
+                // ticket exists? if not create a new one
+                //
+                bool const new_ticket(t == nullptr);
+                if(new_ticket)
+                {
+                    // creaet a new ticket, some of the parameters are there just
+                    // because they are required; they will be replaced by the
+                    // unserialize call...
+                    //
+                    t = std::make_shared<ticket>(
+                                  this
+                                , f_messenger
+                                , object_name
+                                , entering_key
+                                , cluck::CLUCK_DEFAULT_TIMEOUT + snapdev::now()
+                                , cluck::CLUCK_DEFAULT_TIMEOUT
+                                , f_server_name
+                                , cluck::g_name_cluck_service_name);
+                }
+
+                t->unserialize(l);
+
+                // do a couple of additional sanity tests to
+                // make sure that we want to keep new tickets
+                //
+                // first make sure it is marked as "locked"
+                //
+                // second check that the owner is a leader that
+                // exists (the sender uses a LOCK message for
+                // locks that are not yet locked or require
+                // a new owner)
+                //
+                if(new_ticket
+                && t->is_locked())
+                {
+                    auto li(std::find_if(
+                              f_leaders.begin()
+                            , f_leaders.end()
+                            , [&t](auto const & c)
+                            {
+                                return t->get_owner() == c->get_name();
+                            }));
+                    if(li != f_leaders.end())
+                    {
+                        f_tickets[object_name][t->get_ticket_key()] = t;
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+/** \brief Search for the largest ticket.
+ *
+ * This function searches the list of tickets for the largest one
+ * and records that number.
+ *
+ * If a quorum is reached when adding this ticket, then an ADD_TICKET reply
+ * is sent back to the sender.
+ *
+ * \param[in] msg  The MAX_TICKET message being handled.
+ */
+void cluckd::msg_max_ticket(ed::message & msg)
+{
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
+
+    // the MAX_TICKET is an answer that has to go in a still un-added ticket
+    //
+    auto const obj_entering_ticket(f_entering_tickets.find(object_name));
+    if(obj_entering_ticket != f_entering_tickets.end())
+    {
+        auto const key_entering_ticket(obj_entering_ticket->second.find(key));
+        if(key_entering_ticket != obj_entering_ticket->second.end())
+        {
+            key_entering_ticket->second->max_ticket(msg.get_integer_parameter("ticket_id"));
+        }
+    }
+}
+
+
+/** \brief Called whenever a remote connection is disconnected.
+ *
+ * This function is used to know that a remote connection was
+ * disconnected.
+ *
+ * This function handles the HANGUP, DISCONNECTED, and STATUS(down)
+ * nessages as required.
+ *
+ * This allows us to manage the f_computers list of computers running
+ * cluckd services.
+ *
+ * \param[in] msg  The DISCONNECTED or HANGUP or STATUS message.
+ */
+void cluckd::msg_server_gone(ed::message & msg)
+{
+    // was it a cluckd service at least?
+    //
+    std::string const server_name(msg.get_parameter("server_name"));
+    if(server_name.empty()
+    || server_name == f_server_name)
+    {
+        // we never want to remove ourselves?!
+        //
+        return;
+    }
+
+    // is "server_name" known?
+    //
+    auto it(f_computers.find(server_name));
+    if(it == f_computers.end())
+    {
+        // no computer found, nothing else to do here
+        //
+        return;
+    }
+
+    // got it, remove it
+    //
+    f_computers.erase(it);
+
+    // is that computer a leader?
+    //
+    auto li(std::find(
+              f_leaders.begin()
+            , f_leaders.end()
+            , it->second));
+    if(li != f_leaders.end())
+    {
+        f_leaders.erase(li);
+
+        // elect another computer in case the one we just erased was a leader
+        //
+        // (of course, no elections occur unless we are the computer with the
+        // smallest IP address)
+        //
+        election_status();
+
+        // if too many leaders were dropped, we may go back to the NO_LOCK status
+        //
+        // we only send a NO_LOCK if the election could not re-assign another
+        // computer as the missing leader(s)
+        //
+        check_lock_status();
+    }
+}
+
+
+/** \brief With the STATUS message we know of new communicatord services.
+ *
+ * This function captures the STATUS message and if it sees that the
+ * name of the service is "remote communicator connection" then it
+ * sends a new LOCK_STARTED message to make sure that all snaplock's
+ * are aware of us.
+ *
+ * \param[in] msg  The LOCK_STARTED message.
+ */
+void cluckd::msg_status(ed::message & msg)
+{
+    // check the service name, it has to be one that means it is a remote
+    // connection with another snapcommunicator
+    //
+    std::string const service(msg.get_parameter(communicatord::g_name_communicatord_param_service));
+
+    // TODO: the names probably changed as per the comments below...
+    //       we also want those names to be defined in names.an
+    if(service == "remote connection"                   // remote host connected to us
+    // "communicator local listener" ?
+    || service == "remote communicator connection")     // we connected to remote host
+    // "communicator remote listener" ?
+    {
+        // check what the status is now: "up" or "down"
+        //
+        std::string const status(msg.get_parameter(communicatord::g_name_communicatord_param_status));
+        if(status == communicatord::g_name_communicatord_value_up)
+        {
+            // we already broadcast a LOCK_STARTED from CLUSTER_UP
+            // and that's enough
+            //
+        }
+        else
+        {
+            // host is down, remove from our list of hosts
+            //
+            msg_server_gone(msg);
+        }
+    }
+}
+
+
+/** \brief Acknowledgement that the ticket was properly added.
+ *
+ * This function gets called whenever the ticket was added on another
+ * leader.
+ *
+ * \param[in] msg  The TICKET_ADDED message being handled.
+ */
+void cluckd::msg_ticket_added(ed::message & msg)
+{
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
+
+    auto const obj_ticket(f_tickets.find(object_name));
+    if(obj_ticket != f_tickets.end())
+    {
+        auto const key_ticket(obj_ticket->second.find(key));
+        if(key_ticket != obj_ticket->second.end())
+        {
+            // this ticket exists on this system
+            //
+            auto const obj_entering_ticket(f_entering_tickets.find(object_name));
+            if(obj_entering_ticket == f_entering_tickets.end())
+            {
+                // this happens all the time because the entering ticket
+                // gets removed on the first TICKETADDED we receive so
+                // on the second one we get here...
+                //
+                SNAP_LOG_TRACE
+                    << "called with object \""
+                    << object_name
+                    << "\" not present in f_entering_ticket (key: \""
+                    << key
+                    << "\".)"
+                    << SNAP_LOG_SEND;
+                return;
+            }
+            key_ticket->second->ticket_added(obj_entering_ticket->second);
+        }
+        else
+        {
+            SNAP_LOG_DEBUG
+                << "found object \""
+                << object_name
+                << "\" but could not find a ticket with key \""
+                << key
+                << "\"..."
+                << SNAP_LOG_SEND;
+        }
+    }
+    else
+    {
+        SNAP_LOG_DEBUG
+            << "object \""
+            << object_name
+            << "\" not found."
+            << SNAP_LOG_SEND;
+    }
+}
+
+
+/** \brief Let other leaders know that the ticket is ready.
+ *
+ * This message is received when the owner of a ticket marks a
+ * ticket as ready. This means the ticket is available for locking.
+ *
+ * \param[in] msg  The TICKET_READY message.
+ */
+void cluckd::msg_ticket_ready(ed::message & msg)
+{
+    std::string object_name;
+    std::string key;
+    get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr);
+
+    auto obj_ticket(f_tickets.find(object_name));
+    if(obj_ticket != f_tickets.end())
+    {
+        auto key_ticket(obj_ticket->second.find(key));
+        if(key_ticket != obj_ticket->second.end())
+        {
+            // we can mark this ticket as activated
+            //
+            key_ticket->second->set_ready();
+        }
+    }
+}
+
+
+/** \brief Unlock the resource.
+ *
+ * This function unlocks the resource specified in the call to lock().
+ *
+ * \param[in] msg  The unlock message.
+ *
+ * \sa msg_lock()
+ */
+void cluckd::msg_unlock(ed::message & msg)
+{
+    if(!is_ready())
+    {
+        SNAP_LOG_ERROR
+            << "received an UNLOCK when cluckd is not ready to receive lock related messages."
+            << SNAP_LOG_SEND;
+        return;
+    }
+
+    if(is_leader() == nullptr)
+    {
+        // we are not a leader, we need to forward to a leader to handle
+        // the message properly
+        //
+        forward_message_to_leader(msg);
+        return;
+    }
+
+    std::string object_name;
+    pid_t client_pid(0);
+    get_parameters(msg, &object_name, &client_pid, nullptr, nullptr, nullptr);
+
+    // if the ticket still exists, send the UNLOCKED and then erase it
+    //
+    auto obj_ticket(f_tickets.find(object_name));
+    if(obj_ticket != f_tickets.end())
+    {
+        std::string const server_name(msg.has_parameter("lock_proxy_server_name")
+                                    ? msg.get_parameter("lock_proxy_server_name")
+                                    : msg.get_sent_from_server());
+
+        //std::string const service_name(msg.has_parameter("lock_proxy_service_name")
+        //                            ? msg.get_parameter("lock_proxy_service_name")
+        //                            : msg.get_sent_from_service());
+
+        std::string const entering_key(server_name + '/' + std::to_string(client_pid));
+        auto key_ticket(std::find_if(
+                  obj_ticket->second.begin()
+                , obj_ticket->second.end()
+                , [&entering_key](auto const & t)
+                {
+                    return t.second->get_entering_key() == entering_key;
+                }));
+        if(key_ticket != obj_ticket->second.end())
+        {
+            // this function will send a DROPTICKET to the other leaders
+            // and the UNLOCKED to the source (unless we already sent the
+            // UNLOCKED which gets sent at most once.)
+            //
+            key_ticket->second->drop_ticket();
+
+            obj_ticket->second.erase(key_ticket);
+            if(obj_ticket->second.empty())
+            {
+                // we are done with this one!
+                //
+                f_tickets.erase(obj_ticket);
+            }
+        }
+else SNAP_LOG_WARNING << "and we could not find that key in that object's map..." << SNAP_LOG_SEND;
+    }
+
+    // reset the timeout with the other locks
+    //
+    cleanup();
 }
 
 
