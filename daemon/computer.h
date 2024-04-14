@@ -17,6 +17,16 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #pragma once
 
+// libaddr
+//
+#include    <libaddr/addr.h>
+
+
+// snapdev
+//
+#include    <snapdev/timespec_ex.h>
+
+
 // C++
 //
 #include    <map>
@@ -51,19 +61,21 @@ public:
                             computer();
                             computer(
                                   std::string const & name
-                                , priority_t priority);
+                                , priority_t priority
+                                , addr::addr ip_address);
 
     bool                    is_self() const;
     void                    set_connected(bool connected);
     bool                    get_connected() const;
     bool                    set_id(std::string const & id);
     priority_t              get_priority() const;
-    void                    set_start_time(time_t start_time);
-    time_t                  get_start_time() const;
+    void                    set_start_time(snapdev::timespec_ex const & start_time);
+    snapdev::timespec_ex const &
+                            get_start_time() const;
 
     std::string const &     get_name() const;
     std::string const &     get_id() const;
-    std::string const &     get_ip_address() const;
+    addr::addr const &      get_ip_address() const;
 
 private:
     mutable std::string     f_id = std::string();
@@ -73,11 +85,11 @@ private:
 
     priority_t              f_priority = PRIORITY_UNDEFINED;
     random_t                f_random_id = 0;
-    std::string             f_ip_address = std::string();
+    addr::addr              f_ip_address = addr::addr();
     pid_t                   f_pid = 0;
     std::string             f_name = std::string();
 
-    time_t                  f_start_time = -1;
+    snapdev::timespec_ex    f_start_time = snapdev::timespec_ex();
 };
 
 

@@ -36,6 +36,11 @@
 #include    <snaplogger/message.h>
 
 
+// libaddr
+//
+#include    <libaddr/addr_parser.h>
+
+
 // advgetopt
 //
 #include    <advgetopt/validator_integer.h>
@@ -74,16 +79,14 @@ computer::computer()
 }
 
 
-computer::computer(std::string const & name, priority_t priority)
+computer::computer(std::string const & name, priority_t priority, addr::addr ip_address)
     : f_self(true)
     , f_priority(priority)
+    , f_ip_address(ip_address)
     , f_pid(getpid())
     , f_name(name)
 {
     RAND_bytes(reinterpret_cast<unsigned char *>(&f_random_id), sizeof(f_random_id));
-
-    //snap::snap_config config("snapcommunicator");
-    //f_ip_address = config["listen"];
 }
 
 
@@ -147,14 +150,14 @@ bool computer::set_id(std::string const & id)
     advgetopt::validator_integer::convert_string(parts[1], value);
     f_random_id = value;
 
-    f_ip_address = parts[2];
-    if(f_ip_address.empty())
+    if(parts[2].empty())
     {
         SNAP_LOG_ERROR
             << "the process IP cannot be an empty string."
             << SNAP_LOG_SEND;
         return false;
     }
+    f_ip_address = addr::string_to_addr(parts[2]);
 
     advgetopt::validator_integer::convert_string(parts[3], value);
     f_pid = value;
@@ -192,13 +195,13 @@ computer::priority_t computer::get_priority() const
 }
 
 
-void computer::set_start_time(time_t start_time)
+void computer::set_start_time(snapdev::timespec_ex const & start_time)
 {
     f_start_time = start_time;
 }
 
 
-time_t computer::get_start_time() const
+snapdev::timespec_ex const & computer::get_start_time() const
 {
     return f_start_time;
 }
@@ -216,15 +219,15 @@ std::string const & computer::get_id() const
     {
         if(f_priority == PRIORITY_UNDEFINED)
         {
-            throw cluck::invalid_parameter("computer::get_id() can't be called when the priority is not defined");
+            throw cluck::invalid_parameter("computer::get_id() can't be called when the priority is not defined.");
         }
-        if(f_ip_address.empty())
+        if(f_ip_address.is_default())
         {
-            throw cluck::invalid_parameter("computer::get_id() can't be called when the address is empty");
+            throw cluck::invalid_parameter("computer::get_id() can't be called when the address is the default address.");
         }
         if(f_pid == 0)
         {
-            throw cluck::invalid_parameter("computer::get_id() can't be called when the pid is not defined");
+            throw cluck::invalid_parameter("computer::get_id() can't be called when the pid is not defined.");
         }
 
         std::stringstream ss;
@@ -233,7 +236,7 @@ std::string const & computer::get_id() const
             << '|'
             << f_random_id
             << '|'
-            << f_ip_address
+            << f_ip_address.to_ipv4or6_string(addr::STRING_IP_ADDRESS | addr::STRING_IP_BRACKET_ADDRESS)
             << '|'
             << f_pid
             << '|'
@@ -245,7 +248,7 @@ std::string const & computer::get_id() const
 }
 
 
-std::string const & computer::get_ip_address() const
+addr::addr const & computer::get_ip_address() const
 {
     return f_ip_address;
 }

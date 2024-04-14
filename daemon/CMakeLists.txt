@@ -45,6 +45,7 @@ target_link_libraries(${PROJECT_NAME}
     cluck
     ${ADVGETOPT_LIBRARIES}
     ${CPPTHREAD_LIBRARIES}
+    ${LIBADDR_LIBRARIES}
     ${OPENSSL_LIBRARIES}
 )
 

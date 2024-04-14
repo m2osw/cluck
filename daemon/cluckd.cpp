@@ -419,6 +419,18 @@ cluckd::cluckd(int argc, char * argv[])
         throw advgetopt::getopt_exit("logger options generated an error.", 0);
     }
 
+    // make sure there are no standalone parameters
+    //
+    if(f_opts.is_defined("--"))
+    {
+        char const * errmsg("unexpected parameter found on cluck daemon command line.");
+        SNAP_LOG_FATAL
+            << errmsg
+            << SNAP_LOG_SEND;
+        std::cerr << f_opts.usage(advgetopt::GETOPT_FLAG_SHOW_USAGE_ON_ERROR);
+        throw advgetopt::getopt_exit(errmsg, 1);
+    }
+
     // read the configuration file
     //
     //if(f_opt.is_defined("config"))
@@ -430,9 +442,9 @@ cluckd::cluckd(int argc, char * argv[])
     //
     // TODO: if the name of the server is changed, we should reboot, but
     //       to the minimum we need to restart cluck (among other daemons)
-    //       remember that snapmanager.cgi gives you that option
-    //       with fluid-settings, though, we should be able to fix that
-    //       on the fly (but our tickets make use of the name...)
+    //       remember that snapmanager.cgi gives you that option;
+    //       we CANNOT use fluid-settings for this one since each computer
+    //       must have a different name
     //
     f_server_name = f_opts.get_string("server-name");
 //#ifdef _DEBUG
@@ -460,71 +472,7 @@ cluckd::cluckd(int argc, char * argv[])
 //    }
 //#endif
 
-    computer::priority_t priority(computer::PRIORITY_OFF);
-    std::string candidate_priority(f_opts.get_string("candidate-priority"));
-    if(candidate_priority != "off")
-    {
-        priority = f_opts.get_long("candidate-priority"
-                                , 0
-                                , computer::PRIORITY_USER_MIN
-                                , computer::PRIORITY_MAX);
-    }
-    //else if(f_config.has_parameter("candidate_priority"))
-    //{
-    //    std::string const candidate_priority(f_config["candidate_priority"]);
-    //    if(candidate_priority == "off")
-    //    {
-    //        // a priority 15 means that this computer is not a candidate
-    //        // at all (useful for nodes that get dynamically added
-    //        // and removed--i.e. avoid re-election each time that happens.)
-    //        //
-    //        priority = computer::PRIORITY_OFF;
-    //    }
-    //    else
-    //    {
-    //        bool ok(false);
-    //        priority = candidate_priority.toLong(&ok, 10);
-    //        if(!ok)
-    //        {
-    //            SNAP_LOG_FATAL("invalid candidate_priority, a valid decimal number was expected instead of \"")(candidate_priority)("\".");
-    //            exit(1);
-    //        }
-    //        if(priority < computer::PRIORITY_USER_MIN
-    //        || priority > computer::PRIORITY_MAX)
-    //        {
-    //            SNAP_LOG_FATAL("candidate_priority must be between 1 and 15, \"")(candidate_priority)("\" is not valid.");
-    //            exit(1);
-    //        }
-    //    }
-    //}
-
-    // make sure there are no standalone parameters
-    //
-    if(f_opts.is_defined("--"))
-    {
-        char const * errmsg("unexpected parameter found on cluck daemon command line.");
-        SNAP_LOG_FATAL
-            << errmsg
-            << SNAP_LOG_SEND;
-        std::cerr << f_opts.usage(advgetopt::GETOPT_FLAG_SHOW_USAGE_ON_ERROR);
-        throw advgetopt::getopt_exit(errmsg, 1);
-    }
-
-    f_start_time = time(nullptr);
-
-    // add ourselves to the list of computers
-    //
-    // mark ourselves as connected
-    //
-    // as a side effect: it generates our identifier
-    //
-    // TODO: this is too early because we do not yet have our IP address
-    //
-    f_computers[f_server_name] = std::make_shared<computer>(f_server_name, priority);
-    f_computers[f_server_name]->set_start_time(f_start_time);
-    f_computers[f_server_name]->set_connected(true);
-    f_my_id = f_computers[f_server_name]->get_id();
-    f_my_ip_address = f_computers[f_server_name]->get_ip_address();
+    f_start_time = snapdev::now();
 }
 
 
@@ -756,7 +704,7 @@ bool cluckd::is_ready() const
                 //
                 ed::message temporary_message;
                 temporary_message.set_sent_from_server(l->get_name());
-                temporary_message.set_sent_from_service("snaplock");
+                temporary_message.set_sent_from_service(cluck::g_name_cluck_service_name);
                 const_cast<cluckd *>(this)->send_lock_started(&temporary_message);
             }
 
@@ -1001,6 +949,13 @@ void cluckd::election_status()
         {
             return;
         }
+    }
+
+    // we do not yet know our IP address, we cannot support election just yet
+    //
+    if(f_my_ip_address.is_default())
+    {
+        return;
     }
 
     // neighbors count is 0 until we receive a very first CLUSTER_UP
@@ -2373,6 +2328,52 @@ void cluckd::msg_cluster_up(ed::message & msg)
     f_neighbors_count = msg.get_integer_parameter("neighbors_count");
     f_neighbors_quorum = f_neighbors_count / 2 + 1;
 
+    computer::priority_t priority(computer::PRIORITY_OFF);
+    std::string candidate_priority(f_opts.get_string("candidate-priority"));
+    if(candidate_priority != "off")
+    {
+        priority = f_opts.get_long("candidate-priority"
+                                , 0
+                                , computer::PRIORITY_USER_MIN
+                                , computer::PRIORITY_MAX);
+    }
+    //else if(f_config.has_parameter("candidate_priority"))
+    //{
+    //    std::string const candidate_priority(f_config["candidate_priority"]);
+    //    if(candidate_priority == "off")
+    //    {
+    //        // a priority 15 means that this computer is not a candidate
+    //        // at all (useful for nodes that get dynamically added
+    //        // and removed--i.e. avoid re-election each time that happens.)
+    //        //
+    //        priority = computer::PRIORITY_OFF;
+    //    }
+    //    else
+    //    {
+    //        bool ok(false);
+    //        priority = candidate_priority.toLong(&ok, 10);
+    //        if(!ok)
+    //        {
+    //            SNAP_LOG_FATAL("invalid candidate_priority, a valid decimal number was expected instead of \"")(candidate_priority)("\".");
+    //            exit(1);
+    //        }
+    //        if(priority < computer::PRIORITY_USER_MIN
+    //        || priority > computer::PRIORITY_MAX)
+    //        {
+    //            SNAP_LOG_FATAL("candidate_priority must be between 1 and 15, \"")(candidate_priority)("\" is not valid.");
+    //            exit(1);
+    //        }
+    //    }
+    //}
+
+    // add ourselves to the list of computers; mark us connected; get our ID
+    //
+    f_my_ip_address = f_messenger->get_my_address();
+    f_computers[f_server_name] = std::make_shared<computer>(f_server_name, priority, f_my_ip_address);
+    f_computers[f_server_name]->set_start_time(f_start_time);
+    f_computers[f_server_name]->set_connected(true);
+    f_my_id = f_computers[f_server_name]->get_id();
+
     SNAP_LOG_INFO
         << "cluster is up with "
         << f_neighbors_count
@@ -3318,7 +3319,7 @@ void cluckd::msg_lock_leaders(ed::message & msg)
  */
 void cluckd::msg_lock_started(ed::message & msg)
 {
-    // get the server name (that other server telling us it is ready)
+    // get the server name (from that other server telling us it is ready)
     //
     std::string const server_name(msg.get_parameter("server_name"));
     if(server_name.empty())
@@ -3336,7 +3337,7 @@ void cluckd::msg_lock_started(ed::message & msg)
         return;
     }
 
-    time_t const start_time(msg.get_integer_parameter("starttime"));
+    cluck::timeout_t const start_time(msg.get_timespec_parameter("starttime"));
 
     computer::map_t::iterator it(f_computers.find(server_name));
     bool new_computer(it == f_computers.end());
@@ -3363,8 +3364,8 @@ void cluckd::msg_lock_started(ed::message & msg)
         if(!it->second->get_connected())
         {
             // we heard of this computer (because it is/was a leader) but
-            // we had not yet received a LOCKSTARTED message from it; so here
-            // we consider it a new computer and will reply to the LOCKSTARTED
+            // we had not yet received a LOCK_STARTED message from it; so here
+            // we consider it a new computer and will reply to the LOCK_STARTED
             //
             new_computer = true;
             it->second->set_connected(true);
@@ -3372,12 +3373,12 @@ void cluckd::msg_lock_started(ed::message & msg)
 
         if(it->second->get_start_time() != start_time)
         {
-            // when the start time changes that means snaplock
-            // restarted which can happen without snapcommunicator
+            // when the start time changes that means cluckd
+            // restarted which can happen without communicatord
             // restarting so here we would not know about the feat
             // without this parameter and in this case it is very
             // much the same as a new computer so send it a
-            // LOCKSTARTED message back!
+            // LOCK_STARTED message back
             //
             new_computer = true;
             it->second->set_start_time(start_time);

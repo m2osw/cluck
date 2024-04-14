@@ -134,7 +134,7 @@ private:
     advgetopt::getopt                   f_opts;
     //snap::snap_config                   f_config;
 
-    time_t                              f_start_time = -1;
+    cluck::timeout_t                    f_start_time = cluck::timeout_t();
     std::string                         f_server_name = std::string();
 //    std::string                         f_service_name = std::string("cluckd");
 //    std::string                         f_communicator_addr = std::string("localhost");
@@ -152,7 +152,7 @@ private:
     std::size_t                         f_neighbors_count = 0;
     std::size_t                         f_neighbors_quorum = 0;
     std::string                         f_my_id = std::string();
-    std::string                         f_my_ip_address = std::string();
+    addr::addr                          f_my_ip_address = addr::addr();
     bool                                f_lock_status = false;                  // not ready
     computer::map_t                     f_computers = computer::map_t();        // key is the computer name
     computer::vector_t                  f_leaders = computer::vector_t();
