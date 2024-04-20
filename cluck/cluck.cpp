@@ -39,28 +39,6 @@
 #include    <cppthread/thread.h>
 
 
-//// snaplogger
-////
-//#include    <snaplogger/message.h>
-//
-//
-//// snapdev
-////
-//#include    <snapdev/not_reached.h>
-//#include    <snapdev/not_used.h>
-//
-//
-//// C++
-////
-//#include    <iostream>
-//
-//
-//// C
-////
-//#include    <unistd.h>
-//#include    <sys/syscall.h>
-
-
 // last include
 //
 #include    <snapdev/poison.h>
@@ -76,7 +54,7 @@
  * it ensures that a single instance of a function runs in an entire cluster
  * of computers. This can also be useful as a lock between processes running
  * on a single computer, although in that case an flock(2) call is likely
- * much more effective (if you can guarantee that all said processes will
+ * much more efficient (if you can guarantee that all said processes will
  * be running on the same computer). See the snapdev/lockfile.h for such a
  * lock object.
  *
@@ -89,12 +67,16 @@
  * The process can timeout or fail, in which case the lock_failed()
  * function gets called instead of the lock_obtained() one. It is also
  * possible to run common code after the lock is released by implementing
- * the finally() function. By default, those functions calls your callbacks
+ * the finally() function. By default, those functions call your callbacks,
  * which can be much more practical than deriving this class.
  *
  * Note that the cluck class is a communicator connection of type ed::timer.
- * You are responsible for adding that class to the communicator or use
- * the factory helper function.
+ * You are responsible for adding that class to the communicator.
+ *
+ * You must have a messenger object with a dispatcher to create a cluck
+ * object. The name passed to the cluck constructor is the name of the
+ * lock. Different names create different locks. In other words, a lock
+ * named A does not prevent a lock named B from being obtained.
  */
 
 namespace cluck
@@ -934,15 +916,6 @@ namespace
 
 
 
-//static constexpr timeout_t  CLUCK_DEFAULT_TIMEOUT = -1;
-//static constexpr timeout_t  CLUCK_MAXIMUM_TIMEOUT = 7 * 24 * 60 * 60 * 1'000'000;     // no matter what limit all timeouts to this value (7 days)
-//static constexpr timeout_t  CLUCK_LOCK_DEFAULT_TIMEOUT = 5 * 1'000'000;
-//static constexpr timeout_t  CLUCK_UNLOCK_DEFAULT_TIMEOUT = 5 * 1'000'000;
-//static constexpr timeout_t  CLUCK_LOCK_MINIMUM_TIMEOUT = 3 * 1'000'000;
-//static constexpr timeout_t  CLUCK_LOCK_OBTENTION_MAXIMUM_TIMEOUT = 60 * 60 * 1'000'000;    // by default limit obtention timeout to this value
-//static constexpr timeout_t  CLUCK_UNLOCK_MINIMUM_TIMEOUT = 60 * 1'000'000;
-
-
 cppthread::mutex            g_mutex = cppthread::mutex();
 ed::dispatcher_match::tag_t g_tag = 0;
 cluck::serial_t             g_serial = cluck::serial_t();
@@ -989,15 +962,17 @@ timeout_t get_lock_obtention_timeout()
 
 void set_lock_obtention_timeout(timeout_t timeout)
 {
-    cppthread::guard lock(g_mutex);
     if(timeout == CLUCK_DEFAULT_TIMEOUT)
     {
-        g_lock_obtention_timeout = CLUCK_LOCK_OBTENTION_DEFAULT_TIMEOUT;
+        timeout = CLUCK_LOCK_OBTENTION_DEFAULT_TIMEOUT;
     }
     else
     {
-        g_lock_obtention_timeout = std::clamp(timeout, CLUCK_MINIMUM_TIMEOUT, CLUCK_LOCK_OBTENTION_MAXIMUM_TIMEOUT);
+        timeout = std::clamp(timeout, CLUCK_MINIMUM_TIMEOUT, CLUCK_LOCK_OBTENTION_MAXIMUM_TIMEOUT);
     }
+
+    cppthread::guard lock(g_mutex);
+    g_lock_obtention_timeout = timeout;
 }
 
 
@@ -1010,15 +985,17 @@ timeout_t get_lock_duration_timeout()
 
 void set_lock_duration_timeout(timeout_t timeout)
 {
-    cppthread::guard lock(g_mutex);
     if(timeout == CLUCK_DEFAULT_TIMEOUT)
     {
-        g_lock_duration_timeout = CLUCK_LOCK_DURATION_DEFAULT_TIMEOUT;
+        timeout = CLUCK_LOCK_DURATION_DEFAULT_TIMEOUT;
     }
     else
     {
-        g_lock_duration_timeout = std::clamp(timeout, CLUCK_MINIMUM_TIMEOUT, CLUCK_MAXIMUM_TIMEOUT);
+        timeout = std::clamp(timeout, CLUCK_MINIMUM_TIMEOUT, CLUCK_MAXIMUM_TIMEOUT);
     }
+
+    cppthread::guard lock(g_mutex);
+    g_lock_duration_timeout = timeout;
 }
 
 
@@ -1031,15 +1008,17 @@ timeout_t get_unlock_timeout()
 
 void set_unlock_timeout(timeout_t timeout)
 {
-    cppthread::guard lock(g_mutex);
     if(timeout == CLUCK_DEFAULT_TIMEOUT)
     {
-        g_unlock_timeout = CLUCK_UNLOCK_DEFAULT_TIMEOUT;
+        timeout = CLUCK_UNLOCK_DEFAULT_TIMEOUT;
     }
     else
     {
-        g_unlock_timeout = std::clamp(timeout, CLUCK_UNLOCK_MINIMUM_TIMEOUT, CLUCK_MAXIMUM_TIMEOUT);
+        timeout = std::clamp(timeout, CLUCK_UNLOCK_MINIMUM_TIMEOUT, CLUCK_MAXIMUM_TIMEOUT);
     }
+
+    cppthread::guard lock(g_mutex);
+    g_unlock_timeout = timeout;
 }
 
 
@@ -1552,21 +1531,56 @@ void cluck::set_reason(reason_t reason)
  * This function attempts a lock. If a lock was already initiated or is in
  * place, the function fails.
  *
- * On a time scale, the lock obtention and lock duration parameters are used
+ * On a timeline, the lock obtention and lock duration parameters are used
  * as follow:
  *
  * \code
- *      lock obtention     lock duration                     unlock timeout
- *   |<---------------->|<------------------------------->|<------------>|
+ * Lock Obtention Fails (timeout)
+ *
+ *      lock obtention
+ *   |<---------------->|
  *   |                  |                                 |              |
- * --+------------------+---------------------------------+--------------+
- *   ^        ^         ^      ^                          ^              ^
- *   |        |         |      |                          |              |
- *   |        |         |      |   safe work ends here ---+              |
- *   |        |         |      +--- do your work safely                  |
- *   |        |         +--- if lock not obtained, lock_failed() called  |
- *   |        +--- LOCKED received, lock_obtained() called               |
- *   +--- now                          too late to do additional work ---+
+ * --+------------------+
+ *   ^                  ^
+ *   |                  +--- if lock not obtained, lock_failed() called  |
+ *   +--- send LOCK                    too late to do additional work ---+
+ *
+ * Lock Obtention Succeeds -- early release
+ *
+ *      lock obtention     lock duration                     unlock timeout
+ *   |<-----...|<-------------------------------->|<------------>|
+ *   |         |                                  |              |
+ * --+---------+----------------------------------+--------------+-->
+ *   ^        ^       ^         ^
+ *   |        |       |         |
+ *   |        |       |  done early, send UNLOCK
+ *   |        |       |
+ *   |        |       +--- do your work safely
+ *   |        |
+ *   |        +--- LOCKED received, lock_obtained() called
+ *   |
+ *   +--- send LOCK
+ *
+ * Lock Obtention Succeeds -- late release
+ *
+ *      lock obtention     lock duration                     unlock timeout
+ *   |<-----...|<-------------------------------->|<------------>|
+ *   |         |                                  |              |
+ * --+---------+----------------------------------+--------------+-->
+ *   ^        ^       ^                           ^   ^          ^
+ *   |        |       |                           |   |          |
+ *   |        |       |   safe work ends here ----+   |          |
+ *   |        |       |  (client receives UNLOCKING)  |          |
+ *   |        |       |                               |          |
+ *   |        |       +--- do your work safely        |          |
+ *   |        |                                       |          |
+ *   |        |  dangerous, but work can end here ----+          |
+ *   |        |  by sending UNLOCK                               |
+ *   |        |                                                  |
+ *   |        +--- LOCKED received, lock_obtained() called       |
+ *   |                                                           |
+ *   +--- send LOCK           too late to do additional work ----+
+ *                            (client receives UNLOCKED)
  * \endcode
  *
  * If the lock obtention times out before we receive a LOCKED message
@@ -1581,9 +1595,16 @@ void cluck::set_reason(reason_t reason)
  * is still safe, but considered _dangerous_. It is best to try to limit
  * your work so it is complete by the time the lock end date is past.
  *
+ * If the cluck service never receives the UNLOCK message, it ends up
+ * sending a UNLOCKED message at the time the "unlock timeout" is reached.
+ *
  * \note
  * This function does not trigger any calls to your callbacks. These only
- * happen if this function returns true and once we receive the replies.
+ * happen if this function returns true and once replies are received.
+ * If the function returns false, then the lock will never happen.
+ *
+ * \msc
+ * \mscend
  *
  * \return true if the lock obtention was properly initiated.
  */
@@ -1729,7 +1750,7 @@ void cluck::unlock()
     // set the state to "failed" and still call the finally() callbacks
     //
     timeout_t unlock_timeout_date(snapdev::now());
-    unlock_timeout_date += timeout_t(5, 0);
+    unlock_timeout_date += timeout_t(5, 0); // TODO: use correct timeout instead of hard coded 5s
     set_timeout_date(unlock_timeout_date);
     set_enable(true);
 
@@ -1932,7 +1953,7 @@ void cluck::process_timeout()
         // the UNLOCK was never acknowledged
         //
         set_reason(reason_t::CLUCK_REASON_LOCAL_TIMEOUT);
-        f_state = state_t::CLUCK_STATE_FAILED;
+        lock_failed();
         finally();
         break;
 
@@ -1990,14 +2011,17 @@ void cluck::lock_obtained()
  */
 void cluck::lock_failed()
 {
-    f_state = state_t::CLUCK_STATE_FAILED;
+    if(f_state != state_t::CLUCK_STATE_FAILED)
+    {
+        f_state = state_t::CLUCK_STATE_FAILED;
 
-    // disable our timer, we don't need to time out if the lock failed
-    // since we're done in this case
-    //
-    set_enable(false);
+        // disable our timer, we don't need to time out if the lock failed
+        // since we're done in this case
+        //
+        set_enable(false);
 
-    f_lock_failed_callbacks.call(this);
+        f_lock_failed_callbacks.call(this);
+    }
 }
 
 
@@ -2039,6 +2063,7 @@ void cluck::msg_locked(ed::message & msg)
     }
 
     f_lock_timeout_date = msg.get_timespec_parameter("timeout_date");
+    f_unlocked_timeout_date = msg.get_timespec_parameter("unlocked_date");
 
     // setup our timer so it times out on that date
     //
@@ -2144,7 +2169,19 @@ void cluck::msg_unlocked(ed::message & msg)
 
     f_state = state_t::CLUCK_STATE_IDLE;
     set_enable(false);
-    set_reason(reason_t::CLUCK_REASON_NONE);
+    if(snapdev::now() >= f_unlocked_timeout_date)
+    {
+        // we took too long and received the unlocked after the lock was
+        // over (instead of snapdev::now() called here, we may want to
+        // call it right after the callback returned)
+        //
+        set_reason(reason_t::CLUCK_REASON_REMOTE_TIMEOUT);
+        lock_failed();
+    }
+    else
+    {
+        set_reason(reason_t::CLUCK_REASON_NONE);
+    }
     finally();
 }
 
@@ -2171,7 +2208,16 @@ void cluck::msg_unlocking(ed::message & msg)
 
     set_enable(false);
     set_reason(reason_t::CLUCK_REASON_REMOTE_TIMEOUT);
-    unlock();
+    if(snapdev::now() >= f_unlocked_timeout_date)
+    {
+        // it looks like we're beyond unlocking this lock
+        //
+        lock_failed();
+    }
+    else
+    {
+        unlock();
+    }
 }
 
 

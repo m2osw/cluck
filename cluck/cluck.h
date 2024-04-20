@@ -18,7 +18,6 @@
 //
 #include    <eventdispatcher/connection_with_send_message.h>
 #include    <eventdispatcher/dispatcher.h>
-//#include    <eventdispatcher/dispatcher_match.h>
 #include    <eventdispatcher/timer.h>
 
 
@@ -111,7 +110,7 @@ void                        set_unlock_timeout(timeout_t timeout);
  * * finally code (i.e. code to run after the lock was released)
  *
  * The cluck class is itself an eventdispatcher connection so you must add
- * it to the communictor. Actually, you can add it and then forget about the
+ * it to the communicator. Actually, you can add it and then forget about the
  * pointer. That way, once you are in your finally code, it automatically
  * gets removed from the communicator.
  */
@@ -196,6 +195,7 @@ private:
     timeout_t                   f_lock_duration_timeout = CLUCK_DEFAULT_TIMEOUT;
     timeout_t                   f_unlock_timeout = CLUCK_DEFAULT_TIMEOUT;
     timeout_t                   f_lock_timeout_date = timeout_t();
+    timeout_t                   f_unlocked_timeout_date = timeout_t();
     type_t                      f_type = type_t::CLUCK_TYPE_READ_WRITE;
     state_t                     f_state = state_t::CLUCK_STATE_IDLE;
     reason_t                    f_reason = reason_t::CLUCK_REASON_NONE;

@@ -1,0 +1,113 @@
+# Messages sent and received by the "cluck" object.
+
+msc {
+  client, locked, obtained_cb, unlocking, unlocked,
+  lock_failed, failed_cb, finally, finally_cb, communicator, daemon;
+
+  client box daemon [label="Client's View of a Successful Lock"];
+  client =>> obtained_cb;
+  client << obtained_cb;
+  client =>> finally_cb;
+  client << finally_cb;
+
+  client box daemon [label="Client's View of a Failed Lock"];
+  client =>> failed_cb;
+  client << failed_cb;
+  client =>> finally_cb;
+  client << finally_cb;
+
+  client box daemon [label="Successful Lock"];
+  client -> communicator [label="LOCK"];
+  communicator -> daemon [label="LOCK"];
+  communicator <- daemon [label="LOCKED"];
+  client <- communicator [label="LOCKED"];
+  client =>> locked;
+  locked =>> obtained_cb;
+  locked << obtained_cb;
+  client << locked;
+  client -> communicator [label="UNLOCK"];
+  communicator -> daemon [label="UNLOCK"];
+  communicator <- daemon [label="UNLOCKED"];
+  client <- communicator [label="UNLOCKED"];
+  client =>> unlocked;
+  client << unlocked;
+  client =>> finally;
+  finally =>> finally_cb;
+  finally << finally_cb;
+  client << finally;
+
+  client box daemon [label="Successful Lock, Late Unlocking"];
+  client -> communicator [label="LOCK"];
+  communicator -> daemon [label="LOCK"];
+  communicator <- daemon [label="LOCKED"];
+  client <- communicator [label="LOCKED"];
+  client =>> locked;
+  locked =>> obtained_cb;
+  locked << obtained_cb;
+  client << locked;
+  communicator <- daemon [label="UNLOCKING"];
+  client <- communicator [label="UNLOCKING (may happen before locked() returned)"];
+  client =>> unlocking;
+  unlocking -> communicator [label="UNLOCK"];
+  communicator -> daemon [label="UNLOCK"];
+  client << unlocking;
+  communicator <- daemon [label="UNLOCKED"];
+  client <- communicator [label="UNLOCKED"];
+  client =>> unlocked;
+  client << unlocked;
+  client =>> finally;
+  finally =>> finally_cb;
+  finally << finally_cb;
+  client << finally;
+
+  client box daemon [label="Successful Lock, No Unlocking"];
+  client -> communicator [label="LOCK"];
+  communicator -> daemon [label="LOCK"];
+  communicator <- daemon [label="LOCKED"];
+  client <- daemon [label="LOCKED"];
+  client =>> locked;
+  locked =>> obtained_cb;
+  communicator <- daemon [label="UNLOCKING"];
+  client <- communicator [label="UNLOCKING"];
+  communicator <- daemon [label="UNLOCKED"];
+  client <- communicator [label="UNLOCKED"];
+  locked << obtained_cb;
+  client << locked;
+  client =>> lock_failed;
+  lock_failed =>> failed_cb;
+  lock_failed << failed_cb;
+  client << lock_failed;
+  client =>> finally;
+  finally =>> finally_cb;
+  finally << finally_cb;
+  client << finally;
+
+  client box daemon [label="Failed Lock (timed out on daemon's side)"];
+  client -> communicator [label="LOCK"];
+  communicator -> daemon [label="LOCK"];
+  communicator <- daemon [label="LOCK_FAILED"];
+  client <- communicator [label="LOCK_FAILED"];
+  client =>> lock_failed;
+  lock_failed =>> failed_cb;
+  lock_failed << failed_cb;
+  client << lock_failed;
+  client =>> finally;
+  finally =>> finally_cb;
+  finally << finally_cb;
+  client << finally;
+
+  client box daemon [label="Failed Lock (message does not reach a daemon)"];
+  client -> communicator [label="LOCK"];
+  communicator -x daemon [label="LOCK"];
+  client <- communicator [label="TRANSMISSION_REPORT (could not forward the LOCK message)"];
+  client =>> lock_failed;
+  lock_failed =>> failed_cb;
+  lock_failed << failed_cb;
+  client << lock_failed;
+  client =>> finally;
+  finally =>> finally_cb;
+  finally << finally_cb;
+  client << finally;
+}
+
+# vim: ts=2 sw=2 et

@@ -46,7 +46,7 @@ add_subdirectory(cluck)
 add_subdirectory(daemon)
 add_subdirectory(tools)
 add_subdirectory(cmake)
-#add_subdirectory(tests)
+add_subdirectory(tests)
 add_subdirectory(conf)
 add_subdirectory(doc)
 

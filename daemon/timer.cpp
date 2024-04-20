@@ -42,7 +42,7 @@ namespace cluck_daemon
  * message or enter a lock the timer is reset with the next lock that is
  * going to time out. When that happens, the cleanup() function gets
  * called. Any lock which timed out is removed and the user on the other
- * end is told about the problem with an UNLOCKING, UNLOCKED or LOCKFAILED
+ * end is told about the problem with an UNLOCKING, UNLOCKED or LOCK_FAILED
  * message as the case may be.
  */
 

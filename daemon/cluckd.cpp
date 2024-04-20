@@ -913,7 +913,7 @@ std::string cluckd::ticket_list() const
                 << key_ticket.second->get_entering_key()
                 << "  ";
 
-            cluck::timeout_t const lock_timeout(key_ticket.second->get_lock_timeout());
+            cluck::timeout_t const lock_timeout(key_ticket.second->get_lock_timeout_date());
             if(!lock_timeout)
             {
                 list
@@ -1682,9 +1682,9 @@ void cluckd::cleanup()
             }
             else
             {
-                if(key_ticket->second->get_current_timeout() < next_timeout)
+                if(key_ticket->second->get_current_timeout_date() < next_timeout)
                 {
-                    next_timeout = key_ticket->second->get_current_timeout();
+                    next_timeout = key_ticket->second->get_current_timeout_date();
                 }
                 ++key_ticket;
             }
@@ -1725,9 +1725,9 @@ void cluckd::cleanup()
             }
             else
             {
-                if(key_entering->second->get_current_timeout() < next_timeout)
+                if(key_entering->second->get_current_timeout_date() < next_timeout)
                 {
-                    next_timeout = key_entering->second->get_current_timeout();
+                    next_timeout = key_entering->second->get_current_timeout_date();
                 }
                 ++key_entering;
             }

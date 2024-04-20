@@ -17,22 +17,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #pragma once
 
-// self
-//
-//#include    "computer.h"
-//#include    "debug_info.h"
-//#include    "info.h"
-//#include    "interrupt.h"
-//#include    "message_cache.h"
-//#include    "ticket.h"
-//#include    "timer.h"
-
-
-// cluck
-//
-//#include    <cluck/cluck.h>
-
-
 // fluid-settings
 //
 #include    <fluid-settings/fluid_settings_connection.h>

@@ -95,8 +95,8 @@ public:
     cluck::timeout_t            get_obtention_timeout() const;
     void                        set_alive_timeout(cluck::timeout_t timeout);
     cluck::timeout_t            get_lock_duration() const;
-    cluck::timeout_t            get_lock_timeout() const;
-    cluck::timeout_t            get_current_timeout() const;
+    cluck::timeout_t            get_lock_timeout_date() const;
+    cluck::timeout_t            get_current_timeout_date() const;
     bool                        timed_out() const;
     std::string const &         get_object_name() const;
     std::string const &         get_server_name() const;
@@ -148,7 +148,8 @@ private:
     // locked
     //
     bool                            f_locked = false;
-    cluck::timeout_t                f_lock_timeout = cluck::timeout_t();
+    cluck::timeout_t                f_lock_timeout_date = cluck::timeout_t();
+    cluck::timeout_t                f_unlocked_timeout_date = cluck::timeout_t();
 
     // the lock did not take (in most cases, this is because of a timeout)
     //

@@ -1,0 +1,25 @@
+// do a valid LOCK + UNLOCK
+
+run()
+listen(address: <127.0.0.1:20002>)
+
+label(name: wait_message)
+clear_message()
+wait(timeout: 12, mode: wait)
+has_message()
+if(false: wait_message)
+
+show_message()
+
+has_message(command: LOCK)
+if(false: not_lock)
+verify_message(command: LOCK,
+	required_parameters: { service: responder, version: 1 })
+send_message(command: LOCKED,
+	//sent_server: reporter_test_extension, sent_service: test_processor,
+	//server: reporter_test, service: accept_one_message,
+	parameters: { status: alive })
+goto(label: wait_message)
+
+label(name: not_lock)
+exit(error_message: "reached exit too soon")

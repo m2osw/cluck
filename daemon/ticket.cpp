@@ -776,7 +776,8 @@ void ticket::lock_activated()
     && !f_lock_failed)
     {
         f_locked = true;
-        f_lock_timeout = f_lock_duration + snapdev::now();
+        f_lock_timeout_date = f_lock_duration + snapdev::now();
+        f_unlocked_timeout_date = f_unlock_duration + f_lock_timeout_date;
 
         if(f_owner == f_cluckd->get_server_name())
         {
@@ -785,7 +786,8 @@ void ticket::lock_activated()
             locked_message.set_server(f_server_name);
             locked_message.set_service(f_service_name);
             locked_message.add_parameter("object_name", f_object_name);
-            locked_message.add_parameter("timeout_date", f_lock_timeout);
+            locked_message.add_parameter("timeout_date", f_lock_timeout_date);
+            locked_message.add_parameter("unlocked_date", f_unlocked_timeout_date);
             f_messenger->send_message(locked_message);
         }
     }
@@ -889,7 +891,7 @@ void ticket::lock_failed()
             // now we have to extend the lock timeout to make sure that
             // the UNLOCKED has a chance to be acknowledged
             //
-            f_lock_timeout += f_unlock_duration;
+            f_lock_timeout_date += f_unlock_duration;
         }
 
         if(f_owner == f_cluckd->get_server_name())
@@ -1251,9 +1253,9 @@ cluck::timeout_t ticket::get_lock_duration() const
  *
  * \return The date when the ticket will timeout or zero.
  */
-cluck::timeout_t ticket::get_lock_timeout() const
+cluck::timeout_t ticket::get_lock_timeout_date() const
 {
-    return f_lock_timeout;
+    return f_lock_timeout_date;
 }
 
 
@@ -1273,7 +1275,7 @@ cluck::timeout_t ticket::get_lock_timeout() const
  *
  * \return The date when the ticket will timeout or zero.
  */
-cluck::timeout_t ticket::get_current_timeout() const
+cluck::timeout_t ticket::get_current_timeout_date() const
 {
     if(f_alive_timeout > cluck::timeout_t())
     {
@@ -1282,7 +1284,7 @@ cluck::timeout_t ticket::get_current_timeout() const
 
     if(f_locked)
     {
-        return f_lock_timeout;
+        return f_lock_timeout_date;
     }
 
     return f_obtention_timeout;
@@ -1303,9 +1305,9 @@ cluck::timeout_t ticket::get_current_timeout() const
  */
 bool ticket::timed_out() const
 {
-    // Note: as long as f_locked is false, the f_lock_timeout value is zero
+    // Note: as long as f_locked is false, the f_lock_timeout_date value is zero
     //
-    return get_current_timeout() <= snapdev::now();
+    return get_current_timeout_date() <= snapdev::now();
 }
 
 
@@ -1439,7 +1441,7 @@ std::string ticket::serialize() const
 
     data["ticket_ready"]        = f_ticket_ready ? "true" : "false";
     data["locked"]              = f_locked ? "true" : "false";
-    data["lock_timeout"]        = f_lock_timeout.to_timestamp(true);
+    data["lock_timeout_date"]   = f_lock_timeout_date.to_timestamp(true);
     data["lock_failed"]         = f_lock_failed ? "true" : "false";
 
     std::string result;
@@ -1529,15 +1531,15 @@ void ticket::unserialize(std::string const & data)
             {
                 f_locked = f_locked || value == "true";
             }
-            else if(name == "lock_timeout")
+            else if(name == "lock_timeout_date")
             {
                 // the time may be larger because of an UNLOCK so we keep
                 // the largest value
                 //
-                cluck::timeout_t const timeout(value);
-                if(timeout > f_lock_timeout)
+                cluck::timeout_t const timeout_date(value);
+                if(timeout_date > f_lock_timeout_date)
                 {
-                    f_lock_timeout = timeout;
+                    f_lock_timeout_date = timeout_date;
                 }
             }
             else if(name == "lock_failed")
