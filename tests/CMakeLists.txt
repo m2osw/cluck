@@ -22,8 +22,9 @@
 project(unittest)
 
 find_package(SnapCatch2)
+find_package(Reporter)
 
-if(SnapCatch2_FOUND)
+if(SnapCatch2_FOUND AND Reporter_FOUND)
 
     add_executable(${PROJECT_NAME}
         catch_main.cpp
@@ -36,23 +37,26 @@ if(SnapCatch2_FOUND)
         PUBLIC
             ${CMAKE_BINARY_DIR}
             ${PROJECT_SOURCE_DIR}
-            ${SNAPCATCH2_INCLUDE_DIRS}
+
             ${LIBEXCEPT_INCLUDE_DIRS}
+            ${REPORTER_SOURCE_DIR}
+            ${SNAPCATCH2_INCLUDE_DIRS}
             ${SNAPDEV_INCLUDE_DIRS}
     )
 
     target_link_libraries(${PROJECT_NAME}
         cluck
+        ${REPORTER_LIBRARIES}
         ${SNAPCATCH2_LIBRARIES}
     )
 
     add_test(unittests ${PROJECT_NAME})
 
-else(SnapCatch2_FOUND)
+else()
 
-    message("snapcatch2 not found... no tests will be built.")
+    message("snapcatch2 and/or reporter not found... no tests will be built.")
 
-endif(SnapCatch2_FOUND)
+endif()
 
 
 # vim: ts=4 sw=4 et
