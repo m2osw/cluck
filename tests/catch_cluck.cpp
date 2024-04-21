@@ -21,8 +21,10 @@
 #include    "catch_main.h"
 
 
+
 // cluck
 //
+#include    <cluck/cluck.h>
 #include    <cluck/names.h>
 #include    <cluck/version.h>
 
@@ -50,14 +52,30 @@ namespace
 
 
 
+addr::addr get_address()
+{
+    addr::addr a;
+    sockaddr_in ip = {
+        .sin_family = AF_INET,
+        .sin_port = htons(20002),
+        .sin_addr = {
+            .s_addr = htonl(0x7f000001),
+        },
+        .sin_zero = {},
+    };
+    a.set_ipv4(ip);
+    return a;
+}
+
+
 // the cluck class requires a messenger to function, it is a client
 // extension instead of a standalone client
 //
-class messenger
+class test_messenger
     : public ed::tcp_client_permanent_message_connection
 {
 public:
-    typedef std::shared_ptr<messenger> pointer_t;
+    typedef std::shared_ptr<test_messenger> pointer_t;
 
     enum class sequence_t
     {
@@ -67,7 +85,7 @@ public:
         SEQUENCE_FAIL_TIMEOUT_UNLOCK,
     };
 
-    messenger(
+    test_messenger(
               addr::addr const & a
             , ed::mode_t mode
             , sequence_t sequence)
@@ -80,14 +98,16 @@ public:
         , f_sequence(sequence)
         , f_dispatcher(std::make_shared<ed::dispatcher>(this))
     {
-        set_name("messenger");    // connection name
+        set_name("test_messenger");    // connection name
         set_dispatcher(f_dispatcher);
-        f_dispatcher->add_matches({
-            ed::define_match(
-                  ed::Expression(cluck::g_name_cluck_cmd_lock)
-                , ed::Callback(std::bind(&messenger::msg_lock, this, std::placeholders::_1))
-            ),
-        });
+
+        // these are going to be sent to the cluck object
+        //f_dispatcher->add_matches({
+        //    ed::define_match(
+        //          ed::Expression(cluck::g_name_cluck_cmd_lock)
+        //        , ed::Callback(std::bind(&test_messenger::msg_lock, this, std::placeholders::_1))
+        //    ),
+        //});
 
         // further dispatcher initialization
         //
@@ -97,36 +117,52 @@ public:
 #endif
     }
 
+    ed::dispatcher::pointer_t get_dispatcher() const
+    {
+        return f_dispatcher;
+    }
+
     virtual void process_connected() override
     {
         // always register at the time we connect
         //
         tcp_client_permanent_message_connection::process_connected();
+
+std::cerr << "--- received process_connected()! " << static_cast<void *>(f_guarded.get()) << "\n";
+        CATCH_REQUIRE(f_guarded->lock());
+std::cerr << "--- ready!\n";
     }
 
-    void msg_lock(ed::message & msg)
+    bool lock_obtained(cluck::cluck * c)
     {
-        snapdev::NOT_USED(msg);
+        snapdev::NOT_USED(c);
+std::cerr << "--- LOCK obtained apparently\n";
 
+        ++f_step;
         switch(f_sequence)
         {
         case sequence_t::SEQUENCE_SUCCESS:
             {
-                ed::message locked;
-                locked.reply_to(msg);
-                locked.set_command("LOCK");
-                locked.add_parameter("param1", 7209);
-                if(!send_message(locked, false))
-                {
-                    throw std::runtime_error("could not send LOCK message");
-                }
+std::cerr << "--- got a message in SEQUENCE SUCCESS... send LOCK for now\n";
+                // the cluck object does that, not us!?
+                //ed::message locked;
+                //locked.reply_to(msg);
+                //locked.set_command("LOCK");
+                //locked.add_parameter("param1", 7209);
+                //if(!send_message(locked, false))
+                //{
+                //    throw std::runtime_error("could not send LOCK message");
+                //}
             }
             break;
 
         default:
+            throw std::runtime_error("unknown sequence of event!?");
             break;
 
         }
+
+        return true;
     }
 
     //virtual void process_message(ed::message & msg) override
@@ -163,6 +199,26 @@ public:
         f_timer = done_timer;
     }
 
+    void set_guard(cluck::cluck::pointer_t guarded)
+    {
+        if(f_guarded != nullptr)
+        {
+            throw std::logic_error("guard already set.");
+        }
+
+        f_guarded = guarded;
+        f_lock_obtained_callback_id = f_guarded->add_lock_obtained_callback(std::bind(&test_messenger::lock_obtained, this, std::placeholders::_1));
+    }
+
+    void remove_callbacks()
+    {
+        if(f_guarded != nullptr)
+        {
+            f_guarded->remove_lock_obtained_callback(f_lock_obtained_callback_id);
+            f_lock_obtained_callback_id = cluck::cluck::callback_manager_t::NULL_CALLBACK_ID;
+        }
+    }
+
 private:
     // the sequence & step define the next action
     //
@@ -171,6 +227,40 @@ private:
     int                         f_step = 0;
     ed::connection::weak_pointer_t
                                 f_timer = ed::connection::weak_pointer_t();
+    cluck::cluck::pointer_t     f_guarded = cluck::cluck::pointer_t();
+    cluck::cluck::callback_manager_t::callback_id_t
+                                f_lock_obtained_callback_id = cluck::cluck::callback_manager_t::NULL_CALLBACK_ID;
+};
+
+
+class test_timer
+    : public ed::timer
+{
+public:
+    typedef std::shared_ptr<test_timer> pointer_t;
+
+    test_timer(test_messenger::pointer_t m)
+        : timer(10'000'000)
+        , f_messenger(m)
+    {
+        set_name("test_timer");
+    }
+
+    void process_timeout()
+    {
+        remove_from_communicator();
+        f_messenger->remove_from_communicator();
+        f_timed_out = true;
+    }
+
+    bool timed_out_prima() const
+    {
+        return f_timed_out;
+    }
+
+private:
+    test_messenger::pointer_t   f_messenger = test_messenger::pointer_t();
+    bool                        f_timed_out = false;
 };
 
 
@@ -192,7 +282,33 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
 
         SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
         e->start();
-        e->run();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_SUCCESS));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        e->set_thread_done_callback([messenger, timer]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+            });
+
+std::cerr << "--- create cluck with " << static_cast<void *>(messenger.get())
+<< " and " << messenger->get_dispatcher()
+<< "\n";
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-name"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_SIMPLE));
+        messenger->set_guard(guarded);
+
+        CATCH_REQUIRE(e->run());
 
         CATCH_REQUIRE(s->get_exit_code() == 0);
     }

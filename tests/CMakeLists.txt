@@ -38,6 +38,7 @@ if(SnapCatch2_FOUND AND Reporter_FOUND)
             ${CMAKE_BINARY_DIR}
             ${PROJECT_SOURCE_DIR}
 
+            ${LIBADDR_INCLUDE_DIRS}
             ${LIBEXCEPT_INCLUDE_DIRS}
             ${REPORTER_SOURCE_DIR}
             ${SNAPCATCH2_INCLUDE_DIRS}
@@ -46,6 +47,8 @@ if(SnapCatch2_FOUND AND Reporter_FOUND)
 
     target_link_libraries(${PROJECT_NAME}
         cluck
+        ${LIBADDR_LIBRARIES}
+        ${LIBEXCEPT_LIBRARIES}
         ${REPORTER_LIBRARIES}
         ${SNAPCATCH2_LIBRARIES}
     )

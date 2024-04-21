@@ -1201,10 +1201,23 @@ cluck::cluck(
     , f_connection(messenger)
     , f_dispatcher(dispatcher)
     , f_mode(mode)
-    , f_lock_obtention_timeout(get_lock_obtention_timeout())
-    , f_lock_duration_timeout(get_lock_duration_timeout())
-    , f_unlock_timeout(get_unlock_timeout())
+    , f_lock_obtention_timeout(CLUCK_DEFAULT_TIMEOUT)
+    , f_lock_duration_timeout(CLUCK_DEFAULT_TIMEOUT)
+    , f_unlock_timeout(CLUCK_DEFAULT_TIMEOUT)
 {
+    if(messenger == nullptr
+    || dispatcher == nullptr)
+    {
+        throw invalid_parameter("messenger & dispatcher parameters must be defined in cluck::cluck() constructor.");
+    }
+std::cerr << "--- time outs at the start = ["
+<< f_lock_duration_timeout
+<< "] and ["
+<< f_unlock_timeout
+<< "] and ["
+<< f_lock_obtention_timeout
+<< "]\n";
+
     set_enable(false);
 }
 
@@ -1614,6 +1627,7 @@ bool cluck::lock()
     //
     if(is_busy())
     {
+std::cerr << "--- IS BUSY IS TRUE!?\n";
         return false;
     }
 
@@ -1637,6 +1651,7 @@ bool cluck::lock()
     lock_message.set_command(g_name_cluck_cmd_lock);
     lock_message.set_service("cluck");
     lock_message.add_parameter("object_name", f_object_name);
+    lock_message.add_parameter("tag", static_cast<int>(f_tag));
     lock_message.add_parameter("pid", cppthread::gettid());
     lock_message.add_parameter("serial", f_serial);
     lock_message.add_parameter("timeout", obtention_timeout_date);
@@ -1654,6 +1669,7 @@ bool cluck::lock()
     }
     if(!f_connection->send_message(lock_message))
     {
+std::cerr << "--- SEND MESSAGE FAILURE?!\n";
         return false;
     }
 
@@ -1738,6 +1754,7 @@ void cluck::unlock()
     unlock_message.set_command(g_name_cluck_cmd_unlock);
     unlock_message.set_service("cluck");
     unlock_message.add_parameter("object_name", f_object_name);
+    unlock_message.add_parameter("tag", static_cast<int>(f_tag));
     unlock_message.add_parameter("pid", gettid());
     unlock_message.add_parameter("serial", f_serial);
     if(!f_connection->send_message(unlock_message))
@@ -1876,13 +1893,13 @@ bool cluck::is_cluck_msg(ed::message & msg) const
     if(!msg.has_parameter("object_name")
     || !msg.has_parameter("tag"))
     {
-        ed::message unknown;
-        unknown.user_data(msg.user_data<void>());
-        unknown.reply_to(msg);
-        unknown.set_command(ed::g_name_ed_cmd_unknown);
-        unknown.add_parameter("command", msg.get_command());
-        unknown.add_parameter("message", "the \"object_name\" and \"tag\" parameters are mandatory.");
-        f_connection->send_message(unknown);
+        ed::message invalid;
+        invalid.user_data(msg.user_data<void>());
+        invalid.reply_to(msg);
+        invalid.set_command(ed::g_name_ed_cmd_invalid);
+        invalid.add_parameter("command", msg.get_command());
+        invalid.add_parameter("message", "the \"object_name\" and \"tag\" parameters are mandatory.");
+        f_connection->send_message(invalid);
         return false;
     }
 
@@ -1898,14 +1915,20 @@ bool cluck::is_cluck_msg(ed::message & msg) const
     {
         // somehow we received a message with the wrong object name
         //
-        throw invalid_parameter(
-                  "received message \""
-                + msg.get_command()
-                + "\" for lock \""
-                + msg.get_parameter("object_name")
-                + "\" instead of \""
-                + f_object_name
-                + "\".");
+        ed::message invalid;
+        invalid.user_data(msg.user_data<void>());
+        invalid.reply_to(msg);
+        invalid.set_command(ed::g_name_ed_cmd_invalid);
+        invalid.add_parameter("command", msg.get_command());
+        invalid.add_parameter(
+              "message"
+            , "the \"object_name\" parameter does not match this cluck object. Got \""
+              + msg.get_parameter("object_name")
+              + "\", expected \""
+              + f_object_name
+              + "\".");
+        f_connection->send_message(invalid);
+        return false;
     }
 
     return true;
@@ -1945,6 +1968,7 @@ void cluck::process_timeout()
     case state_t::CLUCK_STATE_LOCKED:
         // we are out of time, unlock now
         //
+std::cerr << "--- is this a LOCK time out already?!\n";
         set_reason(reason_t::CLUCK_REASON_LOCAL_TIMEOUT);
         unlock();
         break;
@@ -1993,6 +2017,7 @@ void cluck::lock_obtained()
         // lock automatically; otherwise the user is responsible for
         // releasing the lock once done
         //
+std::cerr << "--- lock obtained in SIMPLE mode?\n";
         unlock();
     }
 }
@@ -2057,6 +2082,7 @@ void cluck::finally()
  */
 void cluck::msg_locked(ed::message & msg)
 {
+std::cerr << "--- we got a LOCKED message!\n";
     if(!is_cluck_msg(msg))
     {
         return;
@@ -2216,6 +2242,7 @@ void cluck::msg_unlocking(ed::message & msg)
     }
     else
     {
+std::cerr << "--- unlocking?\n";
         unlock();
     }
 }

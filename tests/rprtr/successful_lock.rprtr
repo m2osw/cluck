@@ -13,13 +13,60 @@ show_message()
 
 has_message(command: LOCK)
 if(false: not_lock)
-verify_message(command: LOCK,
-	required_parameters: { service: responder, version: 1 })
-send_message(command: LOCKED,
-	//sent_server: reporter_test_extension, sent_service: test_processor,
-	//server: reporter_test, service: accept_one_message,
-	parameters: { status: alive })
+verify_message(
+	command: LOCK,
+	service: cluck,
+	required_parameters: {
+		object_name: "lock-name",
+		tag: `^[0-9]+$`,
+		pid: `^[0-9]+$`,
+		serial: `^[0-9]+$`,
+		timeout: `^[0-9]+\.[0-9]+$`
+	},
+	// parameters have defaults so they should not be included
+	forbidden_parameters: {
+		duration,
+		type,
+		unlock_duration
+	})
+save_parameter_value(parameter_name: tag, variable_name: tag)
+save_parameter_value(parameter_name: pid, variable_name: pid)
+save_parameter_value(parameter_name: serial, variable_name: serial)
+save_parameter_value(parameter_name: timeout, variable_name: timeout)
+set_variable(name: unlocked_date, value: ${timeout} + 5) // unlock final timeout is timeout + 5s
+send_message(
+	command: LOCKED,
+	sent_server: my_server,
+	sent_service: cluck,
+	server: lock_server,
+	service: cluckd,
+	parameters: {
+		object_name: "lock-name",
+		tag: "${tag}",
+		timeout_date: ${timeout},
+		unlocked_date: ${unlocked_date}
+	})
 goto(label: wait_message)
 
 label(name: not_lock)
+has_message(command: UNLOCK)
+if(false: not_unlock)
+verify_message(
+	command: UNLOCK,
+	service: cluck,
+	required_parameters: {
+		object_name: "lock-name",
+		tag: "${tag}",
+		pid: "${pid}",
+		serial: "${serial}"
+	},
+	// parameters have defaults so they should not be included
+	forbidden_parameters: {
+		duration,
+		timeout,
+		type,
+		unlock_duration
+	})
+exit(timeout: 1)
+
 exit(error_message: "reached exit too soon")
