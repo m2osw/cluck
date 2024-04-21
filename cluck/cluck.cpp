@@ -917,7 +917,7 @@ namespace
 
 
 cppthread::mutex            g_mutex = cppthread::mutex();
-ed::dispatcher_match::tag_t g_tag = 0;
+ed::dispatcher_match::tag_t g_tag = ed::dispatcher_match::tag_t();
 cluck::serial_t             g_serial = cluck::serial_t();
 timeout_t                   g_lock_obtention_timeout = CLUCK_LOCK_OBTENTION_DEFAULT_TIMEOUT;
 timeout_t                   g_lock_duration_timeout = CLUCK_LOCK_DURATION_DEFAULT_TIMEOUT;
@@ -930,7 +930,7 @@ ed::dispatcher_match::tag_t get_next_tag()
     ++g_tag;
     if(g_tag == ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG)
     {
-        g_tag = 1;
+        g_tag = 1; // LCOV_EXCL_LINE
     }
     return g_tag;
 }
@@ -942,7 +942,7 @@ cluck::serial_t get_next_serial()
     ++g_serial;
     if(g_serial == 0)
     {
-        g_serial = 1;
+        g_serial = 1; // LCOV_EXCL_LINE
     }
     return g_serial;
 }
@@ -2088,8 +2088,11 @@ std::cerr << "--- we got a LOCKED message!\n";
         return;
     }
 
+std::cerr << "--- get param timeout_date!\n";
     f_lock_timeout_date = msg.get_timespec_parameter("timeout_date");
+std::cerr << "--- get param unlocked_date! " << f_lock_timeout_date << "\n";
     f_unlocked_timeout_date = msg.get_timespec_parameter("unlocked_date");
+std::cerr << "--- passed... " << f_unlocked_timeout_date << "\n";
 
     // setup our timer so it times out on that date
     //
