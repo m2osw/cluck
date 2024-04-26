@@ -21,11 +21,11 @@ then
     CLUCK_CONFIGURATION_FILE=${CLUCK_CONFIGURATION_DIR}/50-${PACKAGE_NAME}.conf
     if test ! -f ${CLUCK_CONFIGURATION_FILE}
     then
-        echo "# Variables to define the communicatord and fluid-settings" >${CLUCK_CONFIGURATION_FILE}
+        echo "# Variables to define the cluckd" >${CLUCK_CONFIGURATION_FILE}
         echo "#" >>${CLUCK_CONFIGURATION_FILE}
         echo "# See /etc/cluck/cluck.conf for documentation" >>${CLUCK_CONFIGURATION_FILE}
         echo "#" >>${CLUCK_CONFIGURATION_FILE}
-        echo "#communicatord_listen=" >>${CLUCK_CONFIGURATION_FILE}
+        echo "#cluckd_listen=" >>${CLUCK_CONFIGURATION_FILE}
 
         chmod 0644 ${CLUCK_CONFIGURATION_FILE}
         chown "${USER_NAME}":"${GROUP_NAME}" ${CLUCK_CONFIGURATION_FILE}

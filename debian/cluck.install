@@ -5,11 +5,10 @@ usr/lib/lib*.so.*
 # Services
 #
 usr/sbin/cluckd
-usr/share/communicatord
 
 # Tools
 #
-usr/bin/cluck
+usr/bin/lock-status
 
 # Configuration Files
 #
