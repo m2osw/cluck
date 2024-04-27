@@ -16,6 +16,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-add_subdirectory(lock_status)
+add_subdirectory(cluck_status)
 
 # vim: ts=4 sw=4 et

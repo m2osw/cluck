@@ -1,6 +1,6 @@
 # Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
 #
-# https://snapwebsites.org/project/lock_status
+# https://snapwebsites.org/project/cluck
 # contact@m2osw.com
 #
 # This program is free software: you can redistribute it and/or modify
@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-project(lock-status)
+project(cluck-status)
 
 add_executable(${PROJECT_NAME}
     main.cpp
@@ -46,6 +46,5 @@ install(
     RUNTIME DESTINATION
         bin
 )
-
 
 # vim: ts=4 sw=4 et

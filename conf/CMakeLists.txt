@@ -1,11 +1,11 @@
 # Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
 #
-# https://snapwebsites.org/
+# https://snapwebsites.org/project/cluck
 # contact@m2osw.com
 #
-# This program is free software; you can redistribute it and/or modify
+# This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
+# the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # This program is distributed in the hope that it will be useful,
@@ -14,33 +14,27 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-project(snaplock_conf)
-
+project(cluck_conf)
 
 
-#################################################################################
-## Logger files
-##
+# logger files
 install(
-    FILES 
-        snaplock.properties
+    FILES
+        logger/cluck.conf
 
     DESTINATION
-        share/snapwebsites/logger
+        ${SNAPLOGGER_SHARE_CONF_DIR}
 )
 
-##
-## Communicator daemon service file
-##
+# define cluck as a communicator service
 install(
     FILES 
         cluck.service
 
     DESTINATION
-        share/snapwebsites/logger
+        ${COMMUNICATORD_SERVICES_INSTALL_DIR}
 )
 
 

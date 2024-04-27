@@ -52,5 +52,5 @@ Architecture: all
 Depends: cluck (= ${binary:Version}), ${misc:Depends}
 Suggests: cluck-doc
 Description: The development environment of cluck.
- The headers and other files necessary to compile your own code agains the
+ The headers and other files necessary to compile your own code against the
  cluck library.

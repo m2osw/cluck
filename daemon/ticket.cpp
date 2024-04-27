@@ -218,25 +218,7 @@ namespace cluck_daemon
  *     first in that list! So all we have to do is: if not first,
  *     sleep() some more.
  *
- * \note
- * A Cassandra version is proposed on the following page. However,
- * because Cassandra always manages its data with tombstones, you
- * get a very large number of tombstones quickly in your database
- * (at least the CF that manages the lock.) Hence, we have our
- * own deamon which is much faster anyway because it only does work
- * in memory and through the network.
- *
- *   http://wiki.apache.org/cassandra/Locking
- *
- * \note
- * We also have our own Cassandra implementation in our
- * libQtCassandra library which is fully functional (look
- * at version 0.5.22).
- *
- *   https://snapwebsites.org/project/libqtcassandra
- *
- *
- * \section implementation Our implementation in snaplock
+ * \section implementation Our implementation in cluck
  *
  * Locks are given a name by our users. This is used to lock just
  * one small thing for any amount of time as required by your

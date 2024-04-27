@@ -8,11 +8,11 @@ usr/sbin/cluckd
 
 # Tools
 #
-usr/bin/lock-status
+usr/bin/cluck-status
 
 # Configuration Files
 #
 conf/README.md                                    etc/cluck/
-conf/cluck-daemon.conf                            etc/cluck/
+conf/cluck.conf                                   etc/cluck/
 conf/logger/README.md                             etc/cluck/logger/
-conf/logger/cluck-daemon.conf                     etc/cluck/logger/
+conf/logger/cluck.conf                            etc/cluck/logger/

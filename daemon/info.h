@@ -1,6 +1,6 @@
 // Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
 //
-// https://snapwebsites.org/
+// https://snapwebsites.org/project/cluck
 // contact@m2osw.com
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,13 +17,10 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #pragma once
 
-// self
+// eventdispatcher
 //
 #include    <eventdispatcher/signal.h>
-//#include <snapwebsites/snap_communicator_dispatcher.h>
-//#include <snapwebsites/snap_exception.h>
-//#include <snapwebsites/snap_lock.h>
-//#include <snapwebsites/snapwebsites.h>
+
 
 
 namespace cluck_daemon

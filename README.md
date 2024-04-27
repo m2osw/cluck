@@ -302,7 +302,7 @@ Bugs
 ====
 
 Submit bug reports and patches on
-[github](https://github.com/m2osw/snapwebsites/issues).
+[github](https://github.com/m2osw/cluck/issues).
 
 # vim: ts=2 sw=2 et
 

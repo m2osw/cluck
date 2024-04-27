@@ -1,6 +1,6 @@
 // Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
 //
-// https://snapwebsites.org/
+// https://snapwebsites.org/project/cluck
 // contact@m2osw.com
 //
 // This program is free software: you can redistribute it and/or modify

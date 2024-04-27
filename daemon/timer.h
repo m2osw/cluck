@@ -17,15 +17,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #pragma once
 
-// self
-//
-//#include    "messenger.h"
-//#include <snapwebsites/snap_communicator_dispatcher.h>
-//#include <snapwebsites/snap_exception.h>
-//#include <snapwebsites/snap_lock.h>
-//#include <snapwebsites/snapwebsites.h>
-
-
 // eventdispatcher
 //
 #include    <eventdispatcher/timer.h>
