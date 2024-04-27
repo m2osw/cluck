@@ -16,3 +16,5 @@ conf/README.md                                    etc/cluck/
 conf/cluck.conf                                   etc/cluck/
 conf/logger/README.md                             etc/cluck/logger/
 conf/logger/cluck.conf                            etc/cluck/logger/
+usr/share/communicatord
+usr/share/snaplogger
