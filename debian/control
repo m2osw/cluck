@@ -48,7 +48,7 @@ Description: Document the cluck library.
 
 Package: cluck-dev
 Section: libdevel
-Architecture: all
+Architecture: any
 Depends: cluck (= ${binary:Version}), ${misc:Depends}
 Suggests: cluck-doc
 Description: The development environment of cluck.
