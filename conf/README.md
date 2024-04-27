@@ -14,7 +14,7 @@ That way, you will continue to get the default configuration
 changes from the source package under `/etc/cluck`.
 
 All files get first loaded from `/etc/cluck` and then again
-from `/etc/cluck/prinbee.d`. Any parameter redefined in the
+from `/etc/cluck/cluck.d`. Any parameter redefined in the
 sub-directory overwrites the parameter of the same name in
 the main directory.
 

@@ -9,9 +9,8 @@ The files have to be named:
 
     # or
 
-    ??-prinbee-daemon.conf
-    ??-prinbee-proxy.conf
+    ??-cluck-daemon.conf
 
 Where `??` represents a number from 00 to 99. In general, the administrator
-should use `50-prinbee-daemon.conf`. Other projects may use other numbers.
+should use `50-cluck-daemon.conf`. Other projects may use other numbers.
 

@@ -28,7 +28,7 @@ Build-Depends: cmake,
 Standards-Version: 3.9.4
 Homepage: https://snapwebsites.org/
 Vcs-Git: https://github.com/m2osw/snapcpp.git
-Vcs-Browser: https://github.com/m2osw/prinbee
+Vcs-Browser: https://github.com/m2osw/cluck
 
 Package: cluck
 Section: libs
