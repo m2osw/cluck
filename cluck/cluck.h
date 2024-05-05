@@ -43,20 +43,19 @@ enum class mode_t
 enum class reason_t
 {
     CLUCK_REASON_NONE,
-    CLUCK_REASON_LOCAL_TIMEOUT,      // process_timeout() was called
-    CLUCK_REASON_REMOTE_TIMEOUT,     // FAILED_LOCK was received with a "timeout" error
-    CLUCK_REASON_DEADLOCK,           // FAILED_LOCK was received with a "deadlock" error
-    CLUCK_REASON_TRANSMISSION_ERROR, // communicatord could not forward the message to a cluckd
-    CLUCK_REASON_INVALID,            // communicatord did not like our message
+    CLUCK_REASON_LOCAL_TIMEOUT,         // process_timeout() was called
+    CLUCK_REASON_REMOTE_TIMEOUT,        // FAILED_LOCK was received with a "timeout" error
+    CLUCK_REASON_DEADLOCK,              // FAILED_LOCK was received with a "deadlock" error
+    CLUCK_REASON_TRANSMISSION_ERROR,    // communicatord could not forward the message to a cluckd
+    CLUCK_REASON_INVALID,               // communicatord did not like our message
 };
 
 
 enum class type_t
 {
-    CLUCK_TYPE_READ_WRITE,
-    CLUCK_TYPE_READ_ONLY,
+    CLUCK_TYPE_READ_WRITE,              // wait N seconds after the last READ-ONLY before attempting the READ-WRITE lock
+    CLUCK_TYPE_READ_ONLY,               // shared lock
     CLUCK_TYPE_READ_WRITE_PRIORITY,     // prevent further READ-ONLY until done with this lock
-    CLUCK_TYPE_READ_WRITE_GENTLE,       // wait N seconds after the last READ-ONLY before attempting the READ-WRITE lock
 };
 
 
@@ -128,6 +127,7 @@ public:
                             , ed::connection_with_send_message::pointer_t connection
                             , ed::dispatcher::pointer_t dispatcher
                             , mode_t mode = mode_t::CLUCK_MODE_SIMPLE);
+    virtual             ~cluck() override;
 
     callback_manager_t::callback_id_t
                         add_lock_obtained_callback(
@@ -154,6 +154,8 @@ public:
     void                set_lock_duration_timeout(timeout_t timeout);
     timeout_t           get_unlock_timeout() const;
     void                set_unlock_timeout(timeout_t timeout);
+
+    mode_t              get_mode() const;
     type_t              get_type() const;
     void                set_type(type_t type);
     reason_t            get_reason() const;

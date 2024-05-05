@@ -924,6 +924,20 @@ timeout_t                   g_lock_duration_timeout = CLUCK_LOCK_DURATION_DEFAUL
 timeout_t                   g_unlock_timeout = CLUCK_UNLOCK_DEFAULT_TIMEOUT;
 
 
+ed::match_t match_command_and_tag(ed::dispatcher_match const * m, ed::message & msg)
+{
+    if(m->f_expr != nullptr
+    && m->f_expr == msg.get_command()
+    && msg.has_parameter(g_name_cluck_param_tag)
+    && msg.get_integer_parameter(g_name_cluck_param_tag) == m->f_tag)
+    {
+        return ed::match_t::MATCH_TRUE;
+    }
+
+    return ed::match_t::MATCH_FALSE;
+}
+
+
 ed::dispatcher_match::tag_t get_next_tag()
 {
     cppthread::guard lock(g_mutex);
@@ -1210,15 +1224,22 @@ cluck::cluck(
     {
         throw invalid_parameter("messenger & dispatcher parameters must be defined in cluck::cluck() constructor.");
     }
-std::cerr << "--- time outs at the start = ["
-<< f_lock_duration_timeout
-<< "] and ["
-<< f_unlock_timeout
-<< "] and ["
-<< f_lock_obtention_timeout
-<< "]\n";
 
     set_enable(false);
+}
+
+
+/** \brief Make sure to clean up the dispatcher.
+ *
+ * If the lock() command was called, then a set of dispatcher functions
+ * were added. The destructor makes sure those get removed in case the
+ * finally() function does not get called first.
+ *
+ * \sa finally()
+ */
+cluck::~cluck()
+{
+    f_dispatcher->remove_matches(f_tag);
 }
 
 
@@ -1449,12 +1470,28 @@ void cluck::set_unlock_timeout(timeout_t timeout)
 }
 
 
+/** \brief Retrieve the mode.
+ *
+ * The lock can be created in various modes. This function returns the mode
+ * used when creating the cluck object. This mode cannot be changed once
+ * the lock was created.
+ *
+ * \return The mode the lock was created with.
+ */
+mode_t cluck::get_mode() const
+{
+    return f_mode;
+}
+
+
 /** \brief Retrieve the lock type.
  *
  * The lock can be given a type changing the behavior of the locking
  * mechanism. Please see the set_type() function for additional details.
  *
  * \return The type of lock this cluck object uses at the moment.
+ *
+ * \sa set_type()
  */
 type_t cluck::get_type() const
 {
@@ -1465,24 +1502,28 @@ type_t cluck::get_type() const
 /** \brief Set the lock type.
  *
  * This function changes the type of lock the lock() function uses. It can
- * only be claled if the cluck object is not currently busy (i.e. before
+ * only be called if the cluck object is not currently busy (i.e. before
  * the lock() function is called).
  *
- * The supported type of licks are:
+ * The supported type of locks are:
  *
  * \li Exclusive Lock (type_t::CLUCK_TYPE_READ_WRITE) -- this type of lock
  * can only be obtained by one single process. This is the default. 
  * \li Shared Lock (type_t::CLUCK_TYPE_READ_ONLY) -- this type of lock can
  * be obtained by any number of processes. It, however, prevents exclusive
- * locks to take.
+ * locks from taking.
  * \li Exclusive Lock with Priority (type_t::CLUCK_TYPE_READ_WRITE_PRIORITY) --
  * this is similar to the basic Exclusive Lock, except that it prevents further
  * Shared Locks from happening, making sure that the exclusive lock happens
  * as soon as possible.
  *
- * \exception 
+ * \exception busy
+ * If the cluck object is currently in use (trying to obtain a lock, has a
+ * lock, releasing a lock) then the busy exception is raised.
  *
  * \param[in] type  One of the type_t enumerations.
+ *
+ * \sa get_type()
  */
 void cluck::set_type(type_t type)
 {
@@ -1552,11 +1593,11 @@ void cluck::set_reason(reason_t reason)
  *
  *      lock obtention
  *   |<---------------->|
- *   |                  |                                 |              |
+ *   |                  |
  * --+------------------+
  *   ^                  ^
- *   |                  +--- if lock not obtained, lock_failed() called  |
- *   +--- send LOCK                    too late to do additional work ---+
+ *   |                  +--- if lock not obtained, lock_failed() called
+ *   +--- send LOCK
  *
  * Lock Obtention Succeeds -- early release
  *
@@ -1566,7 +1607,7 @@ void cluck::set_reason(reason_t reason)
  * --+---------+----------------------------------+--------------+-->
  *   ^        ^       ^         ^
  *   |        |       |         |
- *   |        |       |  done early, send UNLOCK
+ *   |        |       |         +--- done early, send UNLOCK
  *   |        |       |
  *   |        |       +--- do your work safely
  *   |        |
@@ -1649,33 +1690,37 @@ std::cerr << "--- IS BUSY IS TRUE!?\n";
     //
     ed::message lock_message;
     lock_message.set_command(g_name_cluck_cmd_lock);
-    lock_message.set_service("cluck");
-    lock_message.add_parameter("object_name", f_object_name);
-    lock_message.add_parameter("tag", static_cast<int>(f_tag));
-    lock_message.add_parameter("pid", cppthread::gettid());
-    lock_message.add_parameter("serial", f_serial);
-    lock_message.add_parameter("timeout", obtention_timeout_date);
+    lock_message.set_service(g_name_cluck_service_name);
+    lock_message.add_parameter(g_name_cluck_param_object_name, f_object_name);
+    lock_message.add_parameter(g_name_cluck_param_tag, static_cast<int>(f_tag));
+    lock_message.add_parameter(g_name_cluck_param_pid, cppthread::gettid());
+    lock_message.add_parameter(ed::g_name_ed_param_serial, f_serial);
+    lock_message.add_parameter(g_name_cluck_param_timeout, obtention_timeout_date);
     if(f_lock_duration_timeout != CLUCK_DEFAULT_TIMEOUT)
     {
-        lock_message.add_parameter("duration", f_lock_duration_timeout);
+        lock_message.add_parameter(g_name_cluck_param_duration, f_lock_duration_timeout);
     }
     if(f_unlock_timeout != CLUCK_DEFAULT_TIMEOUT)
     {
-        lock_message.add_parameter("unlock_duration", f_unlock_timeout);
+        lock_message.add_parameter(g_name_cluck_param_unlock_duration, f_unlock_timeout);
     }
     if(f_type != type_t::CLUCK_TYPE_READ_WRITE)
     {
-        lock_message.add_parameter("type", static_cast<int>(f_type));
+        lock_message.add_parameter(g_name_cluck_param_type, static_cast<int>(f_type));
     }
     if(!f_connection->send_message(lock_message))
     {
-std::cerr << "--- SEND MESSAGE FAILURE?!\n";
+        // LCOV_EXCL_START
+        f_state = state_t::CLUCK_STATE_FAILED;
+        set_reason(reason_t::CLUCK_REASON_TRANSMISSION_ERROR);
         return false;
+        // LCOV_EXCL_STOP
     }
 
     set_timeout_date(obtention_timeout_date);
     set_enable(true);
 
+    set_reason(reason_t::CLUCK_REASON_NONE);
     f_state = state_t::CLUCK_STATE_LOCKING;
 
     // start listening to our messages
@@ -1683,24 +1728,28 @@ std::cerr << "--- SEND MESSAGE FAILURE?!\n";
     ed::dispatcher_match locked(ed::define_match(
               ed::Expression(g_name_cluck_cmd_locked)
             , ed::Callback(std::bind(&cluck::msg_locked, this, std::placeholders::_1))
+            , ed::MatchFunc(&match_command_and_tag)
             , ed::Tag(f_tag)));
     f_dispatcher->add_match(locked);
 
     ed::dispatcher_match lock_failed(ed::define_match(
               ed::Expression(g_name_cluck_cmd_lock_failed)
             , ed::Callback(std::bind(&cluck::msg_lock_failed, this, std::placeholders::_1))
+            , ed::MatchFunc(&match_command_and_tag)
             , ed::Tag(f_tag)));
     f_dispatcher->add_match(lock_failed);
 
     ed::dispatcher_match unlocked(ed::define_match(
               ed::Expression(g_name_cluck_cmd_unlocked)
             , ed::Callback(std::bind(&cluck::msg_unlocked, this, std::placeholders::_1))
+            , ed::MatchFunc(&match_command_and_tag)
             , ed::Tag(f_tag)));
     f_dispatcher->add_match(unlocked);
 
     ed::dispatcher_match unlocking(ed::define_match(
               ed::Expression(g_name_cluck_cmd_unlocking)
             , ed::Callback(std::bind(&cluck::msg_unlocking, this, std::placeholders::_1))
+            , ed::MatchFunc(&match_command_and_tag)
             , ed::Tag(f_tag)));
     f_dispatcher->add_match(unlocking);
 
@@ -1732,8 +1781,6 @@ std::cerr << "--- SEND MESSAGE FAILURE?!\n";
  */
 void cluck::unlock()
 {
-    //if(f_lock_timeout_date != 0
-    //&& f_owner == gettid())
     if(f_state != state_t::CLUCK_STATE_LOCKED
     && f_state != state_t::CLUCK_STATE_LOCKING)
     {
@@ -1752,15 +1799,20 @@ void cluck::unlock()
     //
     ed::message unlock_message;
     unlock_message.set_command(g_name_cluck_cmd_unlock);
-    unlock_message.set_service("cluck");
-    unlock_message.add_parameter("object_name", f_object_name);
-    unlock_message.add_parameter("tag", static_cast<int>(f_tag));
-    unlock_message.add_parameter("pid", gettid());
-    unlock_message.add_parameter("serial", f_serial);
+    unlock_message.set_service(g_name_cluck_service_name);
+    unlock_message.add_parameter(g_name_cluck_param_object_name, f_object_name);
+    unlock_message.add_parameter(g_name_cluck_param_tag, static_cast<int>(f_tag));
+    unlock_message.add_parameter(g_name_cluck_param_pid, gettid());
+    unlock_message.add_parameter(ed::g_name_ed_param_serial, f_serial);
     if(!f_connection->send_message(unlock_message))
     {
+        // LCOV_EXCL_START
         f_state = state_t::CLUCK_STATE_FAILED;
+        set_reason(reason_t::CLUCK_REASON_TRANSMISSION_ERROR);
+        lock_failed();
+        finally();
         return;
+        // LCOV_EXCL_STOP
     }
 
     // give the UNLOCK 5 seconds to happen, if it does not happen, we'll
@@ -1841,8 +1893,13 @@ timeout_t cluck::get_timeout_date() const
  */
 bool cluck::is_locked() const
 {
+std::cerr << "--- is_locked() state "
+<< static_cast<int>(f_state)
+<< " timeout date: " << f_lock_timeout_date
+<< " > now: " << snapdev::now()
+<< "\n";
     return f_state == state_t::CLUCK_STATE_LOCKED
-        && f_lock_timeout_date < snapdev::now();
+        && f_lock_timeout_date > snapdev::now();
 }
 
 
@@ -1890,28 +1947,33 @@ bool cluck::is_cluck_msg(ed::message & msg) const
     // this is one of our messages, all of them should have the "tag"
     // and "object_name" parameters, if not present, we've got a problem
     //
-    if(!msg.has_parameter("object_name")
-    || !msg.has_parameter("tag"))
+    if(!msg.has_parameter(g_name_cluck_param_object_name)
+    || !msg.has_parameter(g_name_cluck_param_tag))
     {
         ed::message invalid;
         invalid.user_data(msg.user_data<void>());
         invalid.reply_to(msg);
         invalid.set_command(ed::g_name_ed_cmd_invalid);
-        invalid.add_parameter("command", msg.get_command());
-        invalid.add_parameter("message", "the \"object_name\" and \"tag\" parameters are mandatory.");
+        invalid.add_parameter(ed::g_name_ed_param_command, msg.get_command());
+        invalid.add_parameter(ed::g_name_ed_param_message, "the \"object_name\" and \"tag\" parameters are mandatory.");
         f_connection->send_message(invalid);
+std::cerr << "--- is_cluck_msg() found an invalid message and sent the INVALID message to the server...\n";
         return false;
     }
 
     // the tag must match our tag -- this allows your process to support
     // more than one lock (as long as each one has a different object name)
     //
-    if(msg.get_integer_parameter("tag") != f_tag)
+    if(msg.get_integer_parameter(g_name_cluck_param_tag) != f_tag)
     {
-        return false;
+        // IMpORTANT NOTE: this tag is checked in match_command_and_tag()
+        //                 before our msg_...() callbacks get called so it
+        //                 should never happen
+        //
+        throw logic_error("tag mismatch in is_click_msg()"); // LCOV_EXCL_LINE
     }
 
-    if(msg.get_parameter("object_name") != f_object_name)
+    if(msg.get_parameter(g_name_cluck_param_object_name) != f_object_name)
     {
         // somehow we received a message with the wrong object name
         //
@@ -1919,9 +1981,9 @@ bool cluck::is_cluck_msg(ed::message & msg) const
         invalid.user_data(msg.user_data<void>());
         invalid.reply_to(msg);
         invalid.set_command(ed::g_name_ed_cmd_invalid);
-        invalid.add_parameter("command", msg.get_command());
+        invalid.add_parameter(ed::g_name_ed_param_command, msg.get_command());
         invalid.add_parameter(
-              "message"
+              ed::g_name_ed_param_message
             , "the \"object_name\" parameter does not match this cluck object. Got \""
               + msg.get_parameter("object_name")
               + "\", expected \""
@@ -1963,6 +2025,7 @@ void cluck::process_timeout()
         //
         set_reason(reason_t::CLUCK_REASON_LOCAL_TIMEOUT);
         lock_failed();
+        finally();
         break;
 
     case state_t::CLUCK_STATE_LOCKED:
@@ -2062,9 +2125,16 @@ void cluck::lock_failed()
  *
  * Inside the finally() function and callbacks, the state of the lock
  * is "idle". This means you can call the lock() function immediately.
+ *
+ * \note
+ * The function makes sure to remove the dispatcher callbacks. This means
+ * further events in link with this lock will be ignored. This is considered
+ * normal since further events would not make sense at this point.
  */
 void cluck::finally()
 {
+    f_state = state_t::CLUCK_STATE_IDLE;
+    f_dispatcher->remove_matches(f_tag);
     f_finally_callbacks.call(this);
 }
 
@@ -2085,14 +2155,44 @@ void cluck::msg_locked(ed::message & msg)
 std::cerr << "--- we got a LOCKED message!\n";
     if(!is_cluck_msg(msg))
     {
+        set_reason(reason_t::CLUCK_REASON_INVALID);
+        lock_failed();
+        finally();
         return;
     }
 
-std::cerr << "--- get param timeout_date!\n";
-    f_lock_timeout_date = msg.get_timespec_parameter("timeout_date");
-std::cerr << "--- get param unlocked_date! " << f_lock_timeout_date << "\n";
-    f_unlocked_timeout_date = msg.get_timespec_parameter("unlocked_date");
-std::cerr << "--- passed... " << f_unlocked_timeout_date << "\n";
+    char const * const mandatory_parameters[2] = {
+        g_name_cluck_param_timeout_date,
+        g_name_cluck_param_unlocked_date,
+    };
+    for(auto const & name : mandatory_parameters)
+    {
+        if(!msg.has_parameter(name))
+        {
+            ed::message invalid;
+            invalid.user_data(msg.user_data<void>());
+            invalid.reply_to(msg);
+            invalid.set_command(ed::g_name_ed_cmd_invalid);
+            invalid.add_parameter(ed::g_name_ed_param_command, msg.get_command());
+            invalid.add_parameter(
+                  ed::g_name_ed_param_message
+                , "mandatory parameter \""
+                  + std::string(name)
+                  + "\" missing from message \""
+                  + msg.get_command()
+                  + "\".");
+            f_connection->send_message(invalid);
+
+            set_reason(reason_t::CLUCK_REASON_INVALID);
+            lock_failed();
+            finally();
+            return;
+        }
+    }
+
+    f_state = state_t::CLUCK_STATE_LOCKED;
+    f_lock_timeout_date = msg.get_timespec_parameter(g_name_cluck_param_timeout_date);
+    f_unlocked_timeout_date = msg.get_timespec_parameter(g_name_cluck_param_unlocked_date);
 
     // setup our timer so it times out on that date
     //
@@ -2100,6 +2200,7 @@ std::cerr << "--- passed... " << f_unlocked_timeout_date << "\n";
     set_enable(true);
 
     lock_obtained();
+std::cerr << "--- lock obtained callback returned... " << f_unlocked_timeout_date << "\n";
 }
 
 
@@ -2115,10 +2216,9 @@ void cluck::msg_lock_failed(ed::message & msg)
 {
     if(!is_cluck_msg(msg))
     {
-        return;
+        set_reason(reason_t::CLUCK_REASON_INVALID);
     }
-
-    if(msg.has_parameter(g_name_cluck_param_error))
+    else if(msg.has_parameter(g_name_cluck_param_error))
     {
         std::string const error(msg.get_parameter(g_name_cluck_param_error));
         if(error == g_name_cluck_value_timedout)
@@ -2138,8 +2238,21 @@ void cluck::msg_lock_failed(ed::message & msg)
             set_reason(reason_t::CLUCK_REASON_INVALID);
         }
     }
+    else
+    {
+        SNAP_LOG_WARNING
+            << "got "
+            << g_name_cluck_cmd_lock_failed
+            << " with no \""
+            << g_name_cluck_param_error
+            << "\" parameter."
+            << SNAP_LOG_SEND;
+
+        set_reason(reason_t::CLUCK_REASON_INVALID);
+    }
 
     lock_failed();
+    finally();
 }
 
 
@@ -2172,8 +2285,12 @@ void cluck::msg_transmission_report(ed::message & msg)
             << "\" message failed to travel to a cluckd service."
             << SNAP_LOG_SEND;
 
+        // TODO: this message is global, so we would have to fail all the
+        //       currently valid locks, not just this one
+        //
         set_reason(reason_t::CLUCK_REASON_TRANSMISSION_ERROR);
         lock_failed();
+        finally();
     }
 }
 
@@ -2191,25 +2308,29 @@ void cluck::msg_transmission_report(ed::message & msg)
  */
 void cluck::msg_unlocked(ed::message & msg)
 {
+std::cerr << "--- received UNLOCKED but I think we miss some params to get a proper match. We've got a bug in cluckd\n";
     if(!is_cluck_msg(msg))
     {
-        return;
-    }
-
-    f_state = state_t::CLUCK_STATE_IDLE;
-    set_enable(false);
-    if(snapdev::now() >= f_unlocked_timeout_date)
-    {
-        // we took too long and received the unlocked after the lock was
-        // over (instead of snapdev::now() called here, we may want to
-        // call it right after the callback returned)
-        //
-        set_reason(reason_t::CLUCK_REASON_REMOTE_TIMEOUT);
+        set_reason(reason_t::CLUCK_REASON_INVALID);
         lock_failed();
+std::cerr << "--- PAF\n";
     }
     else
     {
-        set_reason(reason_t::CLUCK_REASON_NONE);
+        set_enable(false);
+        if(snapdev::now() >= f_unlocked_timeout_date)
+        {
+            // we took too long and received the unlocked after the lock was
+            // over (instead of snapdev::now() called here, we may want to
+            // call it right after the callback returned)
+            //
+            set_reason(reason_t::CLUCK_REASON_REMOTE_TIMEOUT);
+            lock_failed();
+        }
+        else
+        {
+            set_reason(reason_t::CLUCK_REASON_NONE);
+        }
     }
     finally();
 }
@@ -2232,6 +2353,9 @@ void cluck::msg_unlocking(ed::message & msg)
 {
     if(!is_cluck_msg(msg))
     {
+        set_reason(reason_t::CLUCK_REASON_INVALID);
+        lock_failed();
+        finally();
         return;
     }
 
@@ -2242,6 +2366,7 @@ void cluck::msg_unlocking(ed::message & msg)
         // it looks like we're beyond unlocking this lock
         //
         lock_failed();
+        finally();
     }
     else
     {

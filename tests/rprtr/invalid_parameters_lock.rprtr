@@ -1,0 +1,223 @@
+// return invalid LOCKED messages
+
+set_variable(name: select, value: 0)
+
+run()
+listen(address: <127.0.0.1:20002>)
+
+label(name: wait_message)
+clear_message()
+wait(timeout: 12, mode: wait)
+
+label(name: process_message)
+has_message()
+if(false: wait_message)
+
+show_message()
+
+has_message(command: LOCK)
+if(false: not_lock)
+verify_message(
+	command: LOCK,
+	service: cluckd,
+	required_parameters: {
+		object_name: "lock-name",
+		tag: `^[0-9]+$`,
+		pid: `^[0-9]+$`,
+		serial: `^[0-9]+$`,
+		timeout: `^[0-9]+\.[0-9]+$`
+	},
+	forbidden_parameters: {
+		duration,
+		type,
+		unlock_duration
+	})
+save_parameter_value(parameter_name: tag, variable_name: tag)
+save_parameter_value(parameter_name: pid, variable_name: pid)
+now(variable_name: now)
+set_variable(name: locked_date, value: ${now} + 5)
+set_variable(name: unlocked_date, value: ${locked_date} + 5)
+
+set_variable(name: choice, value: ${select})
+if(variable: choice, not_equal: not_missing_object_name)
+send_message(
+	command: LOCKED,
+	sent_server: my_server,
+	sent_service: cluckd,
+	server: lock_server,
+	service: cluck_test,
+	parameters: {
+		//object_name: "lock-name",
+		tag: "${tag}",
+		timeout_date: ${locked_date},
+		unlocked_date: ${unlocked_date}
+	})
+
+label(name: next_message)
+clear_message()
+goto(label: process_message)
+
+label(name: not_missing_object_name)
+set_variable(name: choice, value: ${select} - 1)
+if(variable: choice, not_equal: not_missing_tag)
+// WARNING: without the tag:... this message looks like an UNKNOWN message
+//          (which makes sense because it's not know by our specific cluck
+//          object, but that means we need to properly support the UNKNOWN
+//          and UNLOCK messages)
+//
+send_message(
+	command: LOCKED,
+	sent_server: my_server,
+	sent_service: cluckd,
+	server: lock_server,
+	service: cluck_test,
+	parameters: {
+		object_name: "lock-name",
+		//tag: "${tag}",
+		timeout_date: ${locked_date},
+		unlocked_date: ${unlocked_date}
+	})
+goto(label: next_message)
+
+label(name: not_missing_tag)
+set_variable(name: choice, value: ${select} - 2)
+if(variable: choice, not_equal: not_incorrect_object_name)
+send_message(
+	command: LOCKED,
+	sent_server: my_server,
+	sent_service: cluckd,
+	server: lock_server,
+	service: cluck_test,
+	parameters: {
+		object_name: "invalid-name",
+		tag: "${tag}",
+		timeout_date: ${locked_date},
+		unlocked_date: ${unlocked_date}
+	})
+goto(label: next_message)
+
+label(name: not_incorrect_object_name)
+set_variable(name: choice, value: ${select} - 3)
+if(variable: choice, not_equal: not_missing_timeout_date)
+send_message(
+	command: LOCKED,
+	sent_server: my_server,
+	sent_service: cluckd,
+	server: lock_server,
+	service: cluck_test,
+	parameters: {
+		object_name: "lock-name",
+		tag: "${tag}",
+		//timeout_date: ${locked_date},
+		unlocked_date: ${unlocked_date}
+	})
+goto(label: next_message)
+
+label(name: not_missing_timeout_date)
+set_variable(name: choice, value: ${select} - 4)
+if(variable: choice, not_equal: not_missing_unlocked_date)
+send_message(
+	command: LOCKED,
+	sent_server: my_server,
+	sent_service: cluckd,
+	server: lock_server,
+	service: cluck_test,
+	parameters: {
+		object_name: "lock-name",
+		tag: "${tag}",
+		timeout_date: ${locked_date}
+		//unlocked_date: ${unlocked_date}
+	})
+goto(label: next_message)
+
+label(name: not_missing_unlocked_date)
+exit(error_message: "reached exit too soon -- unsupported SET_SELECT value")
+
+
+label(name: not_lock)
+has_message(command: INVALID)
+if(false: not_invalid)
+set_variable(name: msg, value: "the \"object_name\" and \"tag\" parameters are mandatory.")
+set_variable(name: choice, value: ${select} - 2)
+if(variable: choice, not_equal: not_invalid_object_name)
+set_variable(name: msg, value: "the \"object_name\" parameter does not match this cluck object. Got \"invalid-name\", expected \"lock-name\".")
+label(name: not_invalid_object_name)
+set_variable(name: choice, value: ${select} - 3)
+if(variable: choice, not_equal: not_invalid_timeout_date)
+set_variable(name: msg, value: "mandatory parameter \"timeout_date\" missing from message \"LOCKED\".")
+label(name: not_invalid_timeout_date)
+set_variable(name: choice, value: ${select} - 4)
+if(variable: choice, not_equal: not_invalid_unlocked_date)
+set_variable(name: msg, value: "mandatory parameter \"unlocked_date\" missing from message \"LOCKED\".")
+label(name: not_invalid_unlocked_date)
+verify_message(
+	command: INVALID,
+	service: cluckd,
+	required_parameters: {
+		command: "LOCKED",
+		message: ${msg}
+	})
+goto(label: next_message)
+
+label(name: not_invalid)
+has_message(command: SET_SELECT)
+if(false: not_set_select)
+verify_message(
+	command: SET_SELECT,
+	server: my_server,
+	service: cluckd,
+	required_parameters: {
+		select: `^[0-9]+$`
+	})
+save_parameter_value(parameter_name: select, variable_name: select, type: integer)
+goto(label: next_message)
+
+label(name: not_set_select)
+has_message(command: UNKNOWN)
+if(false: not_unknown)
+verify_message(
+	command: UNKNOWN,
+	server: my_server,
+	service: cluckd,
+	required_parameters: {
+		command: LOCKED
+	})
+goto(label: next_message)
+
+label(name: not_unknown)
+has_message(command: UNLOCK)
+if(false: not_unlock)
+verify_message(
+	command: UNLOCK,
+	service: cluckd,
+	required_parameters: {
+		object_name: "lock-name",
+		tag: `^[0-9]+$`,
+		pid: `^[0-9]+$`,
+		serial: `^[0-9]+$`
+	})
+send_message(
+	command: UNLOCKED,
+	sent_server: my_server,
+	sent_service: cluckd,
+	server: lock_server,
+	service: cluck_test,
+	parameters: {
+		object_name: "lock-name",
+		tag: "${tag}",
+		timeout_date: ${locked_date},
+		unlocked_date: ${unlocked_date}
+	})
+goto(label: next_message)
+
+label(name: not_unlock)
+has_message(command: QUIT)
+if(false: not_quit)
+verify_message(
+	command: QUIT,
+	server: my_server,
+	service: cluckd)
+exit()
+
+label(name: not_quit)
+exit(error_message: "reached exit too soon -- unexpected message")

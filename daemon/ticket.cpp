@@ -758,8 +758,8 @@ void ticket::lock_activated()
     && !f_lock_failed)
     {
         f_locked = true;
-        f_lock_timeout_date = f_lock_duration + snapdev::now();
-        f_unlocked_timeout_date = f_unlock_duration + f_lock_timeout_date;
+        f_lock_timeout_date = snapdev::now() + f_lock_duration;
+        f_unlocked_timeout_date = f_lock_timeout_date + f_unlock_duration;
 
         if(f_owner == f_cluckd->get_server_name())
         {
@@ -767,9 +767,9 @@ void ticket::lock_activated()
             locked_message.set_command(cluck::g_name_cluck_cmd_locked);
             locked_message.set_server(f_server_name);
             locked_message.set_service(f_service_name);
-            locked_message.add_parameter("object_name", f_object_name);
-            locked_message.add_parameter("timeout_date", f_lock_timeout_date);
-            locked_message.add_parameter("unlocked_date", f_unlocked_timeout_date);
+            locked_message.add_parameter(cluck::g_name_cluck_param_object_name, f_object_name);
+            locked_message.add_parameter(cluck::g_name_cluck_param_timeout_date, f_lock_timeout_date);
+            locked_message.add_parameter(cluck::g_name_cluck_param_unlocked_date, f_unlocked_timeout_date);
             f_messenger->send_message(locked_message);
         }
     }
@@ -824,7 +824,7 @@ void ticket::drop_ticket()
             unlocked_message.set_command(cluck::g_name_cluck_cmd_unlocked);
             unlocked_message.set_server(f_server_name);
             unlocked_message.set_service(f_service_name);
-            unlocked_message.add_parameter("object_name", f_object_name);
+            unlocked_message.add_parameter(cluck::g_name_cluck_param_object_name, f_object_name);
             f_messenger->send_message(unlocked_message);
         }
     }

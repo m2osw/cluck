@@ -25,6 +25,7 @@
 // cluck
 //
 #include    <cluck/cluck.h>
+#include    <cluck/exception.h>
 #include    <cluck/names.h>
 #include    <cluck/version.h>
 
@@ -80,9 +81,12 @@ public:
     enum class sequence_t
     {
         SEQUENCE_SUCCESS,
-        SEQUENCE_FAIL_BAD_PARAMETERS,
-        SEQUENCE_FAIL_TIMEOUT_LOCK,
-        SEQUENCE_FAIL_TIMEOUT_UNLOCK,
+        SEQUENCE_EXTENDED,
+        SEQUENCE_FAIL_MISSING_LOCKED_PARAMETERS,
+        SEQUENCE_FAIL_MISSING_UNLOCKED_PARAMETERS,
+        //SEQUENCE_FAIL_BAD_PARAMETERS,
+        //SEQUENCE_FAIL_TIMEOUT_LOCK,
+        //SEQUENCE_FAIL_TIMEOUT_UNLOCK,
     };
 
     test_messenger(
@@ -101,13 +105,10 @@ public:
         set_name("test_messenger");    // connection name
         set_dispatcher(f_dispatcher);
 
-        // these are going to be sent to the cluck object
-        //f_dispatcher->add_matches({
-        //    ed::define_match(
-        //          ed::Expression(cluck::g_name_cluck_cmd_lock)
-        //        , ed::Callback(std::bind(&test_messenger::msg_lock, this, std::placeholders::_1))
-        //    ),
-        //});
+        f_dispatcher->add_matches({
+            DISPATCHER_MATCH("DATA", &test_messenger::msg_data),
+            DISPATCHER_CATCH_ALL(),
+        });
 
         // further dispatcher initialization
         //
@@ -129,35 +130,137 @@ public:
         tcp_client_permanent_message_connection::process_connected();
 
 std::cerr << "--- received process_connected()! " << static_cast<void *>(f_guarded.get()) << "\n";
+        CATCH_REQUIRE_FALSE(f_guarded->is_locked());
+        CATCH_REQUIRE_FALSE(f_guarded->is_busy());
         CATCH_REQUIRE(f_guarded->lock());
+        CATCH_REQUIRE_FALSE(f_guarded->is_locked());
+        CATCH_REQUIRE(f_guarded->is_busy());
 std::cerr << "--- ready!\n";
     }
 
     bool lock_obtained(cluck::cluck * c)
     {
-        snapdev::NOT_USED(c);
-std::cerr << "--- LOCK obtained apparently\n";
+std::cerr << "--- LOCK obtained!\n";
+        CATCH_REQUIRE(c->is_locked());
+        CATCH_REQUIRE(c->is_busy());
+        CATCH_REQUIRE_FALSE(c->lock());
+
+        CATCH_REQUIRE_THROWS_MATCHES(
+              c->set_type(static_cast<cluck::type_t>(rand() % 3))
+            , cluck::busy
+            , Catch::Matchers::ExceptionMessage("cluck_exception: this cluck object is busy, you cannot change its type at the moment."));
+
+        CATCH_REQUIRE(f_expect_lock_obtained);
 
         ++f_step;
         switch(f_sequence)
         {
         case sequence_t::SEQUENCE_SUCCESS:
             {
-std::cerr << "--- got a message in SEQUENCE SUCCESS... send LOCK for now\n";
-                // the cluck object does that, not us!?
-                //ed::message locked;
-                //locked.reply_to(msg);
-                //locked.set_command("LOCK");
-                //locked.add_parameter("param1", 7209);
-                //if(!send_message(locked, false))
-                //{
-                //    throw std::runtime_error("could not send LOCK message");
-                //}
+std::cerr << "--- got a message in SEQUENCE SUCCESS... LOCK was obtained, we acted on it, we're done when we return\n";
+                // in lock simple the cluck object is expected to
+                // automatically call the f_guarded->unlock() function
+                // so we do not need it here
+                //
+                f_expect_finally = true;
             }
+            break;
+
+        case sequence_t::SEQUENCE_EXTENDED:
+            {
+std::cerr << "--- got a message in SEQUENCE EXTENDED... LOCK was obtained, we send a 'unique' message (READ), wait for reply to unlock\n";
+                // the cluck object does that, not us!?
+                ed::message read;
+                read.set_service("tester");
+                read.set_command("READ");
+                read.add_parameter("size", 219);
+                if(!send_message(read, false))
+                {
+                    throw std::runtime_error("could not send READ message");
+                }
+
+                // verify that we got the expected timeout date (within 1s)
+                //
+                cluck::timeout_t const now(snapdev::now());
+                cluck::timeout_t const next_hour(now + cluck::timeout_t(60 * 60, 0));
+                cluck::timeout_t const gap(next_hour - c->get_timeout_date());
+                cluck::timeout_t const min_limit(0, 0);
+                cluck::timeout_t const max_limit(1, 0);
+                CATCH_CHECK(gap >= min_limit);
+                CATCH_CHECK(gap <= max_limit);
+            }
+            break;
+
+        case sequence_t::SEQUENCE_FAIL_MISSING_UNLOCKED_PARAMETERS:
+            // send the UNLOCK immediately
+            //
+std::cerr << "--- processing the lock_obtained() SEQUENCE_FAIL_MISSING_UNLOCKED_PARAMETERS by sending an UNLOCK\n";
+            c->unlock();
             break;
 
         default:
             throw std::runtime_error("unknown sequence of event!?");
+
+        }
+
+        return true;
+    }
+
+    bool lock_failed(cluck::cluck * c)
+    {
+        CATCH_REQUIRE_FALSE(c->is_locked());
+        //CATCH_REQUIRE_FALSE(c->is_busy()); -- on error without any valid locking this is not reliable
+
+std::cerr << "--- lock failed was called: " << std::boolalpha << f_expect_lock_failed << "\n";
+        CATCH_REQUIRE(f_expect_lock_failed);
+
+        return true;
+    }
+
+    bool lock_finally(cluck::cluck * c)
+    {
+        CATCH_REQUIRE_FALSE(c->is_locked());
+        //CATCH_REQUIRE_FALSE(c->is_busy()); -- on error we cannot be sure of this state
+
+std::cerr << "--- and finally was called: " << std::boolalpha << f_expect_finally << "\n";
+        CATCH_REQUIRE(f_expect_finally);
+        f_expect_finally = false;
+
+        switch(f_sequence)
+        {
+        case sequence_t::SEQUENCE_FAIL_MISSING_LOCKED_PARAMETERS:
+            ++f_step;
+std::cerr << "--- step: " << f_step << "\n";
+            if(f_step < 5)
+            {
+                // adjust the "select" value in the script
+                //
+                ed::message set_select;
+                set_select.set_server("my_server");
+                set_select.set_service("cluckd"); // sending to cluckd
+                set_select.set_command("SET_SELECT");
+                set_select.add_parameter("select", f_step);
+                send_message(set_select);
+
+                CATCH_REQUIRE(f_guarded->lock());
+                set_expect_finally(true);
+
+//ed::message invalid;
+//invalid.set_command("WHAT");
+//invalid.add_parameter(cluck::g_name_cluck_param_message, "where is our INVALID message?");
+//send_message(invalid);
+            }
+            else
+            {
+                ed::message quit;
+                quit.set_server("my_server");
+                quit.set_service("cluckd"); // sending to cluckd
+                quit.set_command("QUIT");
+                send_message(quit);
+            }
+            break;
+
+        default:
             break;
 
         }
@@ -165,23 +268,93 @@ std::cerr << "--- got a message in SEQUENCE SUCCESS... send LOCK for now\n";
         return true;
     }
 
-    //virtual void process_message(ed::message & msg) override
-    //{
-    //    ++f_step;
-    //    std::cout
-    //        << "--- \"client\" message ("
-    //        << f_step
-    //        << "): "
-    //        << msg
-    //        << std::endl;
+    void set_expect_lock_obtained(bool expect_lock_obtained)
+    {
+        f_expect_lock_obtained = expect_lock_obtained;
+    }
 
-    //    bool disconnect_all(false);
+    bool get_expect_lock_obtained() const
+    {
+        return f_expect_lock_obtained;
+    }
 
-    //    std::string const command(msg.get_command());
-    //    if(command == "LOCK")
-    //    {
-    //    }
-    //}
+    void set_expect_lock_failed(bool expect_lock_failed)
+    {
+        f_expect_lock_failed = expect_lock_failed;
+    }
+
+    bool get_expect_lock_failed() const
+    {
+        return f_expect_lock_failed;
+    }
+
+    void set_expect_finally(bool expect_finally)
+    {
+        f_expect_finally = expect_finally;
+    }
+
+    bool get_expect_finally() const
+    {
+        return f_expect_finally;
+    }
+
+    void msg_data(ed::message & msg)
+    {
+std::cerr << "--- got DATA message... send UNLOCK\n";
+        CATCH_REQUIRE(msg.get_sent_from_server() == "my_server");
+        CATCH_REQUIRE(msg.get_sent_from_service() == "tester");
+        CATCH_REQUIRE(msg.get_server() == "other_server");
+        CATCH_REQUIRE(msg.get_service() == "cluck_test");
+
+        std::string const data(msg.get_parameter("data"));
+        std::int64_t const size(msg.get_integer_parameter("size"));
+        CATCH_REQUIRE(data.size() == static_cast<std::string::size_type>(size));
+
+        f_guarded->unlock();
+
+        f_expect_finally = true;
+    }
+
+    virtual void msg_reply_with_unknown(ed::message & msg) override
+    {
+        tcp_client_permanent_message_connection::msg_reply_with_unknown(msg);
+
+        // note that the cluck class has no idea about the unknown
+        // message so we do not get our finally() callback called
+        // automatically here (we should not get UNKNOWN messages
+        // about cluck anyway)
+        //
+        switch(f_sequence)
+        {
+        case sequence_t::SEQUENCE_FAIL_MISSING_LOCKED_PARAMETERS:
+            f_guarded->unlock();
+
+#if 0
+            ++f_step;
+std::cerr << "--- step [from UNKNOWN]: " << f_step << "\n";
+            if(f_step < 4)
+            {
+
+                // adjust the "select" value in the script
+                //
+                ed::message set_select;
+                set_select.set_server("my_server");
+                set_select.set_service("cluckd"); // sending to cluckd
+                set_select.set_command("SET_SELECT");
+                set_select.add_parameter("select", f_step);
+                send_message(set_select);
+
+                CATCH_REQUIRE(f_guarded->lock());
+                set_expect_finally(true);
+            }
+#endif
+            break;
+
+        default:
+            break;
+
+        }
+    }
 
     void disconnect()
     {
@@ -203,19 +376,29 @@ std::cerr << "--- got a message in SEQUENCE SUCCESS... send LOCK for now\n";
     {
         if(f_guarded != nullptr)
         {
-            throw std::logic_error("guard already set.");
+            throw std::logic_error("f_guarded already set.");
         }
 
         f_guarded = guarded;
         f_lock_obtained_callback_id = f_guarded->add_lock_obtained_callback(std::bind(&test_messenger::lock_obtained, this, std::placeholders::_1));
+        f_lock_failed_callback_id = f_guarded->add_lock_failed_callback(std::bind(&test_messenger::lock_failed, this, std::placeholders::_1));
+        f_finally_callback_id = f_guarded->add_finally_callback(std::bind(&test_messenger::lock_finally, this, std::placeholders::_1));
     }
 
-    void remove_callbacks()
+    void unset_guard()
     {
         if(f_guarded != nullptr)
         {
             f_guarded->remove_lock_obtained_callback(f_lock_obtained_callback_id);
             f_lock_obtained_callback_id = cluck::cluck::callback_manager_t::NULL_CALLBACK_ID;
+
+            f_guarded->remove_lock_failed_callback(f_lock_failed_callback_id);
+            f_lock_failed_callback_id = cluck::cluck::callback_manager_t::NULL_CALLBACK_ID;
+
+            f_guarded->remove_finally_callback(f_finally_callback_id);
+            f_finally_callback_id = cluck::cluck::callback_manager_t::NULL_CALLBACK_ID;
+
+            f_guarded.reset();
         }
     }
 
@@ -225,11 +408,18 @@ private:
     sequence_t                  f_sequence = sequence_t::SEQUENCE_SUCCESS;
     ed::dispatcher::pointer_t   f_dispatcher = ed::dispatcher::pointer_t();
     int                         f_step = 0;
+    bool                        f_expect_lock_obtained = false;
+    bool                        f_expect_lock_failed = false;
+    bool                        f_expect_finally = false;
     ed::connection::weak_pointer_t
                                 f_timer = ed::connection::weak_pointer_t();
     cluck::cluck::pointer_t     f_guarded = cluck::cluck::pointer_t();
     cluck::cluck::callback_manager_t::callback_id_t
                                 f_lock_obtained_callback_id = cluck::cluck::callback_manager_t::NULL_CALLBACK_ID;
+    cluck::cluck::callback_manager_t::callback_id_t
+                                f_lock_failed_callback_id = cluck::cluck::callback_manager_t::NULL_CALLBACK_ID;
+    cluck::cluck::callback_manager_t::callback_id_t
+                                f_finally_callback_id = cluck::cluck::callback_manager_t::NULL_CALLBACK_ID;
 };
 
 
@@ -264,6 +454,31 @@ private:
 };
 
 
+cluck::timeout_t g_min_timeout[3] = {
+    cluck::CLUCK_MINIMUM_TIMEOUT,
+    cluck::CLUCK_MINIMUM_TIMEOUT,
+    cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT,
+};
+
+cluck::timeout_t g_max_timeout[3] = {
+    cluck::CLUCK_LOCK_OBTENTION_MAXIMUM_TIMEOUT,
+    cluck::CLUCK_MAXIMUM_TIMEOUT,
+    cluck::CLUCK_MAXIMUM_TIMEOUT,
+};
+
+cluck::timeout_t g_min_timeout_adjust[3] = {
+    { cluck::CLUCK_MINIMUM_TIMEOUT.tv_sec - 1'000, cluck::CLUCK_MINIMUM_TIMEOUT.tv_nsec },
+    { cluck::CLUCK_MINIMUM_TIMEOUT.tv_sec - 200'000, cluck::CLUCK_MINIMUM_TIMEOUT.tv_nsec },
+    { cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT.tv_sec - 200'000, cluck::CLUCK_MINIMUM_TIMEOUT.tv_nsec },
+};
+
+cluck::timeout_t g_max_timeout_adjust[3] = {
+    { cluck::CLUCK_LOCK_OBTENTION_MAXIMUM_TIMEOUT.tv_sec + 1'000, cluck::CLUCK_LOCK_OBTENTION_MAXIMUM_TIMEOUT.tv_nsec },
+    { cluck::CLUCK_MAXIMUM_TIMEOUT.tv_sec + 200'000, cluck::CLUCK_MAXIMUM_TIMEOUT.tv_nsec },
+    { cluck::CLUCK_MAXIMUM_TIMEOUT.tv_sec + 200'000, cluck::CLUCK_MAXIMUM_TIMEOUT.tv_nsec },
+};
+
+
 
 } // no name namespace
 
@@ -271,7 +486,242 @@ private:
 
 CATCH_TEST_CASE("cluck_client", "[cluck][client]")
 {
-    CATCH_START_SECTION("successful LOCK")
+    CATCH_START_SECTION("verify timeouts")
+    {
+        // in order to make sure we do not write and/or read from the
+        // wrong variable, I use a loop to repeat the test and use
+        // random values with the exception of the default value
+        //
+        for(int count(0); count < 10'000; ++count)
+        {
+            int const select(rand() % 3);
+            bool const use_default(rand() % 10 == 0);
+            if(use_default)
+            {
+                switch(select)
+                {
+                case 0: // lock obtention timeout
+                    cluck::set_lock_obtention_timeout(cluck::CLUCK_DEFAULT_TIMEOUT);
+                    CATCH_REQUIRE(cluck::get_lock_obtention_timeout() == cluck::CLUCK_LOCK_OBTENTION_DEFAULT_TIMEOUT);
+                    break;
+
+                case 1: // lock duration timeout
+                    cluck::set_lock_duration_timeout(cluck::CLUCK_DEFAULT_TIMEOUT);
+                    CATCH_REQUIRE(cluck::get_lock_duration_timeout() == cluck::CLUCK_LOCK_DURATION_DEFAULT_TIMEOUT);
+                    break;
+
+                case 2: // unlock timeout
+                    cluck::set_unlock_timeout(cluck::CLUCK_DEFAULT_TIMEOUT);
+                    CATCH_REQUIRE(cluck::get_unlock_timeout() == cluck::CLUCK_UNLOCK_DEFAULT_TIMEOUT);
+                    break;
+
+                }
+            }
+            else
+            {
+                // compute distance (max - min)
+                //
+                cluck::timeout_t const range(g_max_timeout_adjust[select] - g_min_timeout_adjust[select]);
+
+                // use a loop to make sure we do not select the default value
+                //
+                cluck::timeout_t value;
+                do
+                {
+                    // get value from [0...max - min]
+                    //
+                    value = cluck::timeout_t(rand() % (range.tv_sec + 1), rand() % 1'000'000'000);
+
+                    // adjust value from [min...max]
+                    //
+                    value += g_min_timeout_adjust[select];
+                }
+                while(value == cluck::CLUCK_DEFAULT_TIMEOUT);
+
+                switch(select)
+                {
+                case 0: // lock obtention timeout
+                    cluck::set_lock_obtention_timeout(value);
+                    if(value < g_min_timeout[0])
+                    {
+                        CATCH_REQUIRE(cluck::get_lock_obtention_timeout() == g_min_timeout[0]);
+                    }
+                    else if(value > g_max_timeout[0])
+                    {
+                        CATCH_REQUIRE(cluck::get_lock_obtention_timeout() == g_max_timeout[0]);
+                    }
+                    else
+                    {
+                        // otherwise not clamped
+                        //
+                        CATCH_REQUIRE(cluck::get_lock_obtention_timeout() == value);
+                    }
+                    break;
+
+                case 1: // lock duration timeout
+                    cluck::set_lock_duration_timeout(value);
+                    if(value < g_min_timeout[1])
+                    {
+                        CATCH_REQUIRE(cluck::get_lock_duration_timeout() == g_min_timeout[1]);
+                    }
+                    else if(value > g_max_timeout[1])
+                    {
+                        CATCH_REQUIRE(cluck::get_lock_duration_timeout() == g_max_timeout[1]);
+                    }
+                    else
+                    {
+                        // otherwise not clamped
+                        //
+                        CATCH_REQUIRE(cluck::get_lock_duration_timeout() == value);
+                    }
+                    break;
+
+                case 2: // unlock timeout
+                    cluck::set_unlock_timeout(value);
+                    if(value < g_min_timeout[2])
+                    {
+                        CATCH_REQUIRE(cluck::get_unlock_timeout() == g_min_timeout[2]);
+                    }
+                    else if(value > g_max_timeout[2])
+                    {
+                        CATCH_REQUIRE(cluck::get_unlock_timeout() == g_max_timeout[2]);
+                    }
+                    else
+                    {
+                        // otherwise not clamped
+                        //
+                        CATCH_REQUIRE(cluck::get_unlock_timeout() == value);
+                    }
+                    break;
+
+                }
+            }
+
+            test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                      get_address()
+                    , ed::mode_t::MODE_PLAIN
+                    , test_messenger::sequence_t::SEQUENCE_SUCCESS));
+            cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+                  "lock-timeouts"
+                , messenger
+                , messenger->get_dispatcher()
+                , cluck::mode_t::CLUCK_MODE_SIMPLE));
+
+            // by default, a cluck object gets its timeout from the number
+            // saved in the global variable which means it returns DEFAULT
+            //
+            CATCH_REQUIRE(guarded->get_lock_obtention_timeout() == cluck::CLUCK_DEFAULT_TIMEOUT);
+            CATCH_REQUIRE(guarded->get_lock_duration_timeout() == cluck::CLUCK_DEFAULT_TIMEOUT);
+            CATCH_REQUIRE(guarded->get_unlock_timeout() == cluck::CLUCK_DEFAULT_TIMEOUT);
+
+            if(use_default)
+            {
+                switch(select)
+                {
+                case 0: // lock obtention timeout
+                    guarded->set_lock_obtention_timeout(cluck::CLUCK_DEFAULT_TIMEOUT);
+                    CATCH_REQUIRE(guarded->get_lock_obtention_timeout() == cluck::CLUCK_DEFAULT_TIMEOUT);
+                    break;
+
+                case 1: // lock duration timeout
+                    guarded->set_lock_duration_timeout(cluck::CLUCK_DEFAULT_TIMEOUT);
+                    CATCH_REQUIRE(guarded->get_lock_duration_timeout() == cluck::CLUCK_DEFAULT_TIMEOUT);
+                    break;
+
+                case 2: // unlock timeout
+                    guarded->set_unlock_timeout(cluck::CLUCK_DEFAULT_TIMEOUT);
+                    CATCH_REQUIRE(guarded->get_unlock_timeout() == cluck::CLUCK_DEFAULT_TIMEOUT);
+                    break;
+
+                }
+            }
+            else
+            {
+                // compute distance (max - min)
+                //
+                cluck::timeout_t const range(g_max_timeout_adjust[select] - g_min_timeout_adjust[select]);
+
+                // get value from [0...max - min]
+                //
+                cluck::timeout_t value;
+
+                // use a loop to make sure we do not select the default
+                // value because that would not be as good a test and
+                // the clamping below would fail
+                //
+                do
+                {
+                    value = cluck::timeout_t(rand() % (range.tv_sec + 1), rand() % 1'000'000'000);
+
+                    // adjust value from [min...max]
+                    //
+                    value += g_min_timeout_adjust[select];
+                }
+                while(value == cluck::CLUCK_DEFAULT_TIMEOUT);
+
+                switch(select)
+                {
+                case 0: // lock obtention timeout
+                    guarded->set_lock_obtention_timeout(value);
+                    if(value < g_min_timeout[0])
+                    {
+                        CATCH_REQUIRE(guarded->get_lock_obtention_timeout() == g_min_timeout[0]);
+                    }
+                    else if(value > g_max_timeout[0])
+                    {
+                        CATCH_REQUIRE(guarded->get_lock_obtention_timeout() == g_max_timeout[0]);
+                    }
+                    else
+                    {
+                        // otherwise not clamped
+                        //
+                        CATCH_REQUIRE(guarded->get_lock_obtention_timeout() == value);
+                    }
+                    break;
+
+                case 1: // lock duration timeout
+                    guarded->set_lock_duration_timeout(value);
+                    if(value < g_min_timeout[1])
+                    {
+                        CATCH_REQUIRE(guarded->get_lock_duration_timeout() == g_min_timeout[1]);
+                    }
+                    else if(value > g_max_timeout[1])
+                    {
+                        CATCH_REQUIRE(guarded->get_lock_duration_timeout() == g_max_timeout[1]);
+                    }
+                    else
+                    {
+                        // otherwise not clamped
+                        //
+                        CATCH_REQUIRE(guarded->get_lock_duration_timeout() == value);
+                    }
+                    break;
+
+                case 2: // unlock timeout
+                    guarded->set_unlock_timeout(value);
+                    if(value < g_min_timeout[2])
+                    {
+                        CATCH_REQUIRE(guarded->get_unlock_timeout() == g_min_timeout[2]);
+                    }
+                    else if(value > g_max_timeout[2])
+                    {
+                        CATCH_REQUIRE(guarded->get_unlock_timeout() == g_max_timeout[2]);
+                    }
+                    else
+                    {
+                        // otherwise not clamped
+                        //
+                        CATCH_REQUIRE(guarded->get_unlock_timeout() == value);
+                    }
+                    break;
+
+                }
+            }
+        }
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("successful LOCK (simple)")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/successful_lock.rprtr");
@@ -298,22 +748,225 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
                 ed::communicator::instance()->remove_connection(timer);
             });
 
-std::cerr << "--- create cluck with " << static_cast<void *>(messenger.get())
-<< " and " << messenger->get_dispatcher()
-<< "\n";
         cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
               "lock-name"
             , messenger
             , messenger->get_dispatcher()
             , cluck::mode_t::CLUCK_MODE_SIMPLE));
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_SIMPLE);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
         messenger->set_guard(guarded);
 
+        messenger->set_expect_lock_obtained(true);
         CATCH_REQUIRE(e->run());
 
         CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_NONE);
+        CATCH_REQUIRE(guarded->get_timeout_date() == cluck::timeout_t());
+
+        messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("successful LOCK (extended)")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/extended_lock.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_EXTENDED));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        e->set_thread_done_callback([messenger, timer]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+            });
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-name"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        guarded->unlock(); // nothing happens, we're not locked
+        guarded->set_type(cluck::type_t::CLUCK_TYPE_READ_ONLY);
+        guarded->set_lock_obtention_timeout({ 10, 500'000'000 }); // 10.5s
+        guarded->set_lock_duration_timeout({ 60 * 60, 0 }); // 1h
+        guarded->set_unlock_timeout({ 0, 500'000'000 }); // 0.5s
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_ONLY);
+        messenger->set_guard(guarded);
+
+        messenger->set_expect_lock_obtained(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_NONE);
+        CATCH_REQUIRE(guarded->get_timeout_date() == cluck::timeout_t());
+
+        messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("failing LOCKED (invalid parameters)")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/invalid_parameters_lock.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_FAIL_MISSING_LOCKED_PARAMETERS));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        e->set_thread_done_callback([messenger, timer]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+            });
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-name"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        messenger->set_guard(guarded);
+
+        messenger->set_expect_lock_failed(true);
+        messenger->set_expect_finally(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_INVALID);
+        CATCH_REQUIRE(guarded->get_timeout_date() == cluck::timeout_t());
+
+        messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("failing UNLOCKED (invalid object name)")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/invalid_parameters_unlock.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_FAIL_MISSING_UNLOCKED_PARAMETERS));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        e->set_thread_done_callback([messenger, timer]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+            });
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-name"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        messenger->set_guard(guarded);
+
+        messenger->set_expect_lock_obtained(true);
+        messenger->set_expect_lock_failed(true);
+        messenger->set_expect_finally(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_INVALID);
+        CATCH_REQUIRE(guarded->get_timeout_date() == cluck::timeout_t());
+
+        messenger->unset_guard();
     }
     CATCH_END_SECTION()
 }
+
+
+CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
+{
+    CATCH_START_SECTION("messenger required")
+    {
+        // create a messenger so we have a dispatcher pointer
+        //
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_EXTENDED));
+
+        CATCH_REQUIRE_THROWS_MATCHES(
+              std::make_shared<cluck::cluck>(
+                      "invalid-lock-setup"
+                    , test_messenger::pointer_t()
+                    , messenger->get_dispatcher()
+                    , cluck::mode_t::CLUCK_MODE_EXTENDED)
+            , cluck::invalid_parameter
+            , Catch::Matchers::ExceptionMessage("cluck_exception: messenger & dispatcher parameters must be defined in cluck::cluck() constructor."));
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("dispatcher required")
+    {
+        // create a messenger so we have a dispatcher pointer
+        //
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_EXTENDED));
+
+        CATCH_REQUIRE_THROWS_MATCHES(
+              std::make_shared<cluck::cluck>(
+                      "invalid-lock-setup"
+                    , messenger
+                    , ed::dispatcher::pointer_t()
+                    , cluck::mode_t::CLUCK_MODE_EXTENDED)
+            , cluck::invalid_parameter
+            , Catch::Matchers::ExceptionMessage("cluck_exception: messenger & dispatcher parameters must be defined in cluck::cluck() constructor."));
+    }
+    CATCH_END_SECTION()
+}
+
 
 
 // vim: ts=4 sw=4 et

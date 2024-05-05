@@ -1,4 +1,12 @@
 
+* The `TRANSMISSION_REPORT` message from the communicator does not include
+  any serial number or tag to recognize the cluck that sent the message.
+  (i.e. this is not a problem if an app. require only one lock at a time,
+  it can be a huge issue with multiple locks and it happens...) One solution
+  is to include a serial parameter and have the transmission report always
+  include that parameter in the reply. The other way is to cancel all the
+  locks on such failures (which is how it's done at the moment).
+
 * Implement support for semaphores (i.e. "read-only" lock that multiple
   instances can obtain in parallel)
 

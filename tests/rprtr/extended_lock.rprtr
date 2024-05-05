@@ -1,4 +1,4 @@
-// do a valid LOCK + UNLOCK
+// do a valid LOCK + READ + UNLOCK
 
 run()
 listen(address: <127.0.0.1:20002>)
@@ -22,29 +22,24 @@ verify_message(
 		tag: `^[0-9]+$`,
 		pid: `^[0-9]+$`,
 		serial: `^[0-9]+$`,
-		timeout: `^[0-9]+\.[0-9]+$`
-	},
-	// parameters have defaults so they should not be included
-	forbidden_parameters: {
-		duration,
-		type,
-		unlock_duration
+		timeout: `^[0-9]+\.[0-9]+$`,
+		duration: `^[0-9]+\.[0-9]+$`,
+		unlock_duration: `^[0-9]+\.[0-9]+$`,
+		type: "1"
 	})
 save_parameter_value(parameter_name: tag, variable_name: tag)
 save_parameter_value(parameter_name: pid, variable_name: pid)
 save_parameter_value(parameter_name: serial, variable_name: serial)
-
-// there are no duration & unlock_duration in this event, use the
-// defaults which are 5 seconds
-//
+save_parameter_value(parameter_name: duration, variable_name: duration, type: timestamp)
+save_parameter_value(parameter_name: unlock_duration, variable_name: unlock_duration, type: timestamp)
 now(variable_name: now)
-set_variable(name: locked_date, value: ${now} + 5)
-set_variable(name: unlocked_date, value: ${locked_date} + 5)
+set_variable(name: locked_date, value: ${now} + ${duration})
+set_variable(name: unlocked_date, value: ${locked_date} + ${unlock_duration})
 send_message(
 	command: LOCKED,
-	sent_server: lock_server,
+	sent_server: my_server,
 	sent_service: cluckd,
-	server: my_server,
+	server: lock_server,
 	service: cluck_test,
 	parameters: {
 		object_name: "lock-name",
@@ -58,6 +53,27 @@ clear_message()
 goto(label: process_message)
 
 label(name: not_lock)
+has_message(command: READ)
+if(false: not_read)
+verify_message(
+	command: READ,
+	service: tester,
+	required_parameters: {
+		size: 219
+	})
+send_message(
+	command: DATA,
+	sent_server: my_server,
+	sent_service: tester,
+	server: other_server,
+	service: cluck_test,
+	parameters: {
+		data: "the-data (the size received is the max.--the size returned is this buffer's size)",
+		size: 81
+	})
+goto(label: next_message)
+
+label(name: not_read)
 has_message(command: UNLOCK)
 if(false: not_unlock)
 verify_message(
@@ -78,9 +94,9 @@ verify_message(
 	})
 send_message(
 	command: UNLOCKED,
-	sent_server: lock_server,
+	sent_server: my_server,
 	sent_service: cluckd,
-	server: my_server,
+	server: lock_server,
 	service: cluck_test,
 	parameters: {
 		object_name: "lock-name",

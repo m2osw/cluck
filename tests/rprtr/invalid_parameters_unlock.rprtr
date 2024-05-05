@@ -1,9 +1,12 @@
-// do a valid LOCK + UNLOCK
+// return invalid UNLOCKED messages
+
+set_variable(name: select, value: 0)
 
 run()
 listen(address: <127.0.0.1:20002>)
 
 label(name: wait_message)
+clear_message()
 wait(timeout: 12, mode: wait)
 
 label(name: process_message)
@@ -24,7 +27,6 @@ verify_message(
 		serial: `^[0-9]+$`,
 		timeout: `^[0-9]+\.[0-9]+$`
 	},
-	// parameters have defaults so they should not be included
 	forbidden_parameters: {
 		duration,
 		type,
@@ -32,19 +34,14 @@ verify_message(
 	})
 save_parameter_value(parameter_name: tag, variable_name: tag)
 save_parameter_value(parameter_name: pid, variable_name: pid)
-save_parameter_value(parameter_name: serial, variable_name: serial)
-
-// there are no duration & unlock_duration in this event, use the
-// defaults which are 5 seconds
-//
 now(variable_name: now)
 set_variable(name: locked_date, value: ${now} + 5)
 set_variable(name: unlocked_date, value: ${locked_date} + 5)
 send_message(
 	command: LOCKED,
-	sent_server: lock_server,
+	sent_server: my_server,
 	sent_service: cluckd,
-	server: my_server,
+	server: lock_server,
 	service: cluck_test,
 	parameters: {
 		object_name: "lock-name",
@@ -65,29 +62,36 @@ verify_message(
 	service: cluckd,
 	required_parameters: {
 		object_name: "lock-name",
-		tag: "${tag}",
-		pid: "${pid}",
-		serial: "${serial}"
-	},
-	// parameters have defaults so they should not be included
-	forbidden_parameters: {
-		duration,
-		timeout,
-		type,
-		unlock_duration
+		tag: `^[0-9]+$`,
+		pid: `^[0-9]+$`,
+		serial: `^[0-9]+$`
 	})
 send_message(
 	command: UNLOCKED,
-	sent_server: lock_server,
+	sent_server: my_server,
 	sent_service: cluckd,
-	server: my_server,
+	server: lock_server,
 	service: cluck_test,
 	parameters: {
-		object_name: "lock-name",
-		tag: "${tag}"
+		object_name: "invalid-name",
+		tag: "${tag}",
+		timeout_date: ${locked_date},
+		unlocked_date: ${unlocked_date}
 	})
-wait(timeout: 1, mode: drain)
-exit()
+goto(label: next_message)
 
 label(name: not_unlock)
-exit(error_message: "reached exit too soon")
+has_message(command: INVALID)
+if(false: not_invalid)
+verify_message(
+	command: INVALID,
+	service: cluckd,
+	required_parameters: {
+		command: "UNLOCKED",
+		message: "the \"object_name\" parameter does not match this cluck object. Got \"invalid-name\", expected \"lock-name\"."
+	})
+exit()
+
+label(name: not_invalid)
+
+exit(error_message: "reached exit too soon -- unexpected message")

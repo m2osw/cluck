@@ -31,7 +31,16 @@ cmd_unlock=UNLOCK
 cmd_unlocked=UNLOCKED
 cmd_unlocking=UNLOCKING
 
+param_duration=duration
 param_error=error
+param_object_name=object_name
+param_pid=pid
+param_tag=tag
+param_timeout=timeout
+param_timeout_date=timeout_date
+param_type=type
+param_unlock_duration=unlock_duration
+param_unlocked_date=unlocked_date
 
 service_name=cluckd
 
