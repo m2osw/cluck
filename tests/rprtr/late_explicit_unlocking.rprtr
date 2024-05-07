@@ -18,14 +18,13 @@ verify_message(
 	command: LOCK,
 	service: cluckd,
 	required_parameters: {
-		object_name: "lock-name",
+		object_name: "unlocking-lock",
 		tag: `^[0-9]+$`,
 		pid: `^[0-9]+$`,
 		serial: `^[0-9]+$`,
 		timeout: `^[0-9]+(\.[0-9]+)?$`,
 		duration: `^[0-9]+(\.[0-9]+)?$`,
-		unlock_duration: `^[0-9]+(\.[0-9]+)?$`,
-		type: "1"
+		unlock_duration: `^[0-9]+(\.[0-9]+)?$`
 	})
 save_parameter_value(parameter_name: tag, variable_name: tag)
 save_parameter_value(parameter_name: pid, variable_name: pid)
@@ -42,68 +41,40 @@ send_message(
 	server: lock_server,
 	service: cluck_test,
 	parameters: {
-		object_name: "lock-name",
+		object_name: "unlocking-lock",
 		tag: "${tag}",
 		timeout_date: ${locked_date},
 		unlocked_date: ${unlocked_date}
 	})
-
-label(name: next_message)
 clear_message()
-goto(label: process_message)
 
-label(name: not_lock)
-has_message(command: READ)
-if(false: not_read)
-verify_message(
-	command: READ,
-	service: tester,
-	required_parameters: {
-		size: 219
-	})
-send_message(
-	command: DATA,
-	sent_server: my_server,
-	sent_service: tester,
-	server: other_server,
-	service: cluck_test,
-	parameters: {
-		data: "the-data (the size received is the max.--the size returned is this buffer's size)",
-		size: 81
-	})
-goto(label: next_message)
+// we just did a send_message() so it's going to process that in the
+// first wait(), the second wait() is then expected to timeout after 7s
+// which is after the unlocked complete time (a.k.a. too late)
+//
+wait(timeout: 5, mode: wait)
 
-label(name: not_read)
-has_message(command: UNLOCK)
-if(false: not_unlock)
-verify_message(
-	command: UNLOCK,
-	service: cluckd,
-	required_parameters: {
-		object_name: "lock-name",
-		tag: "${tag}",
-		pid: "${pid}",
-		serial: "${serial}"
-	},
-	// parameters have defaults so they should not be included
-	forbidden_parameters: {
-		duration,
-		timeout,
-		type,
-		unlock_duration
-	})
+wait(timeout: 7, mode: timeout)
+has_message()
+if(false: wait_timedout)
+show_message()
+exit(error_message: "wait() for a timeout got a message instead!")
+
+label(name: wait_timedout)
+
 send_message(
-	command: UNLOCKED,
+	command: UNLOCKING,
 	sent_server: my_server,
 	sent_service: cluckd,
 	server: lock_server,
 	service: cluck_test,
 	parameters: {
-		object_name: "lock-name",
+		object_name: "unlocking-lock",
 		tag: "${tag}"
 	})
-wait(timeout: 1, mode: drain)
+
+wait(timeout: 5, mode: drain)
 exit()
 
-label(name: not_unlock)
-exit(error_message: "reached exit too soon")
+label(name: not_lock)
+exit(error_message: "reached exit too soon -- unexpected message")

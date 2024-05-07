@@ -25,7 +25,7 @@ verify_message(
 		tag: `^[0-9]+$`,
 		pid: `^[0-9]+$`,
 		serial: `^[0-9]+$`,
-		timeout: `^[0-9]+\.[0-9]+$`
+		timeout: `^[0-9]+(\.[0-9]+)?$`
 	},
 	forbidden_parameters: {
 		duration,
@@ -204,9 +204,9 @@ send_message(
 	service: cluck_test,
 	parameters: {
 		object_name: "lock-name",
-		tag: "${tag}",
-		timeout_date: ${locked_date},
-		unlocked_date: ${unlocked_date}
+		tag: "${tag}"
+		//timeout_date: ${locked_date},
+		//unlocked_date: ${unlocked_date}
 	})
 goto(label: next_message)
 

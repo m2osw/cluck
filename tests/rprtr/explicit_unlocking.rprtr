@@ -1,4 +1,4 @@
-// do a valid LOCK + UNLOCK
+// do a valid LOCK + READ + UNLOCK
 
 run()
 listen(address: <127.0.0.1:20002>)
@@ -18,44 +18,57 @@ verify_message(
 	command: LOCK,
 	service: cluckd,
 	required_parameters: {
-		object_name: "lock-name",
+		object_name: "unlocking-lock",
 		tag: `^[0-9]+$`,
 		pid: `^[0-9]+$`,
 		serial: `^[0-9]+$`,
 		timeout: `^[0-9]+(\.[0-9]+)?$`
-	},
-	// parameters have defaults so they should not be included
-	forbidden_parameters: {
-		duration,
-		type,
-		unlock_duration
 	})
 save_parameter_value(parameter_name: tag, variable_name: tag)
 save_parameter_value(parameter_name: pid, variable_name: pid)
 save_parameter_value(parameter_name: serial, variable_name: serial)
-
-// there are no duration & unlock_duration in this event, use the
-// defaults which are 5 seconds
-//
 now(variable_name: now)
-set_variable(name: locked_date, value: ${now} + 5)
+set_variable(name: locked_date, value: ${now} + 1)
 set_variable(name: unlocked_date, value: ${locked_date} + 5)
 send_message(
 	command: LOCKED,
-	sent_server: lock_server,
+	sent_server: my_server,
 	sent_service: cluckd,
-	server: my_server,
+	server: lock_server,
 	service: cluck_test,
 	parameters: {
-		object_name: "lock-name",
+		object_name: "unlocking-lock",
 		tag: "${tag}",
 		timeout_date: ${locked_date},
 		unlocked_date: ${unlocked_date}
 	})
-
-label(name: next_message)
 clear_message()
-goto(label: process_message)
+
+// we just did a send_message() so it's going to process that in the
+// first wait(), the second wait() is then expected to timeout after 2s
+//
+wait(timeout: 5, mode: wait)
+
+wait(timeout: 2, mode: timeout)
+has_message()
+if(false: wait_timedout)
+show_message()
+exit(error_message: "wait() for a timeout got a message instead!")
+
+label(name: wait_timedout)
+
+send_message(
+	command: UNLOCKING,
+	sent_server: my_server,
+	sent_service: cluckd,
+	server: lock_server,
+	service: cluck_test,
+	parameters: {
+		object_name: "unlocking-lock",
+		tag: "${tag}"
+	})
+
+goto(label: wait_message)
 
 label(name: not_lock)
 has_message(command: UNLOCK)
@@ -64,7 +77,7 @@ verify_message(
 	command: UNLOCK,
 	service: cluckd,
 	required_parameters: {
-		object_name: "lock-name",
+		object_name: "unlocking-lock",
 		tag: "${tag}",
 		pid: "${pid}",
 		serial: "${serial}"
@@ -78,16 +91,16 @@ verify_message(
 	})
 send_message(
 	command: UNLOCKED,
-	sent_server: lock_server,
+	sent_server: my_server,
 	sent_service: cluckd,
-	server: my_server,
+	server: lock_server,
 	service: cluck_test,
 	parameters: {
-		object_name: "lock-name",
+		object_name: "unlocking-lock",
 		tag: "${tag}"
 	})
 wait(timeout: 1, mode: drain)
 exit()
 
 label(name: not_unlock)
-exit(error_message: "reached exit too soon")
+exit(error_message: "reached exit too soon -- unexpected message")

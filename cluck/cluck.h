@@ -86,7 +86,7 @@ inline timeout_t  CLUCK_LOCK_OBTENTION_DEFAULT_TIMEOUT = timeout_t(5, 0);
 inline timeout_t  CLUCK_LOCK_OBTENTION_MAXIMUM_TIMEOUT = timeout_t(60 * 60, 0);   // by default limit obtention timeout to this value
 inline timeout_t  CLUCK_LOCK_DURATION_DEFAULT_TIMEOUT = timeout_t(5, 0);
 inline timeout_t  CLUCK_UNLOCK_DEFAULT_TIMEOUT = timeout_t(5, 0);
-inline timeout_t  CLUCK_UNLOCK_MINIMUM_TIMEOUT = timeout_t(60, 0);
+inline timeout_t  CLUCK_UNLOCK_MINIMUM_TIMEOUT = timeout_t(3, 0);
 
 
 timeout_t                   get_lock_obtention_timeout();
@@ -167,6 +167,7 @@ public:
     bool                is_busy() const;
 
     // ed::connection implementation
+    //
     virtual void        process_timeout() override;
 
 protected:

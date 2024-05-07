@@ -1226,6 +1226,7 @@ cluck::cluck(
     }
 
     set_enable(false);
+    set_name("cluck::" + object_name);
 }
 
 
@@ -2008,6 +2009,7 @@ std::cerr << "--- is_cluck_msg() found an invalid message and sent the INVALID m
  */
 void cluck::process_timeout()
 {
+SNAP_LOG_TRACE << "--- PROCESS TIMEOUT ---" << SNAP_LOG_SEND;
     set_enable(false);
 
     // the LOCK event and the lock duration can time out
@@ -2200,7 +2202,7 @@ std::cerr << "--- we got a LOCKED message!\n";
     set_enable(true);
 
     lock_obtained();
-std::cerr << "--- lock obtained callback returned... " << f_unlocked_timeout_date << "\n";
+std::cerr << "--- lock obtained callback returned... process_timeout() at " << f_lock_timeout_date << "\n";
 }
 
 
@@ -2351,6 +2353,7 @@ std::cerr << "--- PAF\n";
  */
 void cluck::msg_unlocking(ed::message & msg)
 {
+std::cerr << "--- received UNLOCKING at " << snapdev::now() << "\n";
     if(!is_cluck_msg(msg))
     {
         set_reason(reason_t::CLUCK_REASON_INVALID);
@@ -2359,18 +2362,17 @@ void cluck::msg_unlocking(ed::message & msg)
         return;
     }
 
-    set_enable(false);
     set_reason(reason_t::CLUCK_REASON_REMOTE_TIMEOUT);
     if(snapdev::now() >= f_unlocked_timeout_date)
     {
-        // it looks like we're beyond unlocking this lock
+        // it looks like we are beyond unlocking this lock
         //
+        set_enable(false);
         lock_failed();
         finally();
     }
     else
     {
-std::cerr << "--- unlocking?\n";
         unlock();
     }
 }
