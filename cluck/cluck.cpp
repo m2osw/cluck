@@ -1697,6 +1697,7 @@ std::cerr << "--- IS BUSY IS TRUE!?\n";
     lock_message.add_parameter(g_name_cluck_param_pid, cppthread::gettid());
     lock_message.add_parameter(ed::g_name_ed_param_serial, f_serial);
     lock_message.add_parameter(g_name_cluck_param_timeout, obtention_timeout_date);
+    lock_message.add_parameter(communicatord::g_name_communicatord_param_transmission_report, communicatord::g_name_communicatord_value_failure);
     if(f_lock_duration_timeout != CLUCK_DEFAULT_TIMEOUT)
     {
         lock_message.add_parameter(g_name_cluck_param_duration, f_lock_duration_timeout);
@@ -2273,6 +2274,9 @@ void cluck::msg_lock_failed(ed::message & msg)
  * In most cases, if cached, the timeout will let us know if the message
  * does not make it.
  *
+ * \note
+ * At the moment we do not use the cache for any of our messages.
+ *
  * \param[in] msg  The TRANSMISSION_REPORT message.
  */
 void cluck::msg_transmission_report(ed::message & msg)
@@ -2287,8 +2291,8 @@ void cluck::msg_transmission_report(ed::message & msg)
             << "\" message failed to travel to a cluckd service."
             << SNAP_LOG_SEND;
 
-        // TODO: this message is global, so we would have to fail all the
-        //       currently valid locks, not just this one
+        // TODO: this message is global, so we fail all the
+        //       currently valid locks
         //
         set_reason(reason_t::CLUCK_REASON_TRANSMISSION_ERROR);
         lock_failed();
