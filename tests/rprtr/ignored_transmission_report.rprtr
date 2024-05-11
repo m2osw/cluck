@@ -1,0 +1,122 @@
+// do a valid LOCK + READ + UNLOCK
+
+run()
+listen(address: <127.0.0.1:20002>)
+
+label(name: wait_message)
+wait(timeout: 12, mode: wait)
+
+label(name: process_message)
+has_message()
+if(false: wait_message)
+
+show_message()
+
+has_message(command: LOCK)
+if(false: not_lock)
+verify_message(
+	command: LOCK,
+	service: cluckd,
+	required_parameters: {
+		object_name: "lock-name",
+		tag: `^[0-9]+$`,
+		pid: `^[0-9]+$`,
+		serial: `^[0-9]+$`,
+		timeout: `^[0-9]+(\.[0-9]+)?$`,
+		duration: `^[0-9]+(\.[0-9]+)?$`,
+		unlock_duration: `^[0-9]+(\.[0-9]+)?$`,
+		type: "1"
+	})
+save_parameter_value(parameter_name: tag, variable_name: tag)
+save_parameter_value(parameter_name: pid, variable_name: pid)
+save_parameter_value(parameter_name: serial, variable_name: serial)
+save_parameter_value(parameter_name: duration, variable_name: duration, type: timestamp)
+save_parameter_value(parameter_name: unlock_duration, variable_name: unlock_duration, type: timestamp)
+now(variable_name: now)
+set_variable(name: locked_date, value: ${now} + ${duration})
+set_variable(name: unlocked_date, value: ${locked_date} + ${unlock_duration})
+
+// "spurious" transmission report
+send_message(
+	command: TRANSMISSION_REPORT,
+	sent_server: my_server,
+	sent_service: cluckd,
+	server: lock_server,
+	service: cluck_test,
+	parameters: {
+		command: "NOT_OUR_MESSAGE",
+		status: "${tag}",
+	})
+
+send_message(
+	command: LOCKED,
+	sent_server: my_server,
+	sent_service: cluckd,
+	server: lock_server,
+	service: cluck_test,
+	parameters: {
+		object_name: "lock-name",
+		tag: "${tag}",
+		timeout_date: ${locked_date},
+		unlocked_date: ${unlocked_date}
+	})
+
+label(name: next_message)
+clear_message()
+goto(label: process_message)
+
+label(name: not_lock)
+has_message(command: READ)
+if(false: not_read)
+verify_message(
+	command: READ,
+	service: tester,
+	required_parameters: {
+		size: 219
+	})
+send_message(
+	command: DATA,
+	sent_server: my_server,
+	sent_service: tester,
+	server: other_server,
+	service: cluck_test,
+	parameters: {
+		data: "the-data (the size received is the max.--the size returned is this buffer's size)",
+		size: 81
+	})
+goto(label: next_message)
+
+label(name: not_read)
+has_message(command: UNLOCK)
+if(false: not_unlock)
+verify_message(
+	command: UNLOCK,
+	service: cluckd,
+	required_parameters: {
+		object_name: "lock-name",
+		tag: "${tag}",
+		pid: "${pid}",
+		serial: "${serial}"
+	},
+	// parameters have defaults so they should not be included
+	forbidden_parameters: {
+		duration,
+		timeout,
+		type,
+		unlock_duration
+	})
+send_message(
+	command: UNLOCKED,
+	sent_server: my_server,
+	sent_service: cluckd,
+	server: lock_server,
+	service: cluck_test,
+	parameters: {
+		object_name: "lock-name",
+		tag: "${tag}"
+	})
+wait(timeout: 1, mode: drain)
+exit()
+
+label(name: not_unlock)
+exit(error_message: "reached exit too soon")
