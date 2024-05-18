@@ -43,9 +43,15 @@
 #include    <eventdispatcher/reporter/state.h>
 
 
+// advgetopt
+//
+#include    <advgetopt/utils.h>
+
+
 // last include
 //
 #include    <snapdev/poison.h>
+
 
 
 namespace
@@ -82,11 +88,17 @@ public:
     {
         SEQUENCE_SUCCESS,
         SEQUENCE_EXTENDED,
+        SEQUENCE_EXTENDED_SMALL_GAP,
         SEQUENCE_FAIL_MISSING_LOCKED_PARAMETERS,
         SEQUENCE_FAIL_MISSING_UNLOCKED_PARAMETERS,
         SEQUENCE_SAFE_UNLOCKING,
         SEQUENCE_UNSAFE_UNLOCKING,
         SEQUENCE_INVALID_UNLOCKING,
+        SEQUENCE_TRANSMISSION_REPORT,
+        SEQUENCE_FAILED_TIMEOUT,
+        SEQUENCE_FAILED_INVALID,
+        SEQUENCE_FAILED_OTHER_ERROR,
+        SEQUENCE_FAILED_ERROR_MISSING,
     };
 
     test_messenger(
@@ -191,6 +203,31 @@ std::cerr << "--- got a message in SEQUENCE EXTENDED... LOCK was obtained, we se
             }
             break;
 
+        case sequence_t::SEQUENCE_EXTENDED_SMALL_GAP:
+            {
+std::cerr << "--- got a message in SEQUENCE EXTENDED (small gap: 3s)... LOCK was obtained, we send a 'unique' message (READ), wait for reply to unlock\n";
+                // the cluck object does that, not us!?
+                ed::message read;
+                read.set_service("tester");
+                read.set_command("READ");
+                read.add_parameter("size", 219);
+                if(!send_message(read, false))
+                {
+                    throw std::runtime_error("could not send READ message");
+                }
+
+                // verify that we got the expected timeout date (within 1s)
+                //
+                cluck::timeout_t const now(snapdev::now());
+                cluck::timeout_t const next_hour(now + cluck::timeout_t(3, 0));
+                cluck::timeout_t const gap(next_hour - c->get_timeout_date());
+                cluck::timeout_t const min_limit(0, 0);
+                cluck::timeout_t const max_limit(1, 0);
+                CATCH_CHECK(gap >= min_limit);
+                CATCH_CHECK(gap <= max_limit);
+            }
+            break;
+
         case sequence_t::SEQUENCE_FAIL_MISSING_UNLOCKED_PARAMETERS:
             // send the UNLOCK immediately
             //
@@ -221,6 +258,38 @@ std::cerr << "--- processing the lock_obtained() SEQUENCE_FAIL_MISSING_UNLOCKED_
 
 std::cerr << "--- lock failed was called: " << std::boolalpha << f_expect_lock_failed << "\n";
         CATCH_REQUIRE(f_expect_lock_failed);
+
+        switch(f_sequence)
+        {
+        case sequence_t::SEQUENCE_TRANSMISSION_REPORT:
+            CATCH_REQUIRE(c->get_reason() == cluck::reason_t::CLUCK_REASON_TRANSMISSION_ERROR);
+            f_expect_finally = true;
+            break;
+
+        case sequence_t::SEQUENCE_FAILED_TIMEOUT:
+            CATCH_REQUIRE(c->get_reason() == cluck::reason_t::CLUCK_REASON_REMOTE_TIMEOUT);
+            f_expect_finally = true;
+            break;
+
+        case sequence_t::SEQUENCE_FAILED_INVALID:
+            CATCH_REQUIRE(c->get_reason() == cluck::reason_t::CLUCK_REASON_INVALID);
+            f_expect_finally = true;
+            break;
+
+        case sequence_t::SEQUENCE_FAILED_OTHER_ERROR:
+            CATCH_REQUIRE(c->get_reason() == cluck::reason_t::CLUCK_REASON_INVALID);
+            f_expect_finally = true;
+            break;
+
+        case sequence_t::SEQUENCE_FAILED_ERROR_MISSING:
+            CATCH_REQUIRE(c->get_reason() == cluck::reason_t::CLUCK_REASON_INVALID);
+            f_expect_finally = true;
+            break;
+
+        default:
+            break;
+
+        }
 
         return true;
     }
@@ -308,7 +377,7 @@ std::cerr << "--- step: " << f_step << "\n";
 
     void msg_data(ed::message & msg)
     {
-std::cerr << "--- got DATA message... send UNLOCK\n";
+std::cerr << "--- got DATA message...\n";
         CATCH_REQUIRE(msg.get_sent_from_server() == "my_server");
         CATCH_REQUIRE(msg.get_sent_from_service() == "tester");
         CATCH_REQUIRE(msg.get_server() == "other_server");
@@ -318,7 +387,16 @@ std::cerr << "--- got DATA message... send UNLOCK\n";
         std::int64_t const size(msg.get_integer_parameter("size"));
         CATCH_REQUIRE(data.size() == static_cast<std::string::size_type>(size));
 
-        f_guarded->unlock();
+        bool auto_unlock(true);
+        if(msg.has_parameter("unlock"))
+        {
+            auto_unlock = advgetopt::is_true(msg.get_parameter("unlock"));
+        }
+        if(auto_unlock)
+        {
+std::cerr << "--- DATA message -> send UNLOCK\n";
+            f_guarded->unlock();
+        }
 
         f_expect_finally = true;
     }
@@ -741,6 +819,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/successful_lock.rprtr");
         SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
         SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
         SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
         p->parse_program();
@@ -791,6 +870,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/extended_lock.rprtr");
         SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
         SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
         SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
         p->parse_program();
@@ -847,6 +927,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/invalid_parameters_lock.rprtr");
         SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
         SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
         SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
         p->parse_program();
@@ -898,6 +979,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/invalid_parameters_unlock.rprtr");
         SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
         SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
         SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
         p->parse_program();
@@ -950,6 +1032,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/explicit_unlocking.rprtr");
         SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
         SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
         SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
         p->parse_program();
@@ -1007,6 +1090,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/late_explicit_unlocking.rprtr");
         SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
         SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
         SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
         p->parse_program();
@@ -1065,6 +1149,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/invalid_unlocking.rprtr");
         SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
         SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
         SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
         p->parse_program();
@@ -1119,6 +1204,127 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
         messenger->unset_guard();
     }
     CATCH_END_SECTION()
+
+    CATCH_START_SECTION("spurious TRANSMISSION_REPORT")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/ignored_transmission_report.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_EXTENDED));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-name"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        // here we again need to get the UNLOCKING even from the remote to
+        // verify the invalid object name; so we do not want to time out
+        // locally before the remote has a chance to send us the UNLOCKING
+        // event and we process it
+        //
+        //ed::communicator::instance()->add_connection(guarded);
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        guarded->set_type(cluck::type_t::CLUCK_TYPE_READ_ONLY);
+        guarded->set_lock_obtention_timeout({ 10, 500'000'000 }); // 10.5s
+        guarded->set_lock_duration_timeout({ 60 * 60, 0 }); // 1h
+        guarded->set_unlock_timeout({ 0, 500'000'000 }); // 0.5s
+        messenger->set_guard(guarded);
+
+        e->set_thread_done_callback([messenger, timer, guarded]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+                ed::communicator::instance()->remove_connection(guarded);
+            });
+
+        messenger->set_expect_lock_obtained(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_NONE);
+        //CATCH_REQUIRE(guarded->get_timeout_date() == ...); -- we could test this with a proper range
+
+        messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("TRANSMISSION_REPORT--could not send message to a cluck daemon")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/transmission_report_not_sent.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_TRANSMISSION_REPORT));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-not-received"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        // here we again need to get the UNLOCKING even from the remote to
+        // verify the invalid object name; so we do not want to time out
+        // locally before the remote has a chance to send us the UNLOCKING
+        // event and we process it
+        //
+        //ed::communicator::instance()->add_connection(guarded);
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        guarded->set_lock_obtention_timeout(cluck::timeout_t(1, 0));
+        guarded->set_lock_duration_timeout(cluck::timeout_t(1, 0));
+        guarded->set_unlock_timeout(cluck::timeout_t(1, 0));
+        messenger->set_guard(guarded);
+
+        e->set_thread_done_callback([messenger, timer]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+                //ed::communicator::instance()->remove_connection(guarded);
+            });
+
+        messenger->set_expect_lock_obtained(true);
+        messenger->set_expect_lock_failed(true);
+        messenger->set_expect_finally(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_TRANSMISSION_ERROR);
+        //CATCH_REQUIRE(guarded->get_timeout_date() == ...); -- we could test this with a proper range
+
+        messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
 }
 
 
@@ -1161,6 +1367,421 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
                     , cluck::mode_t::CLUCK_MODE_EXTENDED)
             , cluck::invalid_parameter
             , Catch::Matchers::ExceptionMessage("cluck_exception: messenger & dispatcher parameters must be defined in cluck::cluck() constructor."));
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("LOCK_FAILED--pretend the LOCK times out")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/failed_with_timeout.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_FAILED_TIMEOUT));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-timeout"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        // here we again need to get the UNLOCKING even from the remote to
+        // verify the invalid object name; so we do not want to time out
+        // locally before the remote has a chance to send us the UNLOCKING
+        // event and we process it
+        //
+        //ed::communicator::instance()->add_connection(guarded);
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        guarded->set_lock_obtention_timeout(cluck::timeout_t(1, 0));
+        guarded->set_lock_duration_timeout(cluck::timeout_t(1, 0));
+        guarded->set_unlock_timeout(cluck::timeout_t(1, 0));
+        messenger->set_guard(guarded);
+
+        e->set_thread_done_callback([messenger, timer]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+                //ed::communicator::instance()->remove_connection(guarded);
+            });
+
+        messenger->set_expect_lock_obtained(true);
+        messenger->set_expect_lock_failed(true);
+        messenger->set_expect_finally(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_REMOTE_TIMEOUT);
+        //CATCH_REQUIRE(guarded->get_timeout_date() == ...); -- we could test this with a proper range
+
+        messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("LOCK_FAILED--invalid tag")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/failed_with_invalid_tag.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_FAILED_INVALID));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-timeout"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        // here we again need to get the UNLOCKING even from the remote to
+        // verify the invalid object name; so we do not want to time out
+        // locally before the remote has a chance to send us the UNLOCKING
+        // event and we process it
+        //
+        //ed::communicator::instance()->add_connection(guarded);
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        guarded->set_lock_obtention_timeout(cluck::timeout_t(1, 0));
+        guarded->set_lock_duration_timeout(cluck::timeout_t(1, 0));
+        guarded->set_unlock_timeout(cluck::timeout_t(1, 0));
+        messenger->set_guard(guarded);
+
+        e->set_thread_done_callback([messenger, timer]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+                //ed::communicator::instance()->remove_connection(guarded);
+            });
+
+        messenger->set_expect_lock_obtained(true);
+        messenger->set_expect_lock_failed(true);
+        messenger->set_expect_finally(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_INVALID);
+        //CATCH_REQUIRE(guarded->get_timeout_date() == ...); -- we could test this with a proper range
+
+        messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("LOCK_FAILED--other error (not timeout)")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/failed_with_other_error.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_FAILED_OTHER_ERROR));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-timeout"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        // here we again need to get the UNLOCKING even from the remote to
+        // verify the invalid object name; so we do not want to time out
+        // locally before the remote has a chance to send us the UNLOCKING
+        // event and we process it
+        //
+        //ed::communicator::instance()->add_connection(guarded);
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        guarded->set_lock_obtention_timeout(cluck::timeout_t(1, 0));
+        guarded->set_lock_duration_timeout(cluck::timeout_t(1, 0));
+        guarded->set_unlock_timeout(cluck::timeout_t(1, 0));
+        messenger->set_guard(guarded);
+
+        e->set_thread_done_callback([messenger, timer]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+                //ed::communicator::instance()->remove_connection(guarded);
+            });
+
+        messenger->set_expect_lock_obtained(true);
+        messenger->set_expect_lock_failed(true);
+        messenger->set_expect_finally(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_INVALID);
+        //CATCH_REQUIRE(guarded->get_timeout_date() == ...); -- we could test this with a proper range
+
+        messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("LOCK_FAILED--error missing")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/failed_with_error_missing.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_FAILED_OTHER_ERROR));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-timeout"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        // here we again need to get the UNLOCKING even from the remote to
+        // verify the invalid object name; so we do not want to time out
+        // locally before the remote has a chance to send us the UNLOCKING
+        // event and we process it
+        //
+        //ed::communicator::instance()->add_connection(guarded);
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        guarded->set_lock_obtention_timeout(cluck::timeout_t(1, 0));
+        guarded->set_lock_duration_timeout(cluck::timeout_t(1, 0));
+        guarded->set_unlock_timeout(cluck::timeout_t(1, 0));
+        messenger->set_guard(guarded);
+
+        e->set_thread_done_callback([messenger, timer]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+                //ed::communicator::instance()->remove_connection(guarded);
+            });
+
+        messenger->set_expect_lock_obtained(true);
+        messenger->set_expect_lock_failed(true);
+        messenger->set_expect_finally(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_INVALID);
+        //CATCH_REQUIRE(guarded->get_timeout_date() == ...); -- we could test this with a proper range
+
+        messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("LOCK times out locally")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/lock_timing_out.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_EXTENDED));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-name"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        ed::communicator::instance()->add_connection(guarded);
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        guarded->set_lock_obtention_timeout(cluck::timeout_t(1, 0));
+        guarded->set_lock_duration_timeout(cluck::timeout_t(1, 0));
+        guarded->set_unlock_timeout(cluck::timeout_t(1, 0));
+        messenger->set_guard(guarded);
+
+        e->set_thread_done_callback([messenger, timer, guarded]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+                ed::communicator::instance()->remove_connection(guarded);
+            });
+
+        messenger->set_expect_lock_obtained(true);
+        messenger->set_expect_lock_failed(true);
+        messenger->set_expect_finally(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_LOCAL_TIMEOUT);
+        //CATCH_REQUIRE(guarded->get_timeout_date() == ...); -- we could test this with a proper range
+
+        messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("LOCKED timing out locally (LOCK works, get replay, never UNLOCK...)")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/locked_timing_out.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_EXTENDED_SMALL_GAP));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-name"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        ed::communicator::instance()->add_connection(guarded);
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        guarded->set_lock_obtention_timeout(cluck::timeout_t(1, 0));
+        guarded->set_lock_duration_timeout(cluck::timeout_t(1, 0));
+        guarded->set_unlock_timeout(cluck::timeout_t(1, 0));
+        messenger->set_guard(guarded);
+
+        e->set_thread_done_callback([messenger, timer, guarded]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+                ed::communicator::instance()->remove_connection(guarded);
+            });
+
+        messenger->set_expect_lock_obtained(true);
+        messenger->set_expect_lock_failed(true);
+        messenger->set_expect_finally(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+
+        // although we timed out, the final reason is "none" because we
+        // could just send an UNLOCK and received the UNLOCKED as expected
+        //
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_NONE);
+
+        messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("LOCKING timing out locally (LOCK+UNLOCK+UNLOCKING+sleep)")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/locking_timing_out.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_EXTENDED));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-name"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_EXTENDED));
+        ed::communicator::instance()->add_connection(guarded);
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_EXTENDED);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        guarded->set_lock_obtention_timeout(cluck::timeout_t(1, 0));
+        guarded->set_lock_duration_timeout(cluck::timeout_t(60 * 60, 0));
+        guarded->set_unlock_timeout(cluck::timeout_t(1, 0));
+        messenger->set_guard(guarded);
+
+        e->set_thread_done_callback([messenger, timer, guarded]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+                ed::communicator::instance()->remove_connection(guarded);
+            });
+
+        messenger->set_expect_lock_obtained(true);
+        messenger->set_expect_lock_failed(true);
+        messenger->set_expect_finally(true);
+        CATCH_REQUIRE(e->run());
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_LOCAL_TIMEOUT);
+        //CATCH_REQUIRE(guarded->get_timeout_date() == ...); -- we could test this with a proper range
+
+        messenger->unset_guard();
     }
     CATCH_END_SECTION()
 }

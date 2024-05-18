@@ -34,19 +34,6 @@ save_parameter_value(parameter_name: unlock_duration, variable_name: unlock_dura
 now(variable_name: now)
 set_variable(name: locked_date, value: ${now} + ${duration})
 set_variable(name: unlocked_date, value: ${locked_date} + ${unlock_duration})
-
-// "spurious" transmission report
-send_message(
-	command: TRANSMISSION_REPORT,
-	sent_server: my_server,
-	sent_service: cluckd,
-	server: lock_server,
-	service: cluck_test,
-	parameters: {
-		command: "NOT_OUR_MESSAGE",
-		status: "${tag}"
-	})
-
 send_message(
 	command: LOCKED,
 	sent_server: my_server,
@@ -68,21 +55,21 @@ label(name: not_lock)
 has_message(command: READ)
 if(false: not_read)
 verify_message(
-	command: READ,
-	service: tester,
-	required_parameters: {
-		size: 219
-	})
+        command: READ,
+        service: tester,
+        required_parameters: {
+                size: 219
+        })
 send_message(
-	command: DATA,
-	sent_server: my_server,
-	sent_service: tester,
-	server: other_server,
-	service: cluck_test,
-	parameters: {
-		data: "the-data (the size received is the max.--the size returned is this buffer's size)",
-		size: 81
-	})
+        command: DATA,
+        sent_server: my_server,
+        sent_service: tester,
+        server: other_server,
+        service: cluck_test,
+        parameters: {
+                data: "the-data (the size received is the max.--the size returned is this buffer's size)",
+                size: 81
+        })
 goto(label: next_message)
 
 label(name: not_read)
@@ -104,17 +91,9 @@ verify_message(
 		type,
 		unlock_duration
 	})
-send_message(
-	command: UNLOCKED,
-	sent_server: my_server,
-	sent_service: cluckd,
-	server: lock_server,
-	service: cluck_test,
-	parameters: {
-		object_name: "lock-name",
-		tag: "${tag}"
-	})
-wait(timeout: 1, mode: drain)
+
+// wait a long time so the UNLOCK times out locally
+sleep(seconds: 20)
 exit()
 
 label(name: not_unlock)

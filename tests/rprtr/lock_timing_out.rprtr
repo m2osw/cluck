@@ -1,0 +1,32 @@
+// do a valid LOCK and sleep to timeout
+
+run()
+listen(address: <127.0.0.1:20002>)
+
+label(name: wait_message)
+wait(timeout: 5, mode: wait)
+
+label(name: process_message)
+has_message()
+if(false: wait_message)
+
+show_message()
+
+has_message(command: LOCK)
+if(false: not_lock)
+verify_message(
+	command: LOCK,
+	service: cluckd,
+	required_parameters: {
+		object_name: "lock-name",
+		tag: `^[0-9]+$`,
+		pid: `^[0-9]+$`,
+		serial: `^[0-9]+$`,
+		timeout: `^[0-9]+(\.[0-9]+)?$`,
+		duration: `^[0-9]+(\.[0-9]+)?$`,
+		unlock_duration: `^[0-9]+(\.[0-9]+)?$`
+	})
+
+// sleep a long time on purpose to miss the deadline
+sleep(seconds: 10)
+exit()

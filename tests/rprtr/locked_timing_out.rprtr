@@ -1,4 +1,4 @@
-// do a valid LOCK + READ + UNLOCK
+// do a valid LOCK + LOCKED + READ + sleep to timeout + UNLOCK + UNLOCKED
 
 run()
 listen(address: <127.0.0.1:20002>)
@@ -34,19 +34,6 @@ save_parameter_value(parameter_name: unlock_duration, variable_name: unlock_dura
 now(variable_name: now)
 set_variable(name: locked_date, value: ${now} + ${duration})
 set_variable(name: unlocked_date, value: ${locked_date} + ${unlock_duration})
-
-// "spurious" transmission report
-send_message(
-	command: TRANSMISSION_REPORT,
-	sent_server: my_server,
-	sent_service: cluckd,
-	server: lock_server,
-	service: cluck_test,
-	parameters: {
-		command: "NOT_OUR_MESSAGE",
-		status: "${tag}"
-	})
-
 send_message(
 	command: LOCKED,
 	sent_server: my_server,
@@ -65,6 +52,7 @@ clear_message()
 goto(label: process_message)
 
 label(name: not_lock)
+print(message: "not_lock")
 has_message(command: READ)
 if(false: not_read)
 verify_message(
@@ -81,11 +69,19 @@ send_message(
 	service: cluck_test,
 	parameters: {
 		data: "the-data (the size received is the max.--the size returned is this buffer's size)",
-		size: 81
+		size: 81,
+		unlock: false
 	})
+print(message: "drain DATA")
+wait(timeout: 1, mode: drain)
+
+// sleep a long time on purpose to miss the deadline
+print(message: "sleep 5s")
+sleep(seconds: 5)
 goto(label: next_message)
 
 label(name: not_read)
+print(message: "not_read")
 has_message(command: UNLOCK)
 if(false: not_unlock)
 verify_message(
@@ -97,7 +93,6 @@ verify_message(
 		pid: "${pid}",
 		serial: "${serial}"
 	},
-	// parameters have defaults so they should not be included
 	forbidden_parameters: {
 		duration,
 		timeout,
@@ -114,6 +109,7 @@ send_message(
 		object_name: "lock-name",
 		tag: "${tag}"
 	})
+print(message: "drain unlocked")
 wait(timeout: 1, mode: drain)
 exit()
 

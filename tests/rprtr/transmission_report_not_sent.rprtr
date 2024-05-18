@@ -1,0 +1,55 @@
+// do a valid LOCK + TRANSMISSION_ERROR
+
+run()
+listen(address: <127.0.0.1:20002>)
+
+label(name: wait_message)
+wait(timeout: 12, mode: wait)
+
+label(name: process_message)
+has_message()
+if(false: wait_message)
+
+show_message()
+
+has_message(command: LOCK)
+if(false: not_lock)
+verify_message(
+	command: LOCK,
+	service: cluckd,
+	required_parameters: {
+		object_name: "lock-not-received",
+		tag: `^[0-9]+$`,
+		pid: `^[0-9]+$`,
+		serial: `^[0-9]+$`,
+		timeout: `^[0-9]+(\.[0-9]+)?$`,
+		duration: `^[0-9]+(\.[0-9]+)?$`,
+		unlock_duration: `^[0-9]+(\.[0-9]+)?$`
+	})
+//save_parameter_value(parameter_name: tag, variable_name: tag)
+//save_parameter_value(parameter_name: pid, variable_name: pid)
+//save_parameter_value(parameter_name: serial, variable_name: serial)
+//save_parameter_value(parameter_name: duration, variable_name: duration, type: timestamp)
+//save_parameter_value(parameter_name: unlock_duration, variable_name: unlock_duration, type: timestamp)
+//now(variable_name: now)
+//set_variable(name: locked_date, value: ${now} + ${duration})
+//set_variable(name: unlocked_date, value: ${locked_date} + ${unlock_duration})
+
+// "spurious" transmission report
+send_message(
+	command: TRANSMISSION_REPORT,
+	sent_server: my_server,
+	sent_service: cluckd,
+	server: lock_server,
+	service: cluck_test,
+	parameters: {
+		command: "LOCK",
+		status: "failed"
+	})
+
+clear_message()
+wait(timeout: 1, mode: drain)
+exit()
+
+label(name: not_lock)
+exit(error_message: "reached exit too soon")

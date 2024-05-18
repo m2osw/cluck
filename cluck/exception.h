@@ -24,7 +24,7 @@ namespace cluck
 {
 
 
-DECLARE_LOGIC_ERROR(logic_error);
+DECLARE_LOGIC_ERROR(logic_error); // LCOV_EXCL_LINE
 DECLARE_LOGIC_ERROR(unexpected_case);
 DECLARE_OUT_OF_RANGE(out_of_range);
 

@@ -39,6 +39,11 @@
 #include    <cppthread/thread.h>
 
 
+// snapdev
+//
+#include    <snapdev/not_reached.h>
+
+
 // last include
 //
 #include    <snapdev/poison.h>
@@ -1669,7 +1674,6 @@ bool cluck::lock()
     //
     if(is_busy())
     {
-std::cerr << "--- IS BUSY IS TRUE!?\n";
         return false;
     }
 
@@ -1715,6 +1719,7 @@ std::cerr << "--- IS BUSY IS TRUE!?\n";
         // LCOV_EXCL_START
         f_state = state_t::CLUCK_STATE_FAILED;
         set_reason(reason_t::CLUCK_REASON_TRANSMISSION_ERROR);
+        snapdev::NOT_REACHED_IN_TEST();
         return false;
         // LCOV_EXCL_STOP
     }
@@ -1813,6 +1818,7 @@ void cluck::unlock()
         set_reason(reason_t::CLUCK_REASON_TRANSMISSION_ERROR);
         lock_failed();
         finally();
+        snapdev::NOT_REACHED_IN_TEST();
         return;
         // LCOV_EXCL_STOP
     }
@@ -1895,11 +1901,6 @@ timeout_t cluck::get_timeout_date() const
  */
 bool cluck::is_locked() const
 {
-std::cerr << "--- is_locked() state "
-<< static_cast<int>(f_state)
-<< " timeout date: " << f_lock_timeout_date
-<< " > now: " << snapdev::now()
-<< "\n";
     return f_state == state_t::CLUCK_STATE_LOCKED
         && f_lock_timeout_date > snapdev::now();
 }
@@ -1959,7 +1960,6 @@ bool cluck::is_cluck_msg(ed::message & msg) const
         invalid.add_parameter(ed::g_name_ed_param_command, msg.get_command());
         invalid.add_parameter(ed::g_name_ed_param_message, "the \"object_name\" and \"tag\" parameters are mandatory.");
         f_connection->send_message(invalid);
-std::cerr << "--- is_cluck_msg() found an invalid message and sent the INVALID message to the server...\n";
         return false;
     }
 
@@ -1968,7 +1968,7 @@ std::cerr << "--- is_cluck_msg() found an invalid message and sent the INVALID m
     //
     if(msg.get_integer_parameter(g_name_cluck_param_tag) != f_tag)
     {
-        // IMpORTANT NOTE: this tag is checked in match_command_and_tag()
+        // IMPORTANT NOTE: this tag is checked in match_command_and_tag()
         //                 before our msg_...() callbacks get called so it
         //                 should never happen
         //
@@ -2017,11 +2017,14 @@ SNAP_LOG_TRACE << "--- PROCESS TIMEOUT ---" << SNAP_LOG_SEND;
     //
     switch(f_state)
     {
+    // LCOV_EXCL_START
     case state_t::CLUCK_STATE_IDLE:
         SNAP_LOG_DEBUG
             << "process_timeout() called with state set to CLUCK_STATE_IDLE."
             << SNAP_LOG_SEND;
+        snapdev::NOT_REACHED_IN_TEST();
         break;
+    // LCOV_EXCL_STOP
 
     case state_t::CLUCK_STATE_LOCKING:
         // lock never obtained
@@ -2034,7 +2037,6 @@ SNAP_LOG_TRACE << "--- PROCESS TIMEOUT ---" << SNAP_LOG_SEND;
     case state_t::CLUCK_STATE_LOCKED:
         // we are out of time, unlock now
         //
-std::cerr << "--- is this a LOCK time out already?!\n";
         set_reason(reason_t::CLUCK_REASON_LOCAL_TIMEOUT);
         unlock();
         break;
@@ -2047,11 +2049,14 @@ std::cerr << "--- is this a LOCK time out already?!\n";
         finally();
         break;
 
+    // LCOV_EXCL_START
     case state_t::CLUCK_STATE_FAILED:
         SNAP_LOG_DEBUG
             << "process_timeout() called with state set to CLUCK_STATE_FAILED."
             << SNAP_LOG_SEND;
+        snapdev::NOT_REACHED_IN_TEST();
         break;
+    // LCOV_EXCL_STOP
 
     }
 }
@@ -2083,7 +2088,6 @@ void cluck::lock_obtained()
         // lock automatically; otherwise the user is responsible for
         // releasing the lock once done
         //
-std::cerr << "--- lock obtained in SIMPLE mode?\n";
         unlock();
     }
 }
@@ -2155,7 +2159,6 @@ void cluck::finally()
  */
 void cluck::msg_locked(ed::message & msg)
 {
-std::cerr << "--- we got a LOCKED message!\n";
     if(!is_cluck_msg(msg))
     {
         set_reason(reason_t::CLUCK_REASON_INVALID);
@@ -2203,7 +2206,6 @@ std::cerr << "--- we got a LOCKED message!\n";
     set_enable(true);
 
     lock_obtained();
-std::cerr << "--- lock obtained callback returned... process_timeout() at " << f_lock_timeout_date << "\n";
 }
 
 
@@ -2267,7 +2269,7 @@ void cluck::msg_lock_failed(ed::message & msg)
  * \li The destination is not currently available and the message was cached
  * \li The transmission failed because the requested service is not registered
  *
- * In case of a plain failure, we cancel the whole process.
+ * In case of a plain failure, we cancel the whole process immediately.
  *
  * In case the message was cached, we can ignored the report since the
  * message will eventually make it so it is not an immediate failure.
@@ -2282,17 +2284,22 @@ void cluck::msg_lock_failed(ed::message & msg)
 void cluck::msg_transmission_report(ed::message & msg)
 {
     std::string const status(msg.get_parameter(communicatord::g_name_communicatord_param_status));
-    if(msg.get_command() == g_name_cluck_cmd_lock
+    if(msg.has_parameter(communicatord::g_name_communicatord_param_command)
+    && msg.get_parameter(communicatord::g_name_communicatord_param_command) == g_name_cluck_cmd_lock
     && status == communicatord::g_name_communicatord_value_failed)
     {
         SNAP_LOG_RECOVERABLE_ERROR
             << "the transmission of our \""
-            << msg.get_command()
+            << msg.get_parameter(communicatord::g_name_communicatord_param_command)
             << "\" message failed to travel to a cluckd service."
             << SNAP_LOG_SEND;
 
         // TODO: this message is global, so we fail all the
-        //       currently valid locks
+        //       currently valid locks in this very process
+        //       (i.e. all the cluck objects have this function called
+        //       on a TRANSITION_REPORT message); this is only an issue
+        //       if you use threads and more than one has a lock at a
+        //       time
         //
         set_reason(reason_t::CLUCK_REASON_TRANSMISSION_ERROR);
         lock_failed();
@@ -2314,12 +2321,10 @@ void cluck::msg_transmission_report(ed::message & msg)
  */
 void cluck::msg_unlocked(ed::message & msg)
 {
-std::cerr << "--- received UNLOCKED but I think we miss some params to get a proper match. We've got a bug in cluckd\n";
     if(!is_cluck_msg(msg))
     {
         set_reason(reason_t::CLUCK_REASON_INVALID);
         lock_failed();
-std::cerr << "--- PAF\n";
     }
     else
     {
@@ -2357,7 +2362,6 @@ std::cerr << "--- PAF\n";
  */
 void cluck::msg_unlocking(ed::message & msg)
 {
-std::cerr << "--- received UNLOCKING at " << snapdev::now() << "\n";
     if(!is_cluck_msg(msg))
     {
         set_reason(reason_t::CLUCK_REASON_INVALID);
