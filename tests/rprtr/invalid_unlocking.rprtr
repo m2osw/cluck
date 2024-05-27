@@ -22,7 +22,7 @@ verify_message(
 		tag: `^[0-9]+$`,
 		pid: `^[0-9]+$`,
 		serial: `^[0-9]+$`,
-		timeout: `^[0-9]+\.[0-9]+$`
+		timeout: `^[0-9]+\\.[0-9]+$`
 	})
 save_parameter_value(parameter_name: tag, variable_name: tag)
 save_parameter_value(parameter_name: pid, variable_name: pid)
@@ -48,6 +48,17 @@ clear_message()
 // first wait(), the second wait() is then expected to timeout after 2s
 //
 wait(timeout: 5, mode: wait)
+
+has_message(command: COMMANDS)
+if(false: not_unlock)
+verify_message(
+        command: COMMANDS,
+        server: ".",
+        service: communicatord,
+        required_parameters: {
+                list: "DATA,LOCKED,LOCK_FAILED,TRANSMISSION_REPORT,UNLOCKED,UNLOCKING"
+        })
+clear_message()
 
 wait(timeout: 2, mode: timeout)
 has_message()

@@ -74,7 +74,8 @@ int main(int argc, char * argv[])
             , CLUCK_VERSION_STRING
             , argc
             , argv
-            , []() { libexcept::set_collect_stack(libexcept::collect_stack_t::COLLECT_STACK_NO); }
+            //, []() { libexcept::set_collect_stack(libexcept::collect_stack_t::COLLECT_STACK_NO); }
+            , []() { libexcept::set_collect_stack(libexcept::collect_stack_t::COLLECT_STACK_COMPLETE); }
         );
 }
 

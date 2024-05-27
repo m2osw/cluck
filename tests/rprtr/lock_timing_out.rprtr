@@ -22,11 +22,25 @@ verify_message(
 		tag: `^[0-9]+$`,
 		pid: `^[0-9]+$`,
 		serial: `^[0-9]+$`,
-		timeout: `^[0-9]+(\.[0-9]+)?$`,
-		duration: `^[0-9]+(\.[0-9]+)?$`,
-		unlock_duration: `^[0-9]+(\.[0-9]+)?$`
+		timeout: `^[0-9]+(\\.[0-9]+)?$`,
+		duration: `^[0-9]+(\\.[0-9]+)?$`,
+		unlock_duration: `^[0-9]+(\\.[0-9]+)?$`
 	})
 
 // sleep a long time on purpose to miss the deadline
 sleep(seconds: 10)
 exit()
+
+label(name: not_lock)
+send_message(
+        command: DATA,
+        sent_server: my_server,
+        sent_service: tester,
+        server: other_server,
+        service: cluck_test,
+        parameters: {
+                data: "the-data (the size received is the max.--the size returned is this buffer's size)",
+                size: 81
+        })
+clear_message()
+goto(label: process_message)

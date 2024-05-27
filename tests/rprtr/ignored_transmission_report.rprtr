@@ -22,9 +22,9 @@ verify_message(
 		tag: `^[0-9]+$`,
 		pid: `^[0-9]+$`,
 		serial: `^[0-9]+$`,
-		timeout: `^[0-9]+(\.[0-9]+)?$`,
-		duration: `^[0-9]+(\.[0-9]+)?$`,
-		unlock_duration: `^[0-9]+(\.[0-9]+)?$`
+		timeout: `^[0-9]+(\\.[0-9]+)?$`,
+		duration: `^[0-9]+(\\.[0-9]+)?$`,
+		unlock_duration: `^[0-9]+(\\.[0-9]+)?$`
 	})
 save_parameter_value(parameter_name: tag, variable_name: tag)
 save_parameter_value(parameter_name: pid, variable_name: pid)
@@ -65,6 +65,18 @@ clear_message()
 goto(label: process_message)
 
 label(name: not_lock)
+has_message(command: COMMANDS)
+if(false: not_commands)
+verify_message(
+        command: COMMANDS,
+        server: ".",
+        service: communicatord,
+        required_parameters: {
+                list: "DATA,LOCKED,LOCK_FAILED,TRANSMISSION_REPORT,UNLOCKED,UNLOCKING"
+        })
+goto(label: next_message)
+
+label(name: not_commands)
 has_message(command: READ)
 if(false: not_read)
 verify_message(

@@ -19,24 +19,65 @@
 ##
 ## cluck unittest
 ##
-project(unittest)
-
 find_package(SnapCatch2)
 find_package(Reporter)
 
 if(SnapCatch2_FOUND AND Reporter_FOUND)
 
+    ##
+    ## daemon as a library
+    ##
+    project(cluckdaemon)
+
+    set(CLUCKD_DIR "../daemon")
+    add_library(${PROJECT_NAME}
+        ${CLUCKD_DIR}/cluckd.cpp
+        ${CLUCKD_DIR}/computer.cpp
+        ${CLUCKD_DIR}/debug_info.cpp
+        ${CLUCKD_DIR}/info.cpp
+        ${CLUCKD_DIR}/interrupt.cpp
+        ${CLUCKD_DIR}/main.cpp
+        ${CLUCKD_DIR}/messenger.cpp
+        ${CLUCKD_DIR}/ticket.cpp
+        ${CLUCKD_DIR}/timer.cpp
+    )
+
+    target_include_directories(${PROJECT_NAME}
+        PUBLIC
+            ${ADVGETOPT_INCLUDE_DIRS}
+            ${CPPTHREAD_INCLUDE_DIRS}
+            ${EVENTDISPATCHER_INCLUDE_DIRS}
+            ${LIBADDR_INCLUDE_DIRS}
+            ${LIBEXCEPT_INCLUDE_DIRS}
+            ${OPENSSL_INCLUDE_DIR}
+            ${SNAPLOGGER_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(${PROJECT_NAME}
+        cluck
+        ${ADVGETOPT_LIBRARIES}
+        ${CPPTHREAD_LIBRARIES}
+        ${LIBADDR_LIBRARIES}
+        ${OPENSSL_LIBRARIES}
+    )
+
+    ##
+    ## unit tests
+    ##
+    project(unittest)
+
     add_executable(${PROJECT_NAME}
         catch_main.cpp
 
         catch_cluck.cpp
+        catch_daemon.cpp
         catch_version.cpp
     )
 
     target_include_directories(${PROJECT_NAME}
         PUBLIC
-            ${CMAKE_BINARY_DIR}
-            ${PROJECT_SOURCE_DIR}
+            #${CMAKE_BINARY_DIR}
+            #${PROJECT_SOURCE_DIR}
 
             ${ADVGETOPT_INCLUDE_DIRS}
             ${LIBADDR_INCLUDE_DIRS}
@@ -48,6 +89,7 @@ if(SnapCatch2_FOUND AND Reporter_FOUND)
 
     target_link_libraries(${PROJECT_NAME}
         cluck
+        cluckdaemon
         ${ADVGETOPT_LIBRARIES}
         ${LIBADDR_LIBRARIES}
         ${LIBEXCEPT_LIBRARIES}

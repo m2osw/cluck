@@ -572,7 +572,7 @@ cluck::timeout_t g_max_timeout_adjust[3] = {
 
 CATCH_TEST_CASE("cluck_client", "[cluck][client]")
 {
-    CATCH_START_SECTION("verify timeouts")
+    CATCH_START_SECTION("cluck_client: verify timeouts")
     {
         // in order to make sure we do not write and/or read from the
         // wrong variable, I use a loop to repeat the test and use
@@ -814,7 +814,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("successful LOCK (simple)")
+    CATCH_START_SECTION("cluck_client: successful LOCK (simple)")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/successful_lock.rprtr");
@@ -865,7 +865,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("successful LOCK (extended)")
+    CATCH_START_SECTION("cluck_client: successful LOCK (extended)")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/extended_lock.rprtr");
@@ -922,7 +922,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("failing LOCKED (invalid parameters)")
+    CATCH_START_SECTION("cluck_client: failing LOCKED (invalid parameters)")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/invalid_parameters_lock.rprtr");
@@ -974,7 +974,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("failing UNLOCKED (invalid object name)")
+    CATCH_START_SECTION("cluck_client: failing UNLOCKED (invalid object name)")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/invalid_parameters_unlock.rprtr");
@@ -1027,7 +1027,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("UNLOCKING--cluckd server safe timeout")
+    CATCH_START_SECTION("cluck_client: UNLOCKING--cluckd server safe timeout")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/explicit_unlocking.rprtr");
@@ -1085,7 +1085,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("UNLOCKING--cluckd server late timeout")
+    CATCH_START_SECTION("cluck_client: UNLOCKING--cluckd server late timeout")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/late_explicit_unlocking.rprtr");
@@ -1144,7 +1144,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("UNLOCKING--invalid object name")
+    CATCH_START_SECTION("cluck_client: UNLOCKING--invalid object name")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/invalid_unlocking.rprtr");
@@ -1205,7 +1205,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("spurious TRANSMISSION_REPORT")
+    CATCH_START_SECTION("cluck_client: spurious TRANSMISSION_REPORT")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/ignored_transmission_report.rprtr");
@@ -1265,7 +1265,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("TRANSMISSION_REPORT--could not send message to a cluck daemon")
+    CATCH_START_SECTION("cluck_client: TRANSMISSION_REPORT--could not send message to a cluck daemon")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/transmission_report_not_sent.rprtr");
@@ -1330,7 +1330,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
 
 CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
 {
-    CATCH_START_SECTION("messenger required")
+    CATCH_START_SECTION("cluck_client_error: messenger required")
     {
         // create a messenger so we have a dispatcher pointer
         //
@@ -1350,7 +1350,7 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("dispatcher required")
+    CATCH_START_SECTION("cluck_client_error: dispatcher required")
     {
         // create a messenger so we have a dispatcher pointer
         //
@@ -1370,7 +1370,7 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("LOCK_FAILED--pretend the LOCK times out")
+    CATCH_START_SECTION("cluck_client_error: LOCK_FAILED--pretend the LOCK times out")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/failed_with_timeout.rprtr");
@@ -1431,7 +1431,7 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("LOCK_FAILED--invalid tag")
+    CATCH_START_SECTION("cluck_client_error: LOCK_FAILED--invalid tag")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/failed_with_invalid_tag.rprtr");
@@ -1492,7 +1492,7 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("LOCK_FAILED--other error (not timeout)")
+    CATCH_START_SECTION("cluck_client_error: LOCK_FAILED--other error (not timeout)")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/failed_with_other_error.rprtr");
@@ -1553,7 +1553,7 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("LOCK_FAILED--error missing")
+    CATCH_START_SECTION("cluck_client_error: LOCK_FAILED--error missing")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/failed_with_error_missing.rprtr");
@@ -1614,7 +1614,7 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("LOCK times out locally")
+    CATCH_START_SECTION("cluck_client_error: LOCK times out locally")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/lock_timing_out.rprtr");
@@ -1670,7 +1670,7 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("LOCKED timing out locally (LOCK works, get replay, never UNLOCK...)")
+    CATCH_START_SECTION("cluck_client_error: LOCKED timing out locally (LOCK works, get replay, never UNLOCK...)")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/locked_timing_out.rprtr");
@@ -1729,7 +1729,7 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
     }
     CATCH_END_SECTION()
 
-    CATCH_START_SECTION("LOCKING timing out locally (LOCK+UNLOCK+UNLOCKING+sleep)")
+    CATCH_START_SECTION("cluck_client_error: LOCKING timing out locally (LOCK+UNLOCK+UNLOCKING+sleep)")
     {
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/locking_timing_out.rprtr");

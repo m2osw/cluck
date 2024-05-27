@@ -22,7 +22,7 @@ verify_message(
 		tag: `^[0-9]+$`,
 		pid: `^[0-9]+$`,
 		serial: `^[0-9]+$`,
-		timeout: `^[0-9]+(\.[0-9]+)?$`
+		timeout: `^[0-9]+(\\.[0-9]+)?$`
 	})
 save_parameter_value(parameter_name: tag, variable_name: tag)
 save_parameter_value(parameter_name: pid, variable_name: pid)
@@ -49,11 +49,29 @@ clear_message()
 //
 wait(timeout: 5, mode: wait)
 
+// the lock is immediately followed by a COMMANDS
+//
+has_message()
+if(false: missing_message)
+has_message(command: COMMANDS)
+if(false: not_commands)
+verify_message(
+        command: COMMANDS,
+        server: ".",
+        service: communicatord,
+        required_parameters: {
+                list: "DATA,LOCKED,LOCK_FAILED,TRANSMISSION_REPORT,UNLOCKED,UNLOCKING"
+        })
+clear_message()
+
 wait(timeout: 2, mode: timeout)
 has_message()
 if(false: wait_timedout)
 show_message()
 exit(error_message: "wait() for a timeout got a message instead!")
+
+label(name: missing_message)
+exit(error_message: "LOCK is expected to be followed by a COMMANDS message")
 
 label(name: wait_timedout)
 
