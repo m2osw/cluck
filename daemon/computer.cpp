@@ -123,7 +123,9 @@ bool computer::set_id(std::string const & id)
         // "crash" over and over again
         //
         SNAP_LOG_ERROR
-            << "received a computer id which does not have exactly 5 parts."
+            << "received a computer id which does not have exactly 5 parts: \""
+            << id
+            << "\"."
             << SNAP_LOG_SEND;
         return false;
     }
@@ -232,7 +234,7 @@ std::string const & computer::get_id() const
 
         std::stringstream ss;
         ss
-            << std::setfill('0') << std::setw(2) << f_priority
+            << std::setfill('0') << std::setw(2) << static_cast<int>(f_priority)
             << '|'
             << f_random_id
             << '|'

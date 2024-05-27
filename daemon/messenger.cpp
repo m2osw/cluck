@@ -110,6 +110,8 @@ messenger::messenger(cluckd * c, advgetopt::getopt & opts)
         ed::define_match(
               ed::Expression(communicatord::g_name_communicatord_cmd_status)
             , ed::Callback(std::bind(&cluckd::msg_status, c, std::placeholders::_1))
+            , ed::MatchFunc(&ed::one_to_one_callback_match)
+            , ed::Priority(ed::dispatcher_match::DISPATCHER_MATCH_CALLBACK_PRIORITY)
         ),
 
         // cluck commands
@@ -187,7 +189,16 @@ messenger::messenger(cluckd * c, advgetopt::getopt & opts)
     f_dispatcher->set_trace();
     f_dispatcher->set_show_matches();
 #endif
+}
 
+
+/** \brief Finish handling command line options.
+ *
+ * This function makes sure the fluid settings and communicator daemon
+ * have a chance to check the command line options and act on it.
+ */
+void messenger::finish_parsing()
+{
     process_fluid_settings_options();
     automatic_watch_initialization();
 }

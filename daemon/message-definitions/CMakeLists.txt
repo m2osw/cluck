@@ -16,47 +16,18 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-project(cluckd)
-
-add_executable(${PROJECT_NAME}
-    cluckd.cpp
-    computer.cpp
-    debug_info.cpp
-    info.cpp
-    interrupt.cpp
-    main.cpp
-    messenger.cpp
-    ticket.cpp
-    timer.cpp
-)
-
-target_include_directories(${PROJECT_NAME}
-    PUBLIC
-        ${ADVGETOPT_INCLUDE_DIRS}
-        ${CPPTHREAD_INCLUDE_DIRS}
-        ${EVENTDISPATCHER_INCLUDE_DIRS}
-        ${LIBADDR_INCLUDE_DIRS}
-        ${LIBEXCEPT_INCLUDE_DIRS}
-        ${OPENSSL_INCLUDE_DIR}
-        ${SNAPLOGGER_INCLUDE_DIRS}
-)
-
-target_link_libraries(${PROJECT_NAME}
-    cluck
-    ${ADVGETOPT_LIBRARIES}
-    ${CPPTHREAD_LIBRARIES}
-    ${LIBADDR_LIBRARIES}
-    ${OPENSSL_LIBRARIES}
-)
+project(cluckd_message_definitions)
 
 install(
-    TARGETS
-        ${PROJECT_NAME}
+    DIRECTORY
+        ${CMAKE_CURRENT_SOURCE_DIR}/
 
-    RUNTIME DESTINATION
-        sbin
+    DESTINATION
+        ${EVENTDISPATCHER_SHARE_MESSAGE_DEFINITIONS_CONF_DIR}
+
+    FILES_MATCHING PATTERN
+        "*.conf"
 )
 
-add_subdirectory(message-definitions)
-
 # vim: ts=4 sw=4 et
+

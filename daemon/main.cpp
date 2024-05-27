@@ -63,6 +63,7 @@ int main(int argc, char * argv[])
     try
     {
         cluck_daemon::cluckd::pointer_t lock(std::make_shared<cluck_daemon::cluckd>(argc, argv));
+        lock->add_connections();
         lock->run();
         return 0;
     }

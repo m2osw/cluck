@@ -57,6 +57,7 @@ public:
 
     cluckd &                    operator = (cluckd const & rhs) = delete;
 
+    void                        add_connections();
     void                        run();
     //void                        process_message(ed::message const & msg);
     void                        tool_message(ed::message const & msg);
@@ -69,7 +70,7 @@ public:
     int                         get_computer_count() const;
     int                         quorum() const;
     std::string const &         get_server_name() const;
-    bool                        is_ready() const;
+    bool                        is_daemon_ready() const;
     computer::pointer_t         is_leader(std::string id = std::string()) const;
     computer::pointer_t         get_leader_a() const;
     computer::pointer_t         get_leader_b() const;
@@ -116,7 +117,7 @@ public:
     void                        msg_unlock(ed::message & msg);
 
 private:
-    void                        get_parameters(
+    bool                        get_parameters(
                                       ed::message const & message
                                     , std::string * object_name
                                     , pid_t * client_pid

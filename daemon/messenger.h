@@ -43,6 +43,8 @@ public:
 
     messenger &                 operator = (messenger const &) = delete;
 
+    void                        finish_parsing();
+
     // fluid_settings::fluid_settings_connection()
     virtual void                fluid_settings_changed(
                                       fluid_settings::fluid_settings_status_t status
