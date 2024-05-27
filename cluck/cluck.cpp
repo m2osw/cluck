@@ -1232,6 +1232,8 @@ cluck::cluck(
 
     set_enable(false);
     set_name("cluck::" + object_name);
+
+    f_connection->add_help_callback(std::bind(&cluck::help, this, std::placeholders::_1));
 }
 
 
@@ -1586,6 +1588,29 @@ void cluck::set_reason(reason_t reason)
 }
 
 
+/** \brief Called whenever the HELP message is received or new messages are added.
+ *
+ * This function gets called whenever the dispatcher receives the HELP
+ * message. It then replies with the COMMANDS message.
+ *
+ * The function adds the multiple commands that the cluck supports and which
+ * use a non-default match function.
+ *
+ * \param[in] commands  The list of commands to complete.
+ *
+ * \return Always return true.
+ */
+bool cluck::help(advgetopt::string_set_t & commands)
+{
+    commands.insert(g_name_cluck_cmd_locked);
+    commands.insert(g_name_cluck_cmd_lock_failed);
+    commands.insert(g_name_cluck_cmd_unlocked);
+    commands.insert(g_name_cluck_cmd_unlocking);
+
+    return true;
+}
+
+
 /** \brief Attempt a lock.
  *
  * This function attempts a lock. If a lock was already initiated or is in
@@ -1767,6 +1792,12 @@ bool cluck::lock()
             , ed::Tag(f_tag)
             , ed::Priority(ed::dispatcher_match::DISPATCHER_MATCH_CALLBACK_PRIORITY)));
     f_dispatcher->add_match(transmission_report);
+
+    // we just added new commands (at least the first time) which we need to
+    // share with the communicator deamon (otherwise it won't forward them
+    // to us)
+    //
+    f_connection->send_commands();
 
     return true;
 }
@@ -2010,7 +2041,6 @@ bool cluck::is_cluck_msg(ed::message & msg) const
  */
 void cluck::process_timeout()
 {
-SNAP_LOG_TRACE << "--- PROCESS TIMEOUT ---" << SNAP_LOG_SEND;
     set_enable(false);
 
     // the LOCK event and the lock duration can time out

@@ -183,6 +183,7 @@ private:
     void                msg_unlocked(ed::message & msg);
     void                msg_unlocking(ed::message & msg);
     void                set_reason(reason_t reason);
+    bool                help(advgetopt::string_set_t & commands);
 
     std::string                 f_object_name = std::string();
     ed::dispatcher_match::tag_t const
