@@ -126,8 +126,12 @@ CATCH_TEST_CASE("cluck_daemon", "[cluckd][daemon]")
             "--communicatord-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
-            SNAP_CATCH2_NAMESPACE::g_dist_dir() + "/share/eventdispatcher/messages:"
-                + SNAP_CATCH2_NAMESPACE::g_source_dir() + "/daemon/message-definitions",
+
+            // WARNING: the order matters, we want to test with our source
+            //          (i.e. original) files first
+            //
+            SNAP_CATCH2_NAMESPACE::g_source_dir() + "/daemon/message-definitions:"
+                + SNAP_CATCH2_NAMESPACE::g_dist_dir() + "/share/eventdispatcher/messages",
         };
 
         // convert arguments so we can use them with execvpe()
