@@ -249,7 +249,7 @@ send_message(
 		cache: no,
 		server: "this_server",
 		status: "up",
-		up_since: now
+		up_since: ${now}
 	})
 return()
 
@@ -266,7 +266,7 @@ send_message(
 		cache: no,
 		server: "local_server",
 		status: "up",
-		up_since: now
+		up_since: ${now}
 	})
 label(name: not_fluid_settings_status)
 return()
