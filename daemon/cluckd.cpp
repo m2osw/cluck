@@ -2044,6 +2044,7 @@ void cluckd::msg_absolutely(ed::message & msg)
             lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
             lock_failed_message.reply_to(msg);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, cluck::g_name_cluck_value_unknown);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, serial);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
             f_messenger->send_message(lock_failed_message);
 

@@ -89,12 +89,21 @@ goto(label: next_message)
 
 label(name: not_lock_started)
 has_message(command: LOCK_FAILED)
-if(false: not_recognized)
+if(false: not_lock_failed)
 call(label: func_verify_lock_failed)
 now(variable_name: timeout)
 set_variable(name: timeout, value: ${timeout} + 60) // now + 1 minute
 call(label: func_send_lock)
 goto(label: next_message)
+
+label(name: not_lock_failed)
+has_message(command: UNLOCKED)
+if(false: not_recognized)
+call(label: func_verify_unlocked)
+call(label: func_send_quitting)
+//goto(label: next_message)
+wait(timeout: 5, mode: drain)
+exit()
 
 label(name: not_recognized)
 exit(error_message: "received an unknown command")
@@ -132,7 +141,7 @@ label(name: func_verify_commands)
 verify_message(
 	command: COMMANDS,
 	required_parameters: {
-		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_ERROR,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
+		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
 	})
 return()
 
@@ -222,6 +231,18 @@ verify_message(
 return()
 label(name: not_timedout_lock1_lock_failed)
 exit(error_message: "unhandled LOCK_FAILED")
+
+// Function: verify a UNLOCKED
+label(name: func_verify_unlocked)
+verify_message(
+	command: UNLOCKED,
+	server: "local_server",
+	service: "website",
+	required_parameters: {
+		error: "timedout",
+		object_name: "lock1"
+	})
+return()
 
 // Function: send HELP
 label(name: func_send_help)
@@ -354,5 +375,15 @@ send_message(
 		duration: 10,
 		timeout: ${timeout}
 	})
+return()
+
+// Function: send QUIT
+label(name: func_send_quitting)
+send_message(
+	command: QUITTING,
+	sent_server: local_server,
+	sent_service: website,
+	server: local_server,
+	service: cluckd)
 return()
 

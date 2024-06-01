@@ -615,8 +615,8 @@ void ticket::add_ticket()
 
     ed::message add_ticket_message;
     add_ticket_message.set_command(cluck::g_name_cluck_cmd_add_ticket);
-    add_ticket_message.add_parameter("key", f_ticket_key);
-    add_ticket_message.add_parameter("timeout", f_obtention_timeout);
+    add_ticket_message.add_parameter(cluck::g_name_cluck_param_key, f_ticket_key);
+    add_ticket_message.add_parameter(cluck::g_name_cluck_param_timeout, f_obtention_timeout);
     if(!send_message_to_leaders(add_ticket_message))
     {
         ticket_added(f_cluckd->get_entering_tickets(f_object_name));
@@ -796,7 +796,7 @@ void ticket::drop_ticket()
 
     ed::message drop_ticket_message;
     drop_ticket_message.set_command(cluck::g_name_cluck_cmd_drop_ticket);
-    drop_ticket_message.add_parameter("key", f_ticket_key.empty() ? f_entering_key : f_ticket_key);
+    drop_ticket_message.add_parameter(cluck::g_name_cluck_param_key, f_ticket_key.empty() ? f_entering_key : f_ticket_key);
     send_message_to_leaders(drop_ticket_message);
 
     if(!f_lock_failed)
@@ -913,8 +913,9 @@ void ticket::lock_failed()
                 lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
                 lock_failed_message.set_server(f_server_name);
                 lock_failed_message.set_service(f_service_name);
-                lock_failed_message.add_parameter("object_name", f_object_name);
-                lock_failed_message.add_parameter("error", "failed");
+                lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, f_object_name);
+                lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, f_entering_key);
+                lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_failed);
                 f_messenger->send_message(lock_failed_message);
             }
         }

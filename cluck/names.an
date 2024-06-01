@@ -59,6 +59,7 @@ param_unlocked_date=unlocked_date
 service_name=cluckd
 
 value_duplicate=duplicate
+value_failed=failed
 value_invalid=invalid
 value_timedout=timedout
 value_unknown=unknown
