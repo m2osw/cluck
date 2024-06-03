@@ -320,7 +320,7 @@ CATCH_TEST_CASE("daemon_computer_errors", "[cluckd][computer][daemon][error]")
             CATCH_REQUIRE_FALSE(c.set_id("10|9001|0.0.0.0|5501|name"));
 
             // this is a trick that works at the moment; we set a valid
-            // priodity, so next we can have an invalid address that
+            // priority, so next we can have an invalid address that
             // remains... because the set_id() still makes updates to
             // the object even if it generates an error
             //
