@@ -98,8 +98,17 @@ goto(label: next_message)
 
 label(name: not_lock_failed)
 has_message(command: UNLOCKED)
-if(false: not_recognized)
+if(false: not_unlocked)
 call(label: func_verify_unlocked)
+call(label: func_send_quitting)
+//goto(label: next_message)
+wait(timeout: 5, mode: drain)
+exit()
+
+label(name: not_unlocked)
+has_message(command: UNLOCKING)
+if(false: not_recognized)
+call(label: func_verify_unlocking)
 call(label: func_send_quitting)
 //goto(label: next_message)
 wait(timeout: 5, mode: drain)
@@ -244,6 +253,19 @@ verify_message(
 	})
 return()
 
+// Function: verify a UNLOCKING
+label(name: func_verify_unlocking)
+verify_message(
+	command: UNLOCKING,
+	server: "local_server",
+	service: "website",
+	required_parameters: {
+		error: "timedout",
+		object_name: "lock1",
+		tag: "505"
+	})
+return()
+
 // Function: send HELP
 label(name: func_send_help)
 send_message(
@@ -371,6 +393,7 @@ send_message(
 	service: cluckd,
 	parameters: {
 		object_name: "lock1",
+		tag: 505,
 		pid: 123,
 		duration: 10,
 		timeout: ${timeout}

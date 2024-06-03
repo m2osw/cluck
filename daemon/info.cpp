@@ -68,6 +68,11 @@ info::info(cluckd * c)
 }
 
 
+info::~info()
+{
+}
+
+
 /** \brief Call the info function of the cluckd object.
  *
  * When this function is called, the internal state of the cluckd
@@ -76,8 +81,8 @@ info::info(cluckd * c)
  *
  * This signal can be sent any number of times.
  *
- * Note that state is printed using the log mechanism. If your logs
- * are not being printed in your console, then make sure to look at
+ * Note that the state is printed using the log mechanism. If your logs
+ * are not being printed to your console, then make sure to look at
  * the cluckd.log file (or whatever you renamed it if you did so
  * in the settings).
  */

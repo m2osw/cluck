@@ -63,6 +63,11 @@ timer::timer(cluckd * c)
 }
 
 
+timer::~timer()
+{
+}
+
+
 /** \brief Call the cleanup() function of the cluckd object.
  *
  * A timeout happened, call the cluckd::cleanup() function which takes

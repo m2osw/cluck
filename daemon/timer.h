@@ -77,7 +77,7 @@ public:
 
                                 timer(cluckd * c);
                                 timer(timer const &) = delete;
-    virtual                     ~timer() override {}
+    virtual                     ~timer() override;
 
     timer &                     operator = (timer const &) = delete;
 

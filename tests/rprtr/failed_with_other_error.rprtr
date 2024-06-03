@@ -45,6 +45,7 @@ send_message(
 	parameters: {
 		object_name: "lock-timeout",
 		tag: "${tag}",
+		key: "do we always send a key?",
 		error: "other-error"
 	})
 

@@ -9,8 +9,8 @@ The files have to be named:
 
     # or
 
-    ??-cluck-daemon.conf
+    ??-cluckd.conf
 
 Where `??` represents a number from 00 to 99. In general, the administrator
-should use `50-cluck-daemon.conf`. Other projects may use other numbers.
+should use `50-cluckd.conf`. Other projects may use other numbers.
 

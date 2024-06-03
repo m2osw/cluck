@@ -69,7 +69,6 @@ int main(int argc, char * argv[])
     }
     catch(advgetopt::getopt_exit const & e)
     {
-        std::cerr << "error: " << e.what() << std::endl;
         return e.code();
     }
     catch(std::exception const & e)

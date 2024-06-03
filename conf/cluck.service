@@ -1,6 +1,0 @@
-# Communicatord Service Definition
-#
-# This file tells the communicatord that cluck is a local
-# service and such a service is going to connect to it
-#
-description=The cluck service is used to obtain cluster wide locks.

@@ -24,11 +24,6 @@
 #include    "cluckd.h"
 
 
-// our lib
-//
-//#include <snapwebsites/log.h>
-
-
 // last include
 //
 #include    <snapdev/poison.h>
@@ -38,7 +33,7 @@
 namespace cluck_daemon
 {
 
-/** \class snaplock_interrupt
+/** \class interrupt
  * \brief Handle the SIGINT Unix signal.
  *
  * This class is an implementation of the signalfd() specifically
@@ -66,7 +61,12 @@ interrupt::interrupt(cluckd * c)
 }
 
 
-/** \brief Call the stop function of the snaplock object.
+interrupt::~interrupt()
+{
+}
+
+
+/** \brief Call the stop function of the cluckd object.
  *
  * When this function is called, the signal was received and thus we are
  * asked to quit as soon as possible.

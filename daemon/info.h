@@ -38,7 +38,7 @@ public:
 
                             info(cluckd * sl);
                             info(info const &) = delete;
-    virtual                 ~info() override {}
+    virtual                 ~info() override;
 
     info const &            operator = (info const &) = delete;
 

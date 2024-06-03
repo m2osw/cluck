@@ -1966,6 +1966,12 @@ bool cluck::is_busy() const
  * If the object_name or tag are not defined, or if the tag is not a match
  * then this function returns false.
  *
+ * \note
+ * The function expects the "object_name" and "tag" parameters to be defined.
+ * These should be tested through the dispatcher with the corresponding
+ * message definitions. If this function throws because of a missing
+ * parameter, check those message definitions and update them accordingly.
+ *
  * \exception invalid_parameter
  * If the object_name parameter is not set to this cluck f_object_name
  * value, then this exception is raised. Note that if the object_name
@@ -1978,32 +1984,16 @@ bool cluck::is_busy() const
  */
 bool cluck::is_cluck_msg(ed::message & msg) const
 {
-    // this is one of our messages, all of them should have the "tag"
-    // and "object_name" parameters, if not present, we've got a problem
-    //
-    if(!msg.has_parameter(g_name_cluck_param_object_name)
-    || !msg.has_parameter(g_name_cluck_param_tag))
-    {
-        ed::message invalid;
-        invalid.user_data(msg.user_data<void>());
-        invalid.reply_to(msg);
-        invalid.set_command(ed::g_name_ed_cmd_invalid);
-        invalid.add_parameter(ed::g_name_ed_param_command, msg.get_command());
-        invalid.add_parameter(ed::g_name_ed_param_message, "the \"object_name\" and \"tag\" parameters are mandatory.");
-        f_connection->send_message(invalid);
-        return false;
-    }
-
     // the tag must match our tag -- this allows your process to support
     // more than one lock (as long as each one has a different object name)
     //
     if(msg.get_integer_parameter(g_name_cluck_param_tag) != f_tag)
     {
         // IMPORTANT NOTE: this tag is checked in match_command_and_tag()
-        //                 before our msg_...() callbacks get called so it
-        //                 should never happen
+        //                 before our msg_...() callbacks get called so this
+        //                 error should never happen
         //
-        throw logic_error("tag mismatch in is_click_msg()"); // LCOV_EXCL_LINE
+        throw logic_error("tag mismatch in is_cluck_msg()."); // LCOV_EXCL_LINE
     }
 
     if(msg.get_parameter(g_name_cluck_param_object_name) != f_object_name)
@@ -2197,35 +2187,6 @@ void cluck::msg_locked(ed::message & msg)
         return;
     }
 
-    char const * const mandatory_parameters[2] = {
-        g_name_cluck_param_timeout_date,
-        g_name_cluck_param_unlocked_date,
-    };
-    for(auto const & name : mandatory_parameters)
-    {
-        if(!msg.has_parameter(name))
-        {
-            ed::message invalid;
-            invalid.user_data(msg.user_data<void>());
-            invalid.reply_to(msg);
-            invalid.set_command(ed::g_name_ed_cmd_invalid);
-            invalid.add_parameter(ed::g_name_ed_param_command, msg.get_command());
-            invalid.add_parameter(
-                  ed::g_name_ed_param_message
-                , "mandatory parameter \""
-                  + std::string(name)
-                  + "\" missing from message \""
-                  + msg.get_command()
-                  + "\".");
-            f_connection->send_message(invalid);
-
-            set_reason(reason_t::CLUCK_REASON_INVALID);
-            lock_failed();
-            finally();
-            return;
-        }
-    }
-
     f_state = state_t::CLUCK_STATE_LOCKED;
     f_lock_timeout_date = msg.get_timespec_parameter(g_name_cluck_param_timeout_date);
     f_unlocked_timeout_date = msg.get_timespec_parameter(g_name_cluck_param_unlocked_date);
@@ -2253,7 +2214,7 @@ void cluck::msg_lock_failed(ed::message & msg)
     {
         set_reason(reason_t::CLUCK_REASON_INVALID);
     }
-    else if(msg.has_parameter(g_name_cluck_param_error))
+    else
     {
         std::string const error(msg.get_parameter(g_name_cluck_param_error));
         if(error == g_name_cluck_value_timedout)
@@ -2272,18 +2233,6 @@ void cluck::msg_lock_failed(ed::message & msg)
 
             set_reason(reason_t::CLUCK_REASON_INVALID);
         }
-    }
-    else
-    {
-        SNAP_LOG_WARNING
-            << "got "
-            << g_name_cluck_cmd_lock_failed
-            << " with no \""
-            << g_name_cluck_param_error
-            << "\" parameter."
-            << SNAP_LOG_SEND;
-
-        set_reason(reason_t::CLUCK_REASON_INVALID);
     }
 
     lock_failed();

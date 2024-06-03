@@ -5,10 +5,10 @@ Administrator Modified Files
 Please create files under `/etc/cluck/cluck.d` starting with two digits,
 a dash and the name of the file found under the `/etc/cluck` directory.
 Then add parameters that you want to overwrite to that file. For example,
-the `/etc/cluck/cluck.conf` parameters can be overwritten using the
+the `/etc/cluck/cluckd.conf` parameters can be overwritten using the
 following file:
 
-    /etc/cluck/cluck.d/50-cluck.conf
+    /etc/cluck/cluck.d/50-cluckd.conf
 
 That way, you will continue to get the default configuration
 changes from the source package under `/etc/cluck`.
@@ -35,4 +35,3 @@ Submit bug reports and patches on
 
 
 _This file is part of the [snapcpp project](https://snapwebsites.org/)._
-

@@ -49,7 +49,7 @@
 
 // advgetopt
 //
-//#include    <advgetopt/utils.h>
+#include    <advgetopt/exception.h>
 
 
 // last include
@@ -77,37 +77,6 @@ addr::addr get_address()
     a.set_ipv4(ip);
     return a;
 }
-
-
-//class test_timer
-//    : public ed::timer
-//{
-//public:
-//    typedef std::shared_ptr<test_timer> pointer_t;
-//
-//    test_timer(test_messenger::pointer_t m)
-//        : timer(-1)
-//        , f_messenger(m)
-//    {
-//        set_name("test_timer");
-//    }
-//
-//    void process_timeout()
-//    {
-//        remove_from_communicator();
-//        f_messenger->remove_from_communicator();
-//        f_timed_out = true;
-//    }
-//
-//    bool timed_out_prima() const
-//    {
-//        return f_timed_out;
-//    }
-//
-//private:
-//    test_messenger::pointer_t   f_messenger = test_messenger::pointer_t();
-//    bool                        f_timed_out = false;
-//};
 
 
 
@@ -187,6 +156,58 @@ CATCH_TEST_CASE("cluck_daemon", "[cluckd][daemon]")
         }
 
         CATCH_REQUIRE(s->get_exit_code() == 0);
+    }
+    CATCH_END_SECTION()
+}
+
+
+CATCH_TEST_CASE("cluck_daemon_errors", "[cluckd][daemon][error]")
+{
+    CATCH_START_SECTION("cluck_daemon_errors: invalid logger parameter")
+    {
+        char const * const args[] = {
+            "cluckd", // name of command
+            "--log-severity",
+            "unknown-severity-name",
+            nullptr
+        };
+
+        CATCH_REQUIRE_THROWS_MATCHES(
+              std::make_shared<cluck_daemon::cluckd>(3, const_cast<char **>(args))
+            , advgetopt::getopt_exit
+            , Catch::Matchers::ExceptionMessage("getopt_exception: logger options generated an error."));
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("cluck_daemon_errors: standalone command line options are not allowed")
+    {
+        char const * const args[] = {
+            "cluckd", // name of command
+            "filename",
+            nullptr
+        };
+
+        CATCH_REQUIRE_THROWS_MATCHES(
+              std::make_shared<cluck_daemon::cluckd>(2, const_cast<char **>(args))
+            , advgetopt::getopt_exit
+            , Catch::Matchers::ExceptionMessage("getopt_exception: errors were found on your command line, environment variable, or configuration file."));
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("cluck_daemon_errors: double severity")
+    {
+        char const * const args[] = {
+            "cluckd", // name of command
+            "--log-severity",
+            "INFO",
+            "ERROR",        // oops, the log severity level "leaked"
+            nullptr
+        };
+
+        CATCH_REQUIRE_THROWS_MATCHES(
+              std::make_shared<cluck_daemon::cluckd>(4, const_cast<char **>(args))
+            , advgetopt::getopt_exit
+            , Catch::Matchers::ExceptionMessage("getopt_exception: errors were found on your command line, environment variable, or configuration file."));
     }
     CATCH_END_SECTION()
 }

@@ -68,7 +68,6 @@ public:
     //virtual bool                send_message(ed::message const & msg, bool cache = false) override;
 
     int                         get_computer_count() const;
-    int                         quorum() const;
     std::string const &         get_server_name() const;
     bool                        is_daemon_ready() const;
     computer::pointer_t         is_leader(std::string id = std::string()) const;
@@ -120,6 +119,7 @@ private:
     bool                        get_parameters(
                                       ed::message const & message
                                     , std::string * object_name
+                                    , ed::dispatcher_match::tag_t * tag
                                     , pid_t * client_pid
                                     , cluck::timeout_t * timeout
                                     , std::string * key

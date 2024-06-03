@@ -69,6 +69,11 @@ debug_info::debug_info(cluckd * c)
 }
 
 
+debug_info::~debug_info()
+{
+}
+
+
 /** \brief Call the debug_info() function of the cluckd object.
  *
  * When this function is called, the debug_info() function of

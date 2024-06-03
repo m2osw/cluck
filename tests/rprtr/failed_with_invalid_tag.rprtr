@@ -45,6 +45,7 @@ send_message(
 	parameters: {
 		object_name: "wrong-name",
 		tag: "${tag}",
+		key: "server1/service1",
 		error: "timedout"
 	})
 

@@ -45,7 +45,7 @@ public:
 
                                 interrupt(cluckd * c);
                                 interrupt(interrupt const & rhs) = delete;
-    virtual                     ~interrupt() override {}
+    virtual                     ~interrupt() override;
 
     interrupt &                 operator = (interrupt const & rhs) = delete;
 

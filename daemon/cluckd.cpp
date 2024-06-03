@@ -82,34 +82,46 @@
 
 
 /** \file
- * \brief Implementation of the snap inter-process lock mechanism.
+ * \brief Implementation of the inter-process lock mechanism.
  *
  * This file implements an inter-process lock that functions between
  * any number of machines. The basic algorithm used is the Bakery
  * Algorithm by Lamport. The concept is simple: you get a waiting
- * ticket and loop into it is your turn.
+ * ticket and loop through the tickets until it yours is picked.
  *
  * Contrary to a multi-processor environment thread synchronization,
  * this lock system uses messages and arrays to know its current
- * status. A user interested in obtaining a lock sends a LOCK
- * message. The snaplock daemon then waits until the lock is
+ * state. A user interested in obtaining a lock sends a LOCK
+ * message. The cluck daemon then waits until the lock is
  * obtained and sends a LOCKED as a reply. Once done with the lock,
- * the user sends UNLOCK.
+ * the user sends UNLOCK to release the lock.
  *
- * The implementation makes use of any number of snaplock instances.
+ * The implementation makes use of any number of cluck instances.
  * The locking mechanism makes use of the QUORUM voting system to
- * know that enough of the other snaplock agree on a statement.
- * This allows the snaplock daemon to obtain/release locks in an
+ * know that enough of the other cluck agree on a statement.
+ * This allows the cluck daemon to obtain/release locks in an
  * unknown network environment (i.e. any one of the machines may
  * be up or down and the locking mechanism still functions as
- * expected.)
+ * expected).
+ *
+ * The QUORUM is computed using the following formula:
+ *
+ * \f[
+ *      {number of computers} over 2 + 1
+ * \f]
+ *
+ * Note that the lock mechanism itself only uses 3 computers (2 or 1 if
+ * your cluster is that small). So in a cluster of, say, 100 computers,
+ * you would still end up using just 3 for the locks. However, the
+ * elections still require you to have a quorum of all the computers
+ * (100 / 2 + 1 is at least 51 computers).
  *
  * \note
- * The snaplock implementation checks parameters and throws away
+ * The cluck implementation checks parameters and throws away
  * messages that are definitely not going to be understood. However,
- * it is, like most Snap! daemons, very trustworthy of other snaplock
+ * it is, like most Snap! daemons, very trustworthy of other cluck
  * daemons and does not expect other daemons to mess around with its
- * sequence of lock message used to ensure that everything worked as
+ * sequence of lock messages used to ensure that everything worked as
  * expected.
  */
 
@@ -169,11 +181,20 @@ advgetopt::group_description const g_group_descriptions[] =
 };
 
 
+constexpr char const * const g_configuration_files[] =
+{
+    "/etc/cluck/cluckd.conf",
+    nullptr
+};
+
+
 advgetopt::options_environment const g_options_environment =
 {
-    .f_project_name = "cluck",
+    .f_project_name = "cluckd",
+    .f_group_name = "cluck",
     .f_options = g_options,
-    .f_environment_variable_name = "CLUCK_OPTIONS",
+    .f_environment_variable_name = "CLUCKD_OPTIONS",
+    .f_configuration_files = g_configuration_files,
     .f_environment_flags = advgetopt::GETOPT_ENVIRONMENT_FLAG_SYSTEM_PARAMETERS
                          | advgetopt::GETOPT_ENVIRONMENT_FLAG_PROCESS_SYSTEM_PARAMETERS,
     .f_help_header = "Usage: %p [-<opt>]\n"
@@ -321,37 +342,38 @@ advgetopt::options_environment const g_options_environment =
 /** \class cluckd
  * \brief Class handling intercomputer locking.
  *
- * This class is used in order to create an intercomputer lock on request.
+ * This class is used in order to create intercomputer locks on request.
  *
- * The class implements the Snap! Communicator messages and implements
- * the LOCK and UNLOCK commands and sends the LOCKED command to its
- * sender.
+ * The class uses Snap! Communicator messages and implements
+ * the LOCK and UNLOCK commands and sends the LOCKED and UNLOCKED
+ * commands to its senders.
  *
  * The system makes use of the Lamport's Bakery Algorithm. This is
- * explained in the snaplock_ticket class.
+ * explained in the ticket class.
  *
  * \note
- * At this time there is one potential problem that can arise: the
+ * At this time, there is one potential problem that can arise: the
  * lock may fail to concretize because the computer to which you
  * first sent the LOCK message goes down in some way. The other
- * snaplock computers will have no clue by which computer the lock
+ * cluck computers will have no clue by which computer the lock
  * was being worked on and whether one of them should take over.
- * One way to remediate is to run one instance of snaplock on each
- * computer on which a lock is likely to happen.
+ * One way to remediate is to run one instance of cluck on each
+ * computer on which a lock is likely to happen. Then the LOCK
+ * message will be proxied to the proper destination (a leader).
  *
  * \warning
  * The LOCK mechanism uses the system clock of each computer to know when
  * a lock times out. You are responsible for making sure that all those
- * computers have a synchronized clocked (i.e. run a timed daemon.)
- * The difference in time should be as small as possible. The precision
- * required by snaplock is around 1 second.
+ * computers have a synchronized clocked (i.e. run a timed daemon such
+ * as ntpd). The difference in time should be as small as possible. The
+ * precision required by cluck is around 1 second.
  *
  * The following shows the messages used to promote 3 leaders, in other
  * words it shows how the election process happens. The election itself
- * is done on the computer that is part of the cluster being up and which
- * has the smallest IP address. That's the one computer that will send the
- * LOCKLEADERS. As soon as that happens all the other nodes on the cluster
- * will know the leaders and inform new nodes through the LOCKSTARTED
+ * is done on the computer that is part of the cluster considered to be up
+ * and which has the smallest IP address. That's the one computer that will
+ * send the LOCKLEADERS. As soon as that happens all the other nodes on the
+ * cluster know the leaders and inform new nodes through the LOCKSTARTED
  * message.
  *
  * \msc
@@ -377,7 +399,7 @@ advgetopt::options_environment const g_options_environment =
  *  D->A [label="LOCKSTARTED"];
  *  A->D [label="LOCKSTARTED"];
  *
- *  # When we reach here we have a CLUSTERUP in terms of snaplock daemons
+ *  # When we reach here we have a CLUSTERUP in terms of cluck daemons
  *  # Again here we broadcast, maybe we should send to known computers instead?
  *  # IMPORTANT: A determines the leaders only if its IP is the smallest
  *  A->* [label="LOCKLEADERS"];
@@ -392,12 +414,12 @@ advgetopt::options_environment const g_options_environment =
  *  A->F [label="LOCKSTARTED"];
  * \endmsc
  *
- * \sa snaplock_ticket
+ * \sa ticket
  */
 
 
 
-/** \brief Initializes a snaplock object.
+/** \brief Initializes a cluckd object.
  *
  * This function parses the command line arguments, reads configuration
  * files, setups the logger.
@@ -410,7 +432,6 @@ advgetopt::options_environment const g_options_environment =
  */
 cluckd::cluckd(int argc, char * argv[])
     : f_opts(g_options_environment)
-    //, f_config("cluck")
 {
     snaplogger::add_logger_options(f_opts);
     ed::add_message_definition_options(f_opts);
@@ -440,13 +461,6 @@ cluckd::cluckd(int argc, char * argv[])
         throw advgetopt::getopt_exit(errmsg, 1);
     }
 
-    // read the configuration file
-    //
-    //if(f_opt.is_defined("config"))
-    //{
-    //    f_config.set_configuration_path(f_opt.get_string("config"));
-    //}
-
     // get the server name using the library function
     //
     // TODO: if the name of the server is changed, we should reboot, but
@@ -457,8 +471,8 @@ cluckd::cluckd(int argc, char * argv[])
     //
     f_server_name = f_opts.get_string("server-name");
 //#ifdef _DEBUG
-//    // to debug multiple snaplock on the same server each instance needs to
-//    // have a different server name
+//    // to debug multiple cluck daemons on the same server each instance
+//    // needs to have a different server name
 //    //
 //    if(f_config.has_parameter("server_name"))
 //    {
@@ -466,12 +480,8 @@ cluckd::cluckd(int argc, char * argv[])
 //    }
 //#endif
 
-    // local_listen=... -- from snapcommnicator.conf
-    //
-    //tcp_client_server::get_addr_port(f_config("snapcommunicator", "local_listen"), f_communicator_addr, f_communicator_port, "tcp");
-
 //#ifdef _DEBUG
-//    // for test purposes (i.e. to run any number of snaplock on a single
+//    // for test purposes (i.e. to run any number of cluckd on a single
 //    // computer) we allow the administrator to change the name of the
 //    // service, but only in a debug version
 //    //
@@ -501,7 +511,7 @@ cluckd::~cluckd()
  *
  * \note
  * This is separate from the run() function so we can run unit tests
- * agains the cluck daemon.
+ * against the cluck daemon.
  *
  * \sa run()
  */
@@ -551,7 +561,7 @@ void cluckd::add_connections()
 void cluckd::run()
 {
     SNAP_LOG_INFO
-        << "--------------------------------- snaplock started."
+        << "--------------------------------- cluckd started."
         << SNAP_LOG_SEND;
 
     // now run our listening loop
@@ -563,14 +573,14 @@ void cluckd::run()
 
 
 
-/** \brief Return the number of known computers running snaplock.
+/** \brief Return the number of known computers running cluckd.
  *
- * This function is used by the snaplock_ticket objects to calculate
+ * This function is used by the ticket objects to calculate
  * the quorum so as to know how many computers need to reply to
  * our messages before we can be sure we got the correct
  * results.
  *
- * \return The number of instances of snaplock running and connected.
+ * \return The number of instances of cluckd running and connected.
  */
 int cluckd::get_computer_count() const
 {
@@ -578,45 +588,15 @@ int cluckd::get_computer_count() const
 }
 
 
-/** \brief Calculate the quorum number of computers.
- *
- * This function dynamically recalculates the QUORUM that is required
- * to make sure that a value is valid between all the running computers.
- *
- * Because the network can go up and down (i.e. clashes, busy, etc.)
- * the time it takes to get an answer from a computer can be really
- * high. This is generally not acceptable when attempting to do a
- * lock as quickly as possible (i.e. low microseconds).
- *
- * The way to avoid having to wait for all the computers to answer is
- * to use the quorum number of computers which is a little more than
- * half:
- *
- * \f[
- *      {number of computers} over 2 + 1
- * \f]
- *
- * So if you using 4 or 5 computers for the lock, we need an answer
- * from 3 computers to make sure that we have the correct value.
- *
- * As computers running snaplock appear and disappear, the quorum
- * number will change, dynamically.
- */
-int cluckd::quorum() const
-{
-    return f_computers.size() / 2 + 1;
-}
-
-
 /** \brief Get the name of the server we are running on.
  *
  * This function returns the name of the server this instance of
- * snaplock is running. It is used by the ticket implementation
- * to know whether to send a reply to the snap_lock object (i.e.
+ * cluck is running. It is used by the ticket implementation
+ * to know whether to send a reply to the cluck object (i.e.
  * at this time we can send messages to that object only from the
- * server it was sent from.)
+ * server it was sent from).
  *
- * \return The name of the server snaplock is running on.
+ * \return The name of the server cluck is running on.
  */
 std::string const & cluckd::get_server_name() const
 {
@@ -665,13 +645,13 @@ bool cluckd::is_daemon_ready() const
     //
     // notice how not having received the CLUSTERUP would be taken in
     // account here since f_neighbors_count will still be 0 in that case
-    // (however, the previous empty() test already take that in account)
+    // (however, the previous empty() test already takes that in account)
     //
     if(f_leaders.size() == 1
     && f_neighbors_count != 1)
     {
         SNAP_LOG_TRACE
-            << "not considered ready: no enough leaders for this cluster."
+            << "not considered ready: not enough leaders for this cluster."
             << SNAP_LOG_SEND;
         return false;
     }
@@ -686,7 +666,7 @@ bool cluckd::is_daemon_ready() const
     //
     // if our quorum is 1 or 2 then we need a number of computers
     // equal to the total number of computers (i.e. a CLUSTER_COMPLETE
-    // status which we compute here)
+    // status which we verify here)
     //
     if(f_neighbors_quorum < 3
     && f_computers.size() < f_neighbors_count)
@@ -722,7 +702,7 @@ bool cluckd::is_daemon_ready() const
                 << SNAP_LOG_SEND;
 
             // attempt resending a LOCKSTARTED because it could be that it
-            // did not work quite right and the snaplock daemons are not
+            // did not work quite right and the cluck daemons are not
             // going to ever talk with each others otherwise
             //
             // we also make sure we do not send the message too many times,
@@ -753,11 +733,11 @@ bool cluckd::is_daemon_ready() const
 }
 
 
-/** \brief Check whether we are a leader.
+/** \brief Search for a leader.
  *
  * This function goes through the list of leaders to determine whether
  * the specified identifier represents a leader. If so it returns a pointer
- * to that leader computer object. Otherwise it returns a null pointer.
+ * to that leader computer object.
  *
  * When the function is called with an empty string as the computer
  * identifier, this computer is checked to see whether it is a leader.
@@ -765,7 +745,7 @@ bool cluckd::is_daemon_ready() const
  * \warning
  * This function is considered slow since it goes through the list of leaders
  * on each call. On the other hand, it's only 1 to 3 leaders. Yet, you should
- * cache the result within your function if you need the results multiple
+ * cache the result within your function if you need the result multiple
  * times, as in:
  *
  * \code
@@ -774,8 +754,8 @@ bool cluckd::is_daemon_ready() const
  * \endcode
  *
  * \par
- * This is done that way because the function may result different results
- * over time.
+ * This is done that way because the function may return a different result
+ * over time (i.e. if a re-election happens).
  *
  * \param[in] id  The identifier of the leader to search, if empty, default
  *                to f_my_id (i.e. whether this cluckd is a leader).
@@ -833,7 +813,7 @@ computer::pointer_t cluckd::get_leader_a() const
 computer::pointer_t cluckd::get_leader_b() const
 {
 #ifdef _DEBUG
-    if(!is_leader())
+    if(is_leader() == nullptr)
     {
         throw cluck::logic_error("cluckd::get_leader_b(): only a leader can call this function.");
     }
@@ -857,13 +837,15 @@ computer::pointer_t cluckd::get_leader_b() const
 
 
 
-/** \brief Output various data about the cluckd current status.
+/** \brief Output the state of this cluckd object.
  *
- * This function outputs the current status of a snaplock daemon to
- * the snaplock.log file.
+ * This function outputs the current state of a cluck daemon to
+ * the cluckd.log file.
  *
- * This is used to debug a snaplock instance and make sure that the
+ * This is used to debug a cluck instance and make sure that the
  * state is how you would otherwise expect it to be.
+ *
+ * \sa cluck_daemon::info
  */
 void cluckd::info()
 {
@@ -1189,46 +1171,48 @@ void cluckd::check_lock_status()
 
 void cluckd::send_lock_started(ed::message const * msg)
 {
-    // tell other snaplock instances that are already listening that
+    // tell other cluck daemon instances that are already listening that
     // we are ready; this way we can calculate the number of computers
     // available in our network and use that to calculate the QUORUM
     //
-    ed::message lockstarted_message;
-    lockstarted_message.set_command(cluck::g_name_cluck_cmd_lock_started);
+    ed::message lock_started_message;
+    lock_started_message.set_command(cluck::g_name_cluck_cmd_lock_started);
     if(msg == nullptr)
     {
-        lockstarted_message.set_service(communicatord::g_name_communicatord_service_public_broadcast);
+        lock_started_message.set_service(communicatord::g_name_communicatord_service_public_broadcast);
 
         // unfortunately, the following does NOT work as expected...
         // (i.e. the following ends up sending the message to ourselves only
-        // and does not forward to any remote communicators.)
+        // and does not forward to any remote communicators).
         //
-        //lockstarted_message.set_server("*");
-        //lockstarted_message.set_service("cluck");
+        //lock_started_message.set_server("*");
+        //lock_started_message.set_service("cluckd");
     }
     else
     {
-        lockstarted_message.reply_to(*msg);
+        lock_started_message.reply_to(*msg);
     }
 
     // our info: server name and id
     //
-    lockstarted_message.add_parameter(communicatord::g_name_communicatord_param_server_name, f_server_name);
-    lockstarted_message.add_parameter(cluck::g_name_cluck_param_lockid, f_my_id);
-    lockstarted_message.add_parameter(cluck::g_name_cluck_param_start_time, f_start_time);
+    lock_started_message.add_parameter(communicatord::g_name_communicatord_param_server_name, f_server_name);
+    lock_started_message.add_parameter(cluck::g_name_cluck_param_lockid, f_my_id);
+    lock_started_message.add_parameter(cluck::g_name_cluck_param_start_time, f_start_time);
 
     // include the leaders if present
     //
     if(!f_leaders.empty())
     {
-        lockstarted_message.add_parameter(cluck::g_name_cluck_param_election_date, f_election_date);
+        lock_started_message.add_parameter(cluck::g_name_cluck_param_election_date, f_election_date);
         for(size_t idx(0); idx < f_leaders.size(); ++idx)
         {
-            lockstarted_message.add_parameter(cluck::g_name_cluck_param_leader + std::to_string(idx), f_leaders[idx]->get_id());
+            lock_started_message.add_parameter(
+                  cluck::g_name_cluck_param_leader + std::to_string(idx)
+                , f_leaders[idx]->get_id());
         }
     }
 
-    f_messenger->send_message(lockstarted_message);
+    f_messenger->send_message(lock_started_message);
 }
 
 
@@ -1280,12 +1264,12 @@ void cluckd::stop(bool quitting)
  *
  * Note that the function may be called many times even though the
  * first ticket does not actually change. Generally this is fine 
- * although each time it sends an ACTIVATELOCK message so we want
+ * although each time it sends an ACTIVATE_LOCK message so we want
  * to limit the number of calls to make sure we do not send too
  * many possibly confusing messages.
  *
  * \note
- * We need the ACTIVATELOCK and LOCKACTIVATED messages to make sure
+ * We need the ACTIVATE_LOCK and LOCK_ACTIVATED messages to make sure
  * that we only activate the very first lock which we cannot be sure
  * of on our own because all the previous messages are using the
  * QUORUM as expected and thus our table of locks may not be complete
@@ -1366,7 +1350,7 @@ ticket::pointer_t cluckd::find_first_lock(std::string const & object_name)
 /** \brief Synchronize leaders.
  *
  * This function sends various events to the other two leaders in order
- * to get them to synchronize the tickets this snaplock currently holds.
+ * to get them to synchronize the tickets this cluck daemon currently holds.
  *
  * Only leaders make use of this function.
  *
@@ -1382,7 +1366,7 @@ ticket::pointer_t cluckd::find_first_lock(std::string const & object_name)
  *
  * \warning
  * A ticket that just arrived to a leader and was not yet forwarded to
- * the others with the LOCKENTERING message is going to be lost no
+ * the others with the LOCK_ENTERING message is going to be lost no
  * matter what.
  */
 void cluckd::synchronize_leaders()
@@ -1397,7 +1381,7 @@ void cluckd::synchronize_leaders()
     }
 
     // only leaders can synchronize each others
-    // (other snaplocks do not have any tickets to synchronize)
+    // (other cluck daemons do not have any tickets to synchronize)
     //
     if(!is_leader())
     {
@@ -1445,6 +1429,7 @@ void cluckd::synchronize_leaders()
                 lock_message.set_sent_from_server(key_entering->second->get_server_name());
                 lock_message.set_sent_from_service(key_entering->second->get_service_name());
                 lock_message.add_parameter(cluck::g_name_cluck_param_object_name, key_entering->second->get_object_name());
+                lock_message.add_parameter(cluck::g_name_cluck_param_tag, key_entering->second->get_tag());
                 lock_message.add_parameter(cluck::g_name_cluck_param_pid, key_entering->second->get_client_pid());
                 lock_message.add_parameter(cluck::g_name_cluck_param_timeout, key_entering->second->get_obtention_timeout());
                 lock_message.add_parameter(cluck::g_name_cluck_param_duration, key_entering->second->get_lock_duration());
@@ -1528,6 +1513,7 @@ void cluckd::synchronize_leaders()
                     lock_message.set_sent_from_server(key_ticket->second->get_server_name());
                     lock_message.set_sent_from_service(key_ticket->second->get_service_name());
                     lock_message.add_parameter(cluck::g_name_cluck_param_object_name, key_ticket->second->get_object_name());
+                    lock_message.add_parameter(cluck::g_name_cluck_param_tag, key_ticket->second->get_tag());
                     lock_message.add_parameter(cluck::g_name_cluck_param_pid, key_ticket->second->get_client_pid());
                     lock_message.add_parameter(cluck::g_name_cluck_param_timeout, key_ticket->second->get_obtention_timeout());
                     lock_message.add_parameter(cluck::g_name_cluck_param_duration, key_ticket->second->get_lock_duration());
@@ -1594,10 +1580,10 @@ void cluckd::synchronize_leaders()
 
 /** \brief Forward a user message to a leader.
  *
- * The user may send a LOCK or an UNLOCK command to the snaplock system.
+ * The user may send a LOCK or an UNLOCK command to the cluck daemon.
  * Those messages need to be forwarded to a leader to work as expected.
  * If we are not a leader, then we need to call this function to
- * forward the message.
+ * forward the message (this daemon acts as a proxy).
  *
  * Note that we do not make a copy of the message because we do not expect
  * it to be used any further after this call so we may as well update that
@@ -1612,7 +1598,7 @@ void cluckd::forward_message_to_leader(ed::message & msg)
     // other messages can be proxied back
     //
     // Note: using the get_sent_from_server() means that we may not
-    //       even see the return message, it may be proxied to another
+    //       even see the returned message, it may be proxied to another
     //       server directly or through another route
     //
     msg.set_service(cluck::g_name_cluck_service_name);
@@ -1632,6 +1618,10 @@ void cluckd::forward_message_to_leader(ed::message & msg)
  * entries and removes any one of them that timed out. This is
  * important if a process dies and does not properly remove
  * its locks.
+ *
+ * When the timer gets its process_timeout() function called,
+ * it ends up calling this function to clean up any lock that
+ * has timed out.
  */
 void cluckd::cleanup()
 {
@@ -1646,9 +1636,10 @@ void cluckd::cleanup()
         if(c->f_timeout <= now)
         {
             std::string object_name;
+            ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
             pid_t client_pid(0);
             cluck::timeout_t timeout;
-            if(!get_parameters(c->f_message, &object_name, &client_pid, &timeout, nullptr, nullptr))
+            if(!get_parameters(c->f_message, &object_name, &tag, &client_pid, &timeout, nullptr, nullptr))
             {
                 // we should never cache messages that are invalid
                 //
@@ -1672,6 +1663,7 @@ void cluckd::cleanup()
             lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
             lock_failed_message.reply_to(c->f_message);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_timedout);
             f_messenger->send_message(lock_failed_message);
@@ -1688,13 +1680,14 @@ void cluckd::cleanup()
         }
     }
 
-    // remove any f_tickets that timed out
+    // remove any f_ticket that timed out
     //
     for(auto obj_ticket(f_tickets.begin()); obj_ticket != f_tickets.end(); )
     {
         bool try_activate(false);
         for(auto key_ticket(obj_ticket->second.begin()); key_ticket != obj_ticket->second.end(); )
         {
+            bool move_next(true);
             if(key_ticket->second->timed_out())
             {
                 key_ticket->second->lock_failed();
@@ -1704,9 +1697,10 @@ void cluckd::cleanup()
                     //
                     key_ticket = obj_ticket->second.erase(key_ticket);
                     try_activate = true;
+                    move_next = false;
                 }
             }
-            else
+            if(move_next)
             {
                 if(key_ticket->second->get_current_timeout_date() < next_timeout)
                 {
@@ -1785,14 +1779,14 @@ void cluckd::cleanup()
 }
 
 
-/** \brief Determine the last ticket defined in this snaplock.
+/** \brief Determine the last ticket defined in this cluck daemon.
  *
  * This function loops through the existing tickets and returns the
  * largest ticket number it finds.
  *
- * Note that the number returned is the last ticket. At some point
- * the algoritym need to add one to it before assigning the number to
- * a new ticket.
+ * Note that the number returned is the last ticket. At some point,
+ * the caller needs to add one to this number before assigning the
+ * result to a new ticket.
  *
  * If no ticket were defined for \p object_name or we are dealing with
  * that object very first ticket, then the function returns NO_TICKET
@@ -1835,7 +1829,7 @@ ticket::ticket_id_t cluckd::get_last_ticket(std::string const & object_name)
 /** \brief Set the ticket.
  *
  * Once a ticket was assigned a valid identifier (see get_last_ticket())
- * it can be assigned as a ticket. This function does that. Now this is
+ * it can be saved as a ticket. This function does that. Now this is
  * an official ticket.
  *
  * \param[in] object_name  The name of the object being locked.
@@ -1854,11 +1848,11 @@ void cluckd::set_ticket(
 /** \brief Get a reference to the list of entering tickets.
  *
  * This function returns a constant reference to the list of entering
- * tickets. This is used by the snaplock_ticket::add_ticket() function
- * in order to know once all entering tickets are done so the algoritm
+ * tickets. This is used by the ticket::add_ticket() function
+ * in order to know once all entering tickets are done so the algorithm
  * can move forward.
  *
- * \param[in] name  The name of the object being locked.
+ * \param[in] object_name  The name of the object being locked.
  *
  * \return A constant copy of the list of entering tickets.
  */
@@ -1879,7 +1873,8 @@ ticket::key_map_t const cluckd::get_entering_tickets(std::string const & object_
  * This function is called to simulate sending a LOCK_EXITING to the
  * cluckd object from the ticket object.
  *
- * \param[in] msg  The LOCK_EXITING message with proper object name and key.
+ * \param[in] msg  The LOCK_EXITING message with proper object name, tag,
+ * and key.
  */
 void cluckd::lock_exiting(ed::message & msg)
 {
@@ -1914,8 +1909,12 @@ std::string cluckd::serialized_tickets()
  * This function attempts to get the specified set of parameters from the
  * specified message.
  *
- * The function throws if a parameter is missing or invalid (i.e. an
- * integer is not valid).
+ * The function throws if a parameter is missing or invalid (i.e. passed
+ * a string when an integer was expected).
+ *
+ * When defined, the \p client_pid parameter is expected to be a positive
+ * integer. Any other number makes the function emit an error and return
+ * false.
  *
  * \note
  * The timeout parameter is always viewed as optional. It is set to
@@ -1923,17 +1922,13 @@ std::string cluckd::serialized_tickets()
  * If specified in the message, there is no minimum or maximum
  * (i.e. it may already have timed out).
  *
- * \exception snap_communicator_invalid_message
- * If a required parameter (object_name, client_pid, or key) is missing
- * then this exception is raised. You will have to fix your software
- * to avoid the exception.
- *
  * \param[in] message  The message from which we get parameters.
- * \param[out] object_name  A pointer to a QString that receives the object name.
+ * \param[out] object_name  A pointer to an std::string that receives the object name.
+ * \param[out] tag  A pointer to a tag_t that receives the tag number.
  * \param[out] client_pid  A pointer to a pid_t that receives the client pid.
  * \param[out] timeout  A pointer to an cluck::timeout_t that receives the timeout date.
- * \param[out] key  A pointer to a QString that receives the key parameter.
- * \param[out] source  A pointer to a QString that receives the source parameter.
+ * \param[out] key  A pointer to an std::string that receives the key parameter.
+ * \param[out] source  A pointer to an std::string that receives the source parameter.
  *
  * \return true if all specified parameters could be retrieved as expected,
  * false if parameters are either missing or invalid.
@@ -1941,6 +1936,7 @@ std::string cluckd::serialized_tickets()
 bool cluckd::get_parameters(
       ed::message const & msg
     , std::string * object_name
+    , ed::dispatcher_match::tag_t * tag
     , pid_t * client_pid
     , cluck::timeout_t * timeout
     , std::string * key
@@ -1952,6 +1948,14 @@ bool cluckd::get_parameters(
     if(object_name != nullptr)
     {
         *object_name = msg.get_parameter(cluck::g_name_cluck_param_object_name);
+    }
+
+    // the same application may want to hold multiple locks simultaneously
+    // and this is made possible by using a tag (a 16 bits number)
+    //
+    if(tag != nullptr)
+    {
+        *tag = msg.get_integer_parameter(cluck::g_name_cluck_param_tag);
     }
 
     // get the pid (process identifier) of the process that is
@@ -1999,7 +2003,7 @@ bool cluckd::get_parameters(
         *key = msg.get_parameter(cluck::g_name_cluck_param_key);
     }
 
-    // get the key of a ticket or entering object
+    // get the source of a ticket (i.e. <server> '/' <service>)
     //
     if(source != nullptr)
     {
@@ -2023,7 +2027,15 @@ bool cluckd::get_parameters(
  */
 void cluckd::msg_absolutely(ed::message & msg)
 {
-    std::string const serial(msg.get_parameter("serial"));
+    // we may receive the ABSOLUTELY message from anywhere so don't expect
+    // that the serial parameter is going to be defined
+    //
+    if(!msg.has_parameter(ed::g_name_ed_param_serial))
+    {
+        return;
+    }
+
+    std::string const serial(msg.get_parameter(ed::g_name_ed_param_serial));
     std::vector<std::string> segments;
     snapdev::tokenize_string(segments, serial, "/");
 
@@ -2040,13 +2052,29 @@ void cluckd::msg_absolutely(ed::message & msg)
                 << "\" was expected to have exactly 4 segments."
                 << SNAP_LOG_SEND;
 
-            ed::message lock_failed_message;
-            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-            lock_failed_message.reply_to(msg);
-            lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, cluck::g_name_cluck_value_unknown);
-            lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, serial);
-            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
-            f_messenger->send_message(lock_failed_message);
+            // this would not work without an object name & tag
+            // use an INVALID message instead
+            //ed::message lock_failed_message;
+            //lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            //lock_failed_message.reply_to(msg);
+            //lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, cluck::g_name_cluck_value_unknown);
+            //lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, cluck::g_name_cluck_value_unknown);
+            //lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, serial);
+            //lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+            //f_messenger->send_message(lock_failed_message);
+
+            ed::message invalid;
+            invalid.set_command(ed::g_name_ed_cmd_invalid);
+            invalid.reply_to(msg);
+            invalid.add_parameter(
+                  ed::g_name_ed_param_command
+                , msg.get_command());
+            invalid.add_parameter(
+                  ed::g_name_ed_param_message
+                , "invalid number of segments in \""
+                + serial
+                + "\".");
+            f_messenger->send_message(invalid);
 
             return;
         }
@@ -2096,8 +2124,9 @@ void cluckd::msg_absolutely(ed::message & msg)
 void cluckd::msg_activate_lock(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     std::string key;
-    if(!get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
         return;
     }
@@ -2126,6 +2155,7 @@ void cluckd::msg_activate_lock(ed::message & msg)
     lock_activated_message.set_command(cluck::g_name_cluck_cmd_lock_activated);
     lock_activated_message.reply_to(msg);
     lock_activated_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+    lock_activated_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
     lock_activated_message.add_parameter(cluck::g_name_cluck_param_key, key);
     lock_activated_message.add_parameter(cluck::g_name_cluck_param_other_key, first_key);
     f_messenger->send_message(lock_activated_message);
@@ -2143,21 +2173,22 @@ void cluckd::msg_activate_lock(ed::message & msg)
  *
  * \note
  * Although we only need a QUORUM number of nodes to receive a copy of
- * the data, the data still get broadcast to all the snaplock leaders.
- * After this message arrives any one of the snaplock process can
+ * the data, the data still get broadcast to all the cluck leaders.
+ * After this message arrives any one of the cluck process can
  * handle the unlock if the UNLOCK message gets sent to another process
  * instead of the one which first created the ticket. This is the point
  * of the implementation since we want to be fault tolerant (as in if one
- * of the leaders goes down, the locking mechanism still works.)
+ * of the leaders goes down, the locking mechanism still works).
  *
- * \param[in] msg  The ADDTICKET message being handled.
+ * \param[in] msg  The ADD_TICKET message being handled.
  */
 void cluckd::msg_add_ticket(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     std::string key;
     cluck::timeout_t timeout;
-    if(!get_parameters(msg, &object_name, nullptr, &timeout, &key, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, &timeout, &key, nullptr))
     {
         return;
     }
@@ -2201,7 +2232,7 @@ void cluckd::msg_add_ticket(ed::message & msg)
         return;
     }
 
-    // TODO: we probably want to look in a function which returns false
+    // TODO: we probably want to look at using a function which returns false
     //       instead of having to do a try/catch
     //
     bool ok(true);
@@ -2223,13 +2254,14 @@ void cluckd::msg_add_ticket(ed::message & msg)
         SNAP_LOG_ERROR
             << "somehow ticket number \""
             << segments[0]
-            << "\" is not a valid hexadecimal number"
+            << "\" is not a valid hexadecimal number."
             << SNAP_LOG_SEND;
 
         ed::message lock_failed_message;
         lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
         lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
         f_messenger->send_message(lock_failed_message);
@@ -2253,6 +2285,7 @@ void cluckd::msg_add_ticket(ed::message & msg)
         lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
         lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
         f_messenger->send_message(lock_failed_message);
@@ -2277,6 +2310,7 @@ void cluckd::msg_add_ticket(ed::message & msg)
         lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
         lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
         f_messenger->send_message(lock_failed_message);
@@ -2286,7 +2320,7 @@ void cluckd::msg_add_ticket(ed::message & msg)
 
     // make it an official ticket now
     //
-    // this should happen on all snaplock other than the one that
+    // this should happen on all cluck daemon other than the one that
     // first received the LOCK message
     //
     set_ticket(object_name, key, key_entering_ticket->second);
@@ -2423,8 +2457,9 @@ void cluckd::msg_cluster_up(ed::message & msg)
 void cluckd::msg_drop_ticket(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     std::string key;
-    if(!get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
         return;
     }
@@ -2509,8 +2544,9 @@ void cluckd::msg_drop_ticket(ed::message & msg)
 void cluckd::msg_get_max_ticket(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     std::string key;
-    if(!get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
         return;
     }
@@ -2591,9 +2627,10 @@ void cluckd::msg_list_tickets(ed::message & msg)
 void cluckd::msg_lock(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     pid_t client_pid(0);
     cluck::timeout_t timeout;
-    if(!get_parameters(msg, &object_name, &client_pid, &timeout, nullptr, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, &client_pid, &timeout, nullptr, nullptr))
     {
         return;
     }
@@ -2619,7 +2656,9 @@ void cluckd::msg_lock(ed::message & msg)
         SNAP_LOG_WARNING
             << "Lock on \""
             << object_name
-            << "\" / \""
+            << "\" ("
+            << tag
+            << ")/ \""
             << client_pid
             << "\" timed out before we could start the locking process."
             << SNAP_LOG_SEND;
@@ -2628,6 +2667,7 @@ void cluckd::msg_lock(ed::message & msg)
         lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
         lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_timedout);
         f_messenger->send_message(lock_failed_message);
@@ -2651,6 +2691,7 @@ void cluckd::msg_lock(ed::message & msg)
         lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
         lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
         f_messenger->send_message(lock_failed_message);
@@ -2677,6 +2718,7 @@ void cluckd::msg_lock(ed::message & msg)
             lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
             lock_failed_message.reply_to(msg);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
             f_messenger->send_message(lock_failed_message);
@@ -2690,7 +2732,9 @@ void cluckd::msg_lock(ed::message & msg)
         SNAP_LOG_TRACE
             << "caching LOCK message for \""
             << object_name
-            << "\" as the cluck system is not yet considered ready."
+            << "\" ("
+            << tag
+            << ") as the cluck system is not yet considered ready."
             << SNAP_LOG_SEND;
 
         f_message_cache.emplace_back(timeout, msg);
@@ -2744,7 +2788,9 @@ void cluckd::msg_lock(ed::message & msg)
             SNAP_LOG_ERROR
                 << "an entering ticket has the same object name \""
                 << object_name
-                << "\" and entering key \""
+                << "\" ("
+                << tag
+                << ") and entering key \""
                 << entering_key
                 << "\"."
                 << SNAP_LOG_SEND;
@@ -2753,6 +2799,7 @@ void cluckd::msg_lock(ed::message & msg)
             lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
             lock_failed_message.reply_to(msg);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_duplicate);
             f_messenger->send_message(lock_failed_message);
@@ -2780,12 +2827,14 @@ void cluckd::msg_lock(ed::message & msg)
                 }));
         if(key_ticket != obj_ticket->second.end())
         {
-            // there is already a ticket with this name/entering key
+            // there is already a ticket with this object name/entering key
             //
             SNAP_LOG_ERROR
                 << "a ticket has the same object name \""
                 << object_name
-                << "\" and entering key \""
+                << "\" ("
+                << tag
+                << ") and entering key \""
                 << entering_key
                 << "\"."
                 << SNAP_LOG_SEND;
@@ -2794,6 +2843,7 @@ void cluckd::msg_lock(ed::message & msg)
             lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
             lock_failed_message.reply_to(msg);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_duplicate);
             f_messenger->send_message(lock_failed_message);
@@ -2806,6 +2856,7 @@ void cluckd::msg_lock(ed::message & msg)
                                   this
                                 , f_messenger
                                 , object_name
+                                , tag
                                 , entering_key
                                 , timeout
                                 , duration
@@ -2877,8 +2928,9 @@ void cluckd::msg_lock(ed::message & msg)
 void cluckd::msg_lock_activated(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     std::string key;
-    if(!get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
         return;
     }
@@ -2915,8 +2967,9 @@ void cluckd::msg_lock_activated(ed::message & msg)
 void cluckd::msg_lock_entered(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     std::string key;
-    if(!get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
         return;
     }
@@ -2942,10 +2995,11 @@ void cluckd::msg_lock_entered(ed::message & msg)
 void cluckd::msg_lock_entering(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     cluck::timeout_t timeout;
     std::string key;
     std::string source;
-    if(!get_parameters(msg, &object_name, nullptr, &timeout, &key, &source))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, &timeout, &key, &source))
     {
         return;
     }
@@ -3050,6 +3104,7 @@ void cluckd::msg_lock_entering(ed::message & msg)
                                           this
                                         , f_messenger
                                         , object_name
+                                        , tag
                                         , key
                                         , timeout
                                         , duration
@@ -3093,8 +3148,9 @@ void cluckd::msg_lock_entering(ed::message & msg)
 void cluckd::msg_lock_exiting(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     std::string key;
-    if(!get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
         return;
     }
@@ -3184,8 +3240,9 @@ void cluckd::msg_lock_exiting(ed::message & msg)
 void cluckd::msg_lock_failed(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     std::string key;
-    if(!get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
         return;
     }
@@ -3591,14 +3648,15 @@ void cluckd::msg_lock_tickets(ed::message & msg)
                 bool const new_ticket(t == nullptr);
                 if(new_ticket)
                 {
-                    // creaet a new ticket, some of the parameters are there just
+                    // create a new ticket, some of the parameters are there just
                     // because they are required; they will be replaced by the
-                    // unserialize call...
+                    // unserialize call below...
                     //
                     t = std::make_shared<ticket>(
                                   this
                                 , f_messenger
                                 , object_name
+                                , ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG
                                 , entering_key
                                 , cluck::CLUCK_DEFAULT_TIMEOUT + snapdev::now()
                                 , cluck::CLUCK_DEFAULT_TIMEOUT
@@ -3652,8 +3710,9 @@ void cluckd::msg_lock_tickets(ed::message & msg)
 void cluckd::msg_max_ticket(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     std::string key;
-    if(!get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
         return;
     }
@@ -3803,8 +3862,9 @@ void cluckd::msg_status(ed::message & msg)
 void cluckd::msg_ticket_added(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     std::string key;
-    if(!get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
         return;
     }
@@ -3867,8 +3927,9 @@ void cluckd::msg_ticket_added(ed::message & msg)
 void cluckd::msg_ticket_ready(ed::message & msg)
 {
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     std::string key;
-    if(!get_parameters(msg, &object_name, nullptr, nullptr, &key, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
         return;
     }
@@ -3915,8 +3976,9 @@ void cluckd::msg_unlock(ed::message & msg)
     }
 
     std::string object_name;
+    ed::dispatcher_match::tag_t tag(ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG);
     pid_t client_pid(0);
-    if(!get_parameters(msg, &object_name, &client_pid, nullptr, nullptr, nullptr))
+    if(!get_parameters(msg, &object_name, &tag, &client_pid, nullptr, nullptr, nullptr))
     {
         return;
     }

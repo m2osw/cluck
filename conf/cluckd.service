@@ -1,0 +1,6 @@
+# Communicatord Service Definition
+#
+# This file tells the communicatord that cluckd is a local
+# service and such a service is going to connect to it
+#
+description=The cluckd service is used to obtain cluster wide locks.

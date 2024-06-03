@@ -38,7 +38,7 @@ public:
 
                             debug_info(cluckd * c);
                             debug_info(debug_info const &) = delete;
-    virtual                 ~debug_info() override {}
+    virtual                 ~debug_info() override;
 
     debug_info const &      operator = (debug_info const &) = delete;
 

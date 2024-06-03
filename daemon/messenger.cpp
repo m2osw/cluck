@@ -192,6 +192,11 @@ messenger::messenger(cluckd * c, advgetopt::getopt & opts)
 }
 
 
+messenger::~messenger()
+{
+}
+
+
 /** \brief Finish handling command line options.
  *
  * This function makes sure the fluid settings and communicator daemon

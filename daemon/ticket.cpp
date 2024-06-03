@@ -348,22 +348,22 @@ namespace cluck_daemon
  * The constructor initializes a ticket object by creating a ticket
  * key and allocating an entering object.
  *
- * Once the entering object was acknowledged by QUORUM snaplock
- * instances (i.e. one other computer when we allow exactly 3 leaders,)
+ * Once the entering object was acknowledged by QUORUM cluck daemon
+ * instances (i.e. one other computer since we allow exactly 3 leaders,)
  * we can then create the ticket.
  *
  * \note
  * We create a key from the server name, client PID, and object
- * name for the entering process to run. This key will be unique
+ * name for the entering process to run. This key are unique
  * among all computers assuming (1) your client PID is unique and
  * (2) your servers all have unique names.
  *
  * \note
  * If you use threads, or are likely to use threads, make sure to
  * use the gettid() function instead of getpid() to define a
- * unique client PID.
+ * unique client PID. (Note: this is done in the cluck library.)
  *
- * \param[in] sl  A pointer to the snaplock object.
+ * \param[in] c  A pointer to the cluckd object.
  * \param[in] messenger  A pointer to the messenger.
  * \param[in] object_name  The name of the object getting locked.
  * \param[in] entering_key  The key (ticket) used to entery the bakery.
@@ -371,12 +371,13 @@ namespace cluck_daemon
  *                               times out in seconds.
  * \param[in] lock_duration  The amount of time the lock lasts once obtained.
  * \param[in] server_name  The name of the server generating the locked.
- * \param[in] service_name  The server waiting for the LOCKED message.
+ * \param[in] service_name  The service waiting for the LOCKED message.
  */
 ticket::ticket(
               cluckd * c
             , messenger::pointer_t messenger
             , std::string const & object_name
+            , ed::dispatcher_match::tag_t tag
             , std::string const & entering_key
             , cluck::timeout_t obtention_timeout
             , cluck::timeout_t lock_duration
@@ -385,30 +386,25 @@ ticket::ticket(
     : f_cluckd(c)
     , f_messenger(messenger)
     , f_object_name(object_name)
+    , f_tag(tag)
     , f_obtention_timeout(obtention_timeout)
-    , f_lock_duration(lock_duration)
+    , f_lock_duration(std::clamp(
+              lock_duration
+            , cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
+            , cluck::CLUCK_MAXIMUM_TIMEOUT))
     , f_server_name(server_name)
     , f_service_name(service_name)
     , f_owner(f_cluckd->get_server_name())
     , f_entering_key(entering_key)
 {
-    // clamp the lock duration
-    //
-    if(f_lock_duration < cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT)
-    {
-        f_lock_duration = cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT;
-    }
-    else if(f_lock_duration > cluck::CLUCK_MAXIMUM_TIMEOUT)
-    {
-        f_lock_duration = cluck::CLUCK_MAXIMUM_TIMEOUT;
-    }
-
     set_unlock_duration(f_lock_duration);
 
     SNAP_LOG_TRACE
         << "Attempting to lock \""
         << f_object_name
-        << "\" on \""
+        << "\" ("
+        << f_tag
+        << ") on \""
         << f_entering_key
         << "\" for \""
         << f_server_name
@@ -440,16 +436,21 @@ bool ticket::send_message_to_leaders(ed::message & msg)
 {
     // finish the message initialization
     //
-    msg.set_service("snaplock");
-    msg.add_parameter("object_name", f_object_name);
+    msg.set_service(cluck::g_name_cluck_service_name);
+    msg.add_parameter(cluck::g_name_cluck_param_object_name, f_object_name);
+    msg.add_parameter(cluck::g_name_cluck_param_tag, f_tag);
 
     computer::pointer_t leader(f_cluckd->get_leader_a());
     if(leader != nullptr)
     {
         // there are at least two leaders
         //
+        int count(0);
         msg.set_server(leader->get_name());
-        f_messenger->send_message(msg);
+        if(f_messenger->send_message(msg))
+        {
+            ++count;
+        }
 
         // check for a third leader
         //
@@ -457,34 +458,39 @@ bool ticket::send_message_to_leaders(ed::message & msg)
         if(leader != nullptr)
         {
             msg.set_server(leader->get_name());
-            f_messenger->send_message(msg);
+            if(f_messenger->send_message(msg))
+            {
+                ++count;
+            }
         }
 
-        // we have to wait for at least one reply
+        // we have to wait for at least one reply if we were able to send
+        // at least one message
         //
-        return true;
+        return count > 0;
     }
 
     // there is only one leader (ourselves)
     //
-    // verify that this is correct otherwise we would mess up the algorithm
+    // call the one_leader() function to verify that this is indeed correct
+    // otherwise we would mess up the algorithm
     //
-    return f_cluckd->get_computer_count() != 1;
+    return one_leader();
 }
 
 
 /** \brief Enter the mode that lets us retrieve our ticket number.
  *
  * In order to make sure we can get the current largest ticket number
- * in a unique enough way, snaplock has to enter the lock loop. This
- * process starts by sending a `LOCKENTERING` message to all the
- * other snaplock leaders.
+ * in a unique enough way, cluck has to enter the lock loop. This
+ * process starts by sending a `LOCK_ENTERING` message to all the
+ * other cluckd leaders.
  */
 void ticket::entering()
 {
     // TODO implement the special case when there is only 1 leader
     //      (on the other hand, that should be rather rare)
-    //snaplock::computer_t::pointer_t leader(f_snaplock->get_leader_a());
+    //computer::pointer_t leader(f_cluckd->get_leader_a());
     //if(leader == nullptr)
     //{
     //    -- do the necessary to obtain the lock --
@@ -493,20 +499,23 @@ void ticket::entering()
 
     ed::message entering_message;
     entering_message.set_command(cluck::g_name_cluck_cmd_lock_entering);
-    entering_message.add_parameter("key", f_entering_key);
-    entering_message.add_parameter("timeout", f_obtention_timeout);
-    entering_message.add_parameter("duration", f_lock_duration);
+    entering_message.add_parameter(cluck::g_name_cluck_param_key, f_entering_key);
+    entering_message.add_parameter(cluck::g_name_cluck_param_timeout, f_obtention_timeout);
+    entering_message.add_parameter(cluck::g_name_cluck_param_duration, f_lock_duration);
     if(f_lock_duration != f_unlock_duration)
     {
-        entering_message.add_parameter("unlock_duration", f_unlock_duration);
+        entering_message.add_parameter(cluck::g_name_cluck_param_unlock_duration, f_unlock_duration);
     }
-    entering_message.add_parameter("source", f_server_name + "/" + f_service_name);
-    entering_message.add_parameter("serial", f_serial);
-    if(!send_message_to_leaders(entering_message))
+    entering_message.add_parameter(cluck::g_name_cluck_param_source, f_server_name + "/" + f_service_name);
+    entering_message.add_parameter(cluck::g_name_cluck_param_serial, f_serial);
+    if(send_message_to_leaders(entering_message))
     {
-        // there are no other leaders, make sure the algorithm progresses
-        //
-        entered();
+        if(one_leader())
+        {
+            // there are no other leaders, make sure the algorithm progresses
+            //
+            entered();
+        }
     }
 }
 
@@ -544,12 +553,15 @@ void ticket::entered()
 
         ed::message get_max_ticket_message;
         get_max_ticket_message.set_command(cluck::g_name_cluck_cmd_get_max_ticket);
-        get_max_ticket_message.add_parameter("key", f_entering_key);
-        if(!send_message_to_leaders(get_max_ticket_message))
+        get_max_ticket_message.add_parameter(cluck::g_name_cluck_param_key, f_entering_key);
+        if(send_message_to_leaders(get_max_ticket_message))
         {
-            // there are no other leaders, make sure the algorithm progresses
-            //
-            max_ticket(f_our_ticket);
+            if(one_leader())
+            {
+                // there are no other leaders, make sure the algorithm progresses
+                //
+                max_ticket(f_our_ticket);
+            }
         }
     }
 }
@@ -590,7 +602,7 @@ void ticket::add_ticket()
     //
     if(f_added_ticket)
     {
-        throw std::logic_error("ticket::add_ticket() called more than once.");
+        throw cluck::logic_error("ticket::add_ticket() called more than once.");
     }
     f_added_ticket = true;
 
@@ -617,9 +629,12 @@ void ticket::add_ticket()
     add_ticket_message.set_command(cluck::g_name_cluck_cmd_add_ticket);
     add_ticket_message.add_parameter(cluck::g_name_cluck_param_key, f_ticket_key);
     add_ticket_message.add_parameter(cluck::g_name_cluck_param_timeout, f_obtention_timeout);
-    if(!send_message_to_leaders(add_ticket_message))
+    if(send_message_to_leaders(add_ticket_message))
     {
-        ticket_added(f_cluckd->get_entering_tickets(f_object_name));
+        if(one_leader())
+        {
+            ticket_added(f_cluckd->get_entering_tickets(f_object_name));
+        }
     }
 }
 
@@ -648,13 +663,13 @@ void ticket::ticket_added(key_map_t const & still_entering)
 
         f_still_entering = still_entering;
 
-        // okay, the ticket was added on all snaplock
+        // okay, the ticket was added on all cluck daemon
         // now we can forget about the entering flag
         // (equivalent to setting it to false)
         //
         ed::message exiting_message;
         exiting_message.set_command(cluck::g_name_cluck_cmd_lock_exiting);
-        exiting_message.add_parameter("key", f_entering_key);
+        exiting_message.add_parameter(cluck::g_name_cluck_param_key, f_entering_key);
         snapdev::NOT_USED(send_message_to_leaders(exiting_message));
 
         f_cluckd->lock_exiting(exiting_message);
@@ -708,7 +723,7 @@ void ticket::remove_entering(std::string const & key)
                 //
                 ed::message ticket_ready_message;
                 ticket_ready_message.set_command(cluck::g_name_cluck_cmd_ticket_ready);
-                ticket_ready_message.add_parameter("key", f_ticket_key);
+                ticket_ready_message.add_parameter(cluck::g_name_cluck_param_key, f_ticket_key);
                 snapdev::NOT_USED(send_message_to_leaders(ticket_ready_message));
             }
         }
@@ -729,14 +744,17 @@ void ticket::activate_lock()
 {
     if(f_ticket_ready
     && !f_locked
-    && !f_lock_failed)
+    && f_lock_failed == lock_failure_t::LOCK_FAILURE_NONE)
     {
         ed::message activate_lock_message;
         activate_lock_message.set_command(cluck::g_name_cluck_cmd_activate_lock);
-        activate_lock_message.add_parameter("key", f_ticket_key);
-        if(!send_message_to_leaders(activate_lock_message))
+        activate_lock_message.add_parameter(cluck::g_name_cluck_param_key, f_ticket_key);
+        if(send_message_to_leaders(activate_lock_message))
         {
-            lock_activated();
+            if(one_leader())
+            {
+                lock_activated();
+            }
         }
     }
 }
@@ -755,7 +773,7 @@ void ticket::lock_activated()
 {
     if(f_ticket_ready
     && !f_locked
-    && !f_lock_failed)
+    && f_lock_failed == lock_failure_t::LOCK_FAILURE_NONE)
     {
         f_locked = true;
         f_lock_timeout_date = snapdev::now() + f_lock_duration;
@@ -789,24 +807,28 @@ void ticket::drop_ticket()
     SNAP_LOG_TRACE
         << "Unlock on \""
         << f_object_name
-        << "\" with key \""
+        << "\" ("
+        << f_tag
+        << ") with key \""
         << f_entering_key
         << "\"."
         << SNAP_LOG_SEND;
 
     ed::message drop_ticket_message;
     drop_ticket_message.set_command(cluck::g_name_cluck_cmd_drop_ticket);
-    drop_ticket_message.add_parameter(cluck::g_name_cluck_param_key, f_ticket_key.empty() ? f_entering_key : f_ticket_key);
+    drop_ticket_message.add_parameter(
+              cluck::g_name_cluck_param_key
+            , f_ticket_key.empty() ? f_entering_key : f_ticket_key);
     send_message_to_leaders(drop_ticket_message);
 
-    if(!f_lock_failed)
+    if(f_lock_failed == lock_failure_t::LOCK_FAILURE_NONE)
     {
-        f_lock_failed = true;
+        f_lock_failed = lock_failure_t::LOCK_FAILURE_UNLOCKING;
 
-        //if(f_owner == f_snaplock->get_server_name()) -- this can happen with any leader so we have to send the UNLOCKED
-        //                                                the other leaders won't call this function they receive DROPTICKET
-        //                                                instead and as mentioned in the TODO below, we should get a QUORUM
-        //                                                instead...
+        //if(f_owner == f_cluckd->get_server_name()) -- this can happen with any leader so we have to send the UNLOCKED
+        //                                              the other leaders won't call this function they receive DROPTICKET
+        //                                              instead and as mentioned in the TODO below, we should get a QUORUM
+        //                                              instead...
         {
             // we can immediately say it got unlocked...
             //
@@ -839,86 +861,177 @@ void ticket::drop_ticket()
  * The function replies with a LOCK_FAILED when the lock was never
  * obtained. In this case the origin server cannot access the resources.
  *
- * The function rep[ies with UNLOCKED when the lock timed out. The
+ * The function replies with UNLOCKING when the lock timed out. The
  * server is expected to send an UNLOCK reply to acknowledge the
  * failure and fully release the lock. The lock will remain in place
  * until that acknowledgement is received or an amount of time
  * equal to the lock duration by default with a minimum of 1 minute.
  *
- * By default, the UNLOCKED acknowledgement timeout is set to the same
- * amount as the LOCK duration with a minimum of 60 seconds. It can
- * also be specified with the unlock_duration parameter in the LOCK
- * message.
+ * The UNLOCKING acknowledgement timeout is set to the same amount as
+ * the LOCK duration if the `unlock_duration` parameter is not specified
+ * in the LOCK message. When the `unlock_duration` parameter is specified,
+ * then that amount is used instead.
  *
  * \note
  * The function may get called multiple times. The failure message
  * is sent only on the first call.
  *
  * \note
- * If the ticket was created on another snaplock (not the one that
+ * If the ticket was created on another cluck daemon (not the one that
  * received the LOCK event in the first place) then this ticket is
- * not marked as being owned by this snaplock and as a result this
+ * not marked as being owned by this cluck daemon and as a result this
  * function only marks the ticket as failed.
  */
 void ticket::lock_failed()
 {
-    if(!f_lock_failed)
+    enum send_msg_t
     {
+        SEND_MSG_NONE,
+        SEND_MSG_UNLOCKING,
+        SEND_MSG_UNLOCKED,
+        SEND_MSG_FAILED,
+    };
+
+    send_msg_t send(SEND_MSG_NONE);
+
+    switch(f_lock_failed)
+    {
+    case lock_failure_t::LOCK_FAILURE_NONE:
         // send that message at most once
         //
-        f_lock_failed = true;
+        f_lock_failed = lock_failure_t::LOCK_FAILURE_LOCK;
 
         if(f_locked)
         {
             // now we have to extend the lock timeout to make sure that
-            // the UNLOCKED has a chance to be acknowledged
+            // the UNLOCKING has a chance to be acknowledged
             //
             f_lock_timeout_date += f_unlock_duration;
-        }
-
-        if(f_owner == f_cluckd->get_server_name())
-        {
-            if(f_locked)
+            if(timed_out())
             {
-                // if we were locked and reach here, then the lock
-                // timed out while locked
-                //
-                SNAP_LOG_INFO
-                    << "Lock on \""
-                    << f_object_name
-                    << "\" with key \""
-                    << f_entering_key
-                    << "\" timed out."
-                    << SNAP_LOG_SEND;
-
-                ed::message lock_failed_message;
-                lock_failed_message.set_command(cluck::g_name_cluck_cmd_unlocked);
-                lock_failed_message.set_server(f_server_name);
-                lock_failed_message.set_service(f_service_name);
-                lock_failed_message.add_parameter("object_name", f_object_name);
-                lock_failed_message.add_parameter("error", "timedout");
-                f_messenger->send_message(lock_failed_message);
+                send = SEND_MSG_UNLOCKED;
             }
             else
             {
-                SNAP_LOG_INFO
-                    << "Lock on \""
-                    << f_object_name
-                    << "\" with key \""
-                    << f_entering_key
-                    << "\" failed."
-                    << SNAP_LOG_SEND;
-
-                ed::message lock_failed_message;
-                lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-                lock_failed_message.set_server(f_server_name);
-                lock_failed_message.set_service(f_service_name);
-                lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, f_object_name);
-                lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, f_entering_key);
-                lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_failed);
-                f_messenger->send_message(lock_failed_message);
+                send = SEND_MSG_UNLOCKING;
             }
         }
+        else
+        {
+            send = SEND_MSG_FAILED;
+        }
+        break;
+
+    case lock_failure_t::LOCK_FAILURE_LOCK:
+        f_lock_failed = lock_failure_t::LOCK_FAILURE_UNLOCKING;
+
+        if(f_locked)
+        {
+            send = SEND_MSG_UNLOCKED;
+        }
+        break;
+
+    case lock_failure_t::LOCK_FAILURE_UNLOCKING:
+        // we already sent all the possible messages
+        break;
+
+    }
+
+    if(f_owner != f_cluckd->get_server_name())
+    {
+        return;
+    }
+
+    switch(send)
+    {
+    case SEND_MSG_NONE:
+        // don't send another message
+        break;
+
+    case SEND_MSG_UNLOCKING:
+        {
+            // if we were locked and reach here, then the lock
+            // timed out while locked but the unlock timeout was
+            // not yet reached so just send an UNLOCKING message
+            //
+            SNAP_LOG_IMPORTANT
+                << "Lock on \""
+                << f_object_name
+                << "\" ("
+                << f_tag
+                << ") with key \""
+                << f_entering_key
+                << "\" timed out its lock allowed time."
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_unlocking);
+            lock_failed_message.set_server(f_server_name);
+            lock_failed_message.set_service(f_service_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, f_object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, f_tag);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_timedout);
+            f_messenger->send_message(lock_failed_message);
+        }
+        break;
+
+    case SEND_MSG_UNLOCKED:
+        {
+            // if we were locked and/or unlocking and we reach here,
+            // then the lock completely timed out and we immediately
+            // completely unlock with an UNLOCKED message
+            //
+            // IMPORTANT: that means the service should stop using the
+            //            shared resources but there is absoltely no
+            //            guarantee about that; however, this situation
+            //            should only occur when a service somehow does
+            //            not properly UNLOCK its lock
+            //
+            SNAP_LOG_IMPORTANT
+                << "Lock on \""
+                << f_object_name
+                << "\" ("
+                << f_tag
+                << ") with key \""
+                << f_entering_key
+                << "\" timed out its unlocking allowed time."
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_unlocked);
+            lock_failed_message.set_server(f_server_name);
+            lock_failed_message.set_service(f_service_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, f_object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, f_tag);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_timedout);
+            f_messenger->send_message(lock_failed_message);
+        }
+        break;
+
+    case SEND_MSG_FAILED:
+        {
+            SNAP_LOG_IMPORTANT
+                << "Lock on \""
+                << f_object_name
+                << "\" ("
+                << f_tag
+                << ")with key \""
+                << f_entering_key
+                << "\" failed."
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.set_server(f_server_name);
+            lock_failed_message.set_service(f_service_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, f_object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, f_tag);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, f_entering_key);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_failed);
+            f_messenger->send_message(lock_failed_message);
+        }
+        break;
+
     }
 }
 
@@ -992,9 +1105,9 @@ pid_t ticket::get_client_pid() const
  * the serial number to see that the exact same message is getting there
  * twice.
  *
- * The snaplock daemon uses the leader number as part of the serial
+ * The cluck daemon uses the leader number as part of the serial
  * number (bits 24 and 25) so it is unique among all the instances,
- * at least until a snaplock deamon dies and its unique numbers get
+ * at least until a cluck deamon dies and its unique numbers get
  * mingled (and the old leaders may change their own number too...)
  *
  * \param[in] serial  The serial number of the ticket.
@@ -1149,6 +1262,21 @@ bool ticket::is_locked() const
 }
 
 
+/** \brief Check whether the system only has one leader.
+ *
+ * The function check the number of known leaders. If just one, then it
+ * returns true. This is important for our algorithm to work properly
+ * in that one specific case.
+ *
+ * \return true if there is only one leader (i.e. one single computer in
+ * your whole cluster).
+ */
+bool ticket::one_leader() const
+{
+    return f_cluckd->get_computer_count() == 1;
+}
+
+
 /** \brief Get the obtention timeout date.
  *
  * This function returns the obtention timeout. Note that if the lock
@@ -1183,8 +1311,8 @@ cluck::timeout_t ticket::get_obtention_timeout() const
  * in \p timeout (i.e. zero duration).
  *
  * \note
- * Since that message should happen while the snap_lock object
- * is wait for the LOCK event, the reply should be close to
+ * Since that message should happen while the cluck daemon
+ * is waiting for the LOCK event, the reply should be close to
  * instantaneous. So 5 seconds is plenty until somehow your
  * network is really busy or really large and the time for
  * the message to travel is too long.
@@ -1297,13 +1425,26 @@ bool ticket::timed_out() const
 /** \brief Retrieve the object name of this ticket.
  *
  * This function returns the name of the object associated with this
- * lock (i.e. what is being locked.)
+ * lock (i.e. what is being locked).
  *
  * \return The object name of the ticket.
  */
 std::string const & ticket::get_object_name() const
 {
     return f_object_name;
+}
+
+
+/** \brief Retrieve the tag of this ticket.
+ *
+ * This function returns the tag of the object associated with this
+ * lock (i.e. the specific instance of the lock being locked).
+ *
+ * \return The tag associated with this ticket.
+ */
+ed::dispatcher_match::tag_t ticket::get_tag() const
+{
+    return f_tag;
 }
 
 
@@ -1400,6 +1541,7 @@ std::string ticket::serialize() const
     std::map<std::string, std::string> data;
 
     data["object_name"]         = f_object_name;
+    data["tag"]                 = std::to_string(static_cast<int>(f_tag));
     data["obtention_timeout"]   = f_obtention_timeout.to_timestamp(true);
     //data["alive_timeout"]       = f_alive_timeout.to_timestamp(true); -- we do not want to transfer this one
     data["lock_duration"]       = f_lock_duration.to_timestamp(true);
@@ -1425,7 +1567,22 @@ std::string ticket::serialize() const
     data["ticket_ready"]        = f_ticket_ready ? "true" : "false";
     data["locked"]              = f_locked ? "true" : "false";
     data["lock_timeout_date"]   = f_lock_timeout_date.to_timestamp(true);
-    data["lock_failed"]         = f_lock_failed ? "true" : "false";
+
+    switch(f_lock_failed)
+    {
+    case lock_failure_t::LOCK_FAILURE_NONE:
+        data["lock_failed"] = "none";
+        break;
+
+    case lock_failure_t::LOCK_FAILURE_LOCK:
+        data["lock_failed"] = "lock";
+        break;
+
+    case lock_failure_t::LOCK_FAILURE_UNLOCKING:
+        data["lock_failed"] = "unlocking";
+        break;
+
+    }
 
     std::string result;
     for(auto & it : data)
@@ -1527,7 +1684,16 @@ void ticket::unserialize(std::string const & data)
             }
             else if(name == "lock_failed")
             {
-                f_lock_failed = f_lock_failed || value == "true";
+                // in this case, we avoid reducing the error level
+                //
+                if(value == "unlocking")
+                {
+                    f_lock_failed = lock_failure_t::LOCK_FAILURE_UNLOCKING;
+                }
+                else if(value == "lock" && f_lock_failed == lock_failure_t::LOCK_FAILURE_NONE)
+                {
+                    f_lock_failed = lock_failure_t::LOCK_FAILURE_LOCK;
+                }
             }
             break;
 
@@ -1581,7 +1747,13 @@ void ticket::unserialize(std::string const & data)
             break;
 
         case 't':
-            if(name == "ticket_key")
+            if(name == "tag")
+            {
+                std::int64_t v;
+                advgetopt::validator_integer::convert_string(value, v);
+                f_tag = v;
+            }
+            else if(name == "ticket_key")
             {
                 f_ticket_key = value;
             }

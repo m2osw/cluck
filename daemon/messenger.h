@@ -39,7 +39,7 @@ public:
 
                                 messenger(cluckd * c, advgetopt::getopt & opts);
                                 messenger(messenger const &) = delete;
-    virtual                     ~messenger() override {}
+    virtual                     ~messenger() override;
 
     messenger &                 operator = (messenger const &) = delete;
 

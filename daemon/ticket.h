@@ -56,6 +56,7 @@ public:
                                           cluckd * c
                                         , messenger::pointer_t messenger
                                         , std::string const & lock_name
+                                        , ed::dispatcher_match::tag_t tag
                                         , std::string const & entering_key
                                         , cluck::timeout_t obtention_timeout
                                         , cluck::timeout_t lock_duration
@@ -92,6 +93,7 @@ public:
     void                        set_ticket_number(ticket_id_t number);
     ticket_id_t                 get_ticket_number() const;
     bool                        is_locked() const;
+    bool                        one_leader() const;
     cluck::timeout_t            get_obtention_timeout() const;
     void                        set_alive_timeout(cluck::timeout_t timeout);
     cluck::timeout_t            get_lock_duration() const;
@@ -99,6 +101,7 @@ public:
     cluck::timeout_t            get_current_timeout_date() const;
     bool                        timed_out() const;
     std::string const &         get_object_name() const;
+    ed::dispatcher_match::tag_t get_tag() const;
     std::string const &         get_server_name() const;
     std::string const &         get_service_name() const;
     std::string const &         get_entering_key() const;
@@ -107,8 +110,15 @@ public:
     void                        unserialize(std::string const & data);
 
 private:
-    // this is owned by a snaplock function so no need for a smart pointer
-    // (and it would create a loop)
+    enum class lock_failure_t
+    {
+        LOCK_FAILURE_NONE,          // no failure so far
+        LOCK_FAILURE_LOCK,          // LOCK timed out
+        LOCK_FAILURE_UNLOCKING,     // UNLOCKING timed out
+    };
+
+    // this is owned by a cluckd object so no need for a smart pointer
+    // (and it would create a parent/child loop)
     //
     cluckd *                        f_cluckd = nullptr;
 
@@ -116,6 +126,7 @@ private:
     //
     messenger::pointer_t            f_messenger = messenger::pointer_t();
     std::string                     f_object_name = std::string();
+    ed::dispatcher_match::tag_t     f_tag = ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG;
     cluck::timeout_t                f_obtention_timeout = cluck::timeout_t();
     cluck::timeout_t                f_alive_timeout = cluck::timeout_t();
     cluck::timeout_t                f_lock_duration = cluck::timeout_t();
@@ -153,7 +164,7 @@ private:
 
     // the lock did not take (in most cases, this is because of a timeout)
     //
-    bool                            f_lock_failed = false;
+    lock_failure_t                  f_lock_failed = lock_failure_t::LOCK_FAILURE_NONE;
 };
 
 

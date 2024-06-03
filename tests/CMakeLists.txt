@@ -71,6 +71,7 @@ if(SnapCatch2_FOUND AND Reporter_FOUND)
 
         catch_cluck.cpp
         catch_daemon.cpp
+        catch_daemon_computer.cpp
         catch_version.cpp
     )
 
