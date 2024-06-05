@@ -449,18 +449,6 @@ cluckd::cluckd(int argc, char * argv[])
     }
     ed::process_message_definition_options(f_opts);
 
-    // make sure there are no standalone parameters
-    //
-    if(f_opts.is_defined("--"))
-    {
-        char const * errmsg("unexpected parameter found on cluck daemon command line.");
-        SNAP_LOG_FATAL
-            << errmsg
-            << SNAP_LOG_SEND;
-        std::cerr << f_opts.usage(advgetopt::GETOPT_FLAG_SHOW_USAGE_ON_ERROR);
-        throw advgetopt::getopt_exit(errmsg, 1);
-    }
-
     // get the server name using the library function
     //
     // TODO: if the name of the server is changed, we should reboot, but
@@ -1383,7 +1371,7 @@ void cluckd::synchronize_leaders()
     // only leaders can synchronize each others
     // (other cluck daemons do not have any tickets to synchronize)
     //
-    if(!is_leader())
+    if(is_leader() == nullptr)
     {
         return;
     }

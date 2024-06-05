@@ -29,7 +29,7 @@
 
 // cluck
 //
-//#include    <cluck/exception.h>
+#include    <cluck/exception.h>
 //#include    <cluck/names.h>
 //#include    <cluck/version.h>
 
@@ -115,6 +115,22 @@ CATCH_TEST_CASE("cluck_daemon", "[cluckd][daemon]")
 
         cluck_daemon::cluckd::pointer_t lock(std::make_shared<cluck_daemon::cluckd>(args.size(), const_cast<char **>(args_strings.data())));
         lock->add_connections();
+
+        // no elections happened, 'lock' is not a leader
+        //
+        CATCH_REQUIRE(lock->is_leader() == nullptr);
+        CATCH_REQUIRE_THROWS_MATCHES(
+              lock->get_leader_a()
+            , cluck::logic_error
+            , Catch::Matchers::ExceptionMessage("logic_error: cluckd::get_leader_a(): only a leader can call this function."));
+        CATCH_REQUIRE_THROWS_MATCHES(
+              lock->get_leader_b()
+            , cluck::logic_error
+            , Catch::Matchers::ExceptionMessage("logic_error: cluckd::get_leader_b(): only a leader can call this function."));
+
+        // messenger is not yet connected, it's not ready
+        //
+        CATCH_REQUIRE_FALSE(lock->is_daemon_ready());
 
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/cluck_daemon_test.rprtr");
