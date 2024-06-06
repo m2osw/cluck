@@ -1593,6 +1593,7 @@ std::string ticket::serialize() const
         result += snapdev::string_replace_many(it.second, {{"|", "%7C"}});
         result += '|';
     }
+    result.pop_back();
 
     return result;
 }

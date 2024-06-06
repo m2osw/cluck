@@ -838,15 +838,16 @@ computer::pointer_t cluckd::get_leader_b() const
 void cluckd::info()
 {
     SNAP_LOG_INFO
-        << "++++++++ SNAPLOCK INFO ++++++++"
+        << "++++++++ CLUCK INFO ++++++++"
         << SNAP_LOG_SEND;
     SNAP_LOG_INFO
         << "My leader ID: "
-        << f_my_id
+        << (f_my_id.empty() ? "<not ready>" : f_my_id)
         << SNAP_LOG_SEND;
+    addr::addr zero;
     SNAP_LOG_INFO
         << "My IP address: "
-        << f_my_ip_address
+        << (f_my_ip_address == zero ? "<not assigned>" : f_my_ip_address.to_ipv4or6_string(addr::STRING_IP_ADDRESS | addr::STRING_IP_BRACKET_ADDRESS))
         << SNAP_LOG_SEND;
     SNAP_LOG_INFO
         << "Total number of computers: "
@@ -895,10 +896,10 @@ void cluckd::info()
 
 
 
-/** \brief Generate the output for "cluck --list"
+/** \brief Generate the output for "cluck-status --list"
  *
  * This function loops over the list of tickets and outputs a string that
- * it sends back to the `cluck --list` tool for printing to the administrator.
+ * it sends back to the `cluck-status --list` tool for printing to the administrator.
  *
  * \return A string with the list of all the tickets.
  */

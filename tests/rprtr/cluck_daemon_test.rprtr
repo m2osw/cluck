@@ -24,6 +24,7 @@ label(name: not_register)
 has_message(command: LOCKED)
 if(false: not_locked)
 call(label: func_verify_locked)
+kill(signal: USR2)
 goto(label: next_message)
 
 label(name: not_locked)
@@ -66,6 +67,9 @@ if(false: not_cluster_status)
 call(label: func_verify_cluster_status)
 call(label: func_send_cluster_up)
 //call(label: func_send_cluster_complete) -- this does not currently happen because the message is tested (at least when we sent a CLUSTER_STATUS message, the broadcast may still send us the message, I think)
+
+kill(signal: USR1)
+
 goto(label: next_message)
 
 label(name: not_cluster_status)
