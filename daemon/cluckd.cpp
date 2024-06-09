@@ -2580,7 +2580,7 @@ void cluckd::msg_list_tickets(ed::message & msg)
  * This function locks the specified resource \p object_name. It returns
  * when the resource is locked or when the lock timeout is reached.
  *
- * See the snaplock_ticket class for more details about the locking
+ * See the ticket class for more details about the locking
  * mechanisms (algorithm and MSC implementation).
  *
  * Note that if lock() is called with an empty string then the function
@@ -3395,10 +3395,10 @@ void cluckd::msg_lock_leaders(ed::message & msg)
 }
 
 
-/** \brief Called whenever a snaplock computer is acknowledging itself.
+/** \brief Called whenever a cluck computer is acknowledging itself.
  *
  * This function gets called on a LOCK_STARTED event which is sent whenever
- * a snaplock process is initialized on a computer.
+ * a cluck process is initialized on a computer.
  *
  * The message is expected to include the computer name. At this time
  * we cannot handle having more than one instance one the same computer.
@@ -3780,7 +3780,7 @@ void cluckd::msg_server_gone(ed::message & msg)
         // if too many leaders were dropped, we may go back to the NO_LOCK status
         //
         // we only send a NO_LOCK if the election could not re-assign another
-        // computer as the missing leader(s)
+        // computer to replace the missing leader(s)
         //
         check_lock_status();
     }
@@ -3791,36 +3791,20 @@ void cluckd::msg_server_gone(ed::message & msg)
  *
  * This function captures the STATUS message and if it sees that the
  * name of the service is "remote communicator connection" then it
- * sends a new LOCK_STARTED message to make sure that all snaplock's
+ * sends a new LOCK_STARTED message to make sure that all cluck's
  * are aware of us.
  *
- * \param[in] msg  The LOCK_STARTED message.
+ * \param[in] msg  The STATUS message.
  */
 void cluckd::msg_status(ed::message & msg)
 {
-    if(!msg.has_parameter(communicatord::g_name_communicatord_param_service))
-    {
-        SNAP_LOG_MAJOR
-            << "the  \""
-            << msg.get_command()
-            << "\" message is expected to have a \""
-            << communicatord::g_name_communicatord_param_service
-            << "\" parameter.)"
-            << SNAP_LOG_SEND;
-        return;
-    }
-
     // check the service name, it has to be one that means it is a remote
     // connection with another communicator daemon
     //
     std::string const service(msg.get_parameter(communicatord::g_name_communicatord_param_service));
 
-    // TODO: the names probably changed as per the comments below...
-    //       we also want those names to be defined in names.an
-    if(service == "remote connection"                   // remote host connected to us
-    // "communicator local listener" ?
-    || service == "remote communicator connection")     // we connected to remote host
-    // "communicator remote listener" ?
+    if(service.starts_with(communicatord::g_name_communicatord_connection_remote_communicator_in)   // remote host connected to us
+    || service.starts_with(communicatord::g_name_communicatord_connection_remote_communicator_out)) // we connected to remote host
     {
         // check what the status is now: "up" or "down"
         //
@@ -3830,6 +3814,7 @@ void cluckd::msg_status(ed::message & msg)
             // we already broadcast a LOCK_STARTED from CLUSTER_UP
             // and that's enough
             //
+            ;
         }
         else
         {
