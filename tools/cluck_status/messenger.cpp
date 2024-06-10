@@ -151,7 +151,7 @@ void messenger::fluid_settings_changed(
         list_message.set_service(cluck::g_name_cluck_service_name);
         list_message.set_server(f_server_name);
         list_message.add_parameter("cache", "no");
-        request_failure(list_message);
+        communicatord::request_failure(list_message);
         send_message(list_message);
     }
 }

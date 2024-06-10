@@ -434,7 +434,6 @@ cluckd::cluckd(int argc, char * argv[])
     : f_opts(g_options_environment)
 {
     snaplogger::add_logger_options(f_opts);
-    ed::add_message_definition_options(f_opts);
 
     // before we can parse command line arguments, we must create the
     // fluid settings & communicator client objects which happen to
@@ -447,7 +446,6 @@ cluckd::cluckd(int argc, char * argv[])
     {
         throw advgetopt::getopt_exit("logger options generated an error.", 0);
     }
-    ed::process_message_definition_options(f_opts);
 
     // get the server name using the library function
     //

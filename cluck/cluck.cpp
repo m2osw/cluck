@@ -29,6 +29,7 @@
 
 // communicatord
 //
+#include    <communicatord/communicator.h>
 #include    <communicatord/names.h>
 
 
@@ -1726,7 +1727,7 @@ bool cluck::lock()
     lock_message.add_parameter(g_name_cluck_param_pid, cppthread::gettid());
     lock_message.add_parameter(ed::g_name_ed_param_serial, f_serial);
     lock_message.add_parameter(g_name_cluck_param_timeout, obtention_timeout_date);
-    lock_message.add_parameter(communicatord::g_name_communicatord_param_transmission_report, communicatord::g_name_communicatord_value_failure);
+    communicatord::request_failure(lock_message);
     if(f_lock_duration_timeout != CLUCK_DEFAULT_TIMEOUT)
     {
         lock_message.add_parameter(g_name_cluck_param_duration, f_lock_duration_timeout);
