@@ -33,8 +33,6 @@ if(SnapCatch2_FOUND AND Reporter_FOUND)
     add_library(${PROJECT_NAME}
         ${CLUCKD_DIR}/cluckd.cpp
         ${CLUCKD_DIR}/computer.cpp
-        ${CLUCKD_DIR}/debug_info.cpp
-        ${CLUCKD_DIR}/info.cpp
         ${CLUCKD_DIR}/interrupt.cpp
         ${CLUCKD_DIR}/main.cpp
         ${CLUCKD_DIR}/messenger.cpp

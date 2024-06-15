@@ -20,8 +20,6 @@
 // self
 //
 #include    "computer.h"
-#include    "debug_info.h"
-#include    "info.h"
 #include    "interrupt.h"
 #include    "message_cache.h"
 #include    "ticket.h"
@@ -73,8 +71,6 @@ public:
     computer::pointer_t         is_leader(std::string id = std::string()) const;
     computer::pointer_t         get_leader_a() const;
     computer::pointer_t         get_leader_b() const;
-    void                        info();
-    void                        debug_info();
     void                        cleanup();
     ticket::ticket_id_t         get_last_ticket(std::string const & lock_name);
     void                        set_ticket(std::string const & object_name, std::string const & key, ticket::pointer_t ticket);
@@ -97,6 +93,7 @@ public:
     void                        msg_cluster_down(ed::message & msg);
     void                        msg_drop_ticket(ed::message & msg);
     void                        msg_get_max_ticket(ed::message & msg);
+    void                        msg_info(ed::message & msg);
     void                        msg_list_tickets(ed::message & msg);
     void                        msg_lock(ed::message & msg);
     void                        msg_lock_activated(ed::message & msg);
@@ -145,8 +142,6 @@ private:
     messenger::pointer_t                f_messenger = messenger::pointer_t();
     interrupt::pointer_t                f_interrupt = interrupt::pointer_t();
     timer::pointer_t                    f_timer = timer::pointer_t();
-    info::pointer_t                     f_info = info::pointer_t();
-    debug_info::pointer_t               f_debug_info = debug_info::pointer_t();
 //    bool                                f_stop_received = false;
 //    bool                                f_debug = false;
 //    bool                                f_debug_lock_messages = false;

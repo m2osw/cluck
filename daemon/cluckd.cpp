@@ -21,8 +21,6 @@
 //
 #include    "cluckd.h"
 
-#include    "debug_info.h"
-#include    "info.h"
 
 
 // cluck
@@ -44,6 +42,7 @@
 
 // snapdev
 //
+#include    <snapdev/gethostname.h>
 #include    <snapdev/hexadecimal_string.h>
 #include    <snapdev/stringize.h>
 #include    <snapdev/tokenize_string.h>
@@ -159,7 +158,6 @@ advgetopt::option const g_options[] =
                     , advgetopt::GETOPT_FLAG_REQUIRED
                     , advgetopt::GETOPT_FLAG_GROUP_OPTIONS>())
         , advgetopt::Help("Set the name of this server instance.")
-        , advgetopt::DefaultValue("cluckd")
     ),
     advgetopt::end_options()
 };
@@ -455,7 +453,14 @@ cluckd::cluckd(int argc, char * argv[])
     //       we CANNOT use fluid-settings for this one since each computer
     //       must have a different name
     //
-    f_server_name = f_opts.get_string("server-name");
+    if(f_opts.is_defined("server-name"))
+    {
+        f_server_name = f_opts.get_string("server-name");
+    }
+    if(f_server_name.empty())
+    {
+        f_server_name = snapdev::gethostname();
+    }
 //#ifdef _DEBUG
 //    // to debug multiple cluck daemons on the same server each instance
 //    // needs to have a different server name
@@ -514,16 +519,6 @@ void cluckd::add_connections()
     //
     f_timer = std::make_shared<timer>(this);
     f_communicator->add_connection(f_timer);
-
-    // capture SIGUSR1 to print out information
-    //
-    f_info = std::make_shared<cluck_daemon::info>(this);
-    f_communicator->add_connection(f_info);
-
-    // capture SIGUSR2 to print out information
-    //
-    f_debug_info = std::make_shared<cluck_daemon::debug_info>(this);
-    f_communicator->add_connection(f_debug_info);
 
     // create a messenger to connect with the Communicator daemon
     // and other services as required
@@ -831,9 +826,9 @@ computer::pointer_t cluckd::get_leader_b() const
  * This is used to debug a cluck instance and make sure that the
  * state is how you would otherwise expect it to be.
  *
- * \sa cluck_daemon::info
+ * \param[in] msg  The INFO message.
  */
-void cluckd::info()
+void cluckd::msg_info(ed::message & msg)
 {
     SNAP_LOG_INFO
         << "++++++++ CLUCK INFO ++++++++"
@@ -888,6 +883,15 @@ void cluckd::info()
         SNAP_LOG_INFO
             << " --    Computer IP Address: "
             << c.second->get_ip_address()
+            << SNAP_LOG_SEND;
+    }
+
+    if(msg.has_parameter(cluck::g_name_cluck_param_mode)
+    && msg.get_parameter(cluck::g_name_cluck_param_mode) == cluck::g_name_cluck_value_debug)
+    {
+        SNAP_LOG_INFO
+            << "++++ serialized tickets: "
+            << serialized_tickets()
             << SNAP_LOG_SEND;
     }
 }
@@ -1183,7 +1187,7 @@ void cluckd::send_lock_started(ed::message const * msg)
     // our info: server name and id
     //
     lock_started_message.add_parameter(communicatord::g_name_communicatord_param_server_name, f_server_name);
-    lock_started_message.add_parameter(cluck::g_name_cluck_param_lockid, f_my_id);
+    lock_started_message.add_parameter(cluck::g_name_cluck_param_lock_id, f_my_id);
     lock_started_message.add_parameter(cluck::g_name_cluck_param_start_time, f_start_time);
 
     // include the leaders if present
@@ -1228,12 +1232,6 @@ void cluckd::stop(bool quitting)
     {
         f_communicator->remove_connection(f_interrupt);
         f_interrupt.reset();
-
-        f_communicator->remove_connection(f_info);
-        f_info.reset();
-
-        f_communicator->remove_connection(f_debug_info);
-        f_debug_info.reset();
 
         f_communicator->remove_connection(f_timer);
         f_timer.reset();
@@ -3424,9 +3422,9 @@ void cluckd::msg_lock_started(ed::message & msg)
         //
         computer::pointer_t computer(std::make_shared<computer>());
 
-        // fill the fields from the "lockid" parameter
+        // fill the fields from the "lock_id" parameter
         //
-        if(!computer->set_id(msg.get_parameter(cluck::g_name_cluck_param_lockid)))
+        if(!computer->set_id(msg.get_parameter(cluck::g_name_cluck_param_lock_id)))
         {
             // this is not a valid identifier, ignore altogether
             //

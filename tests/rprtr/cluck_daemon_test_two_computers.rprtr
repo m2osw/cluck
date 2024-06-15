@@ -1,0 +1,471 @@
+// simulate the communicator daemon, a cluck clients, and one other cluckd
+
+hostname(variable_name: hostname)
+
+run()
+listen(address: <127.0.0.1:20002>)
+
+label(name: wait_message)
+wait(timeout: 12, mode: wait)
+
+label(name: process_message)
+has_message()
+if(false: wait_message)
+
+show_message()
+
+has_message(command: REGISTER)
+if(false: not_register)
+call(label: func_verify_register)
+call(label: func_send_help)
+call(label: func_send_ready)
+//call(label: func_send_status) -- this does not happen because at that point communicatord did not yet receive the COMMANDS list
+goto(label: next_message)
+
+label(name: not_register)
+has_message(command: LOCKED)
+if(false: not_locked)
+call(label: func_verify_locked)
+set_variable(name: info_mode, value: "debug")
+call(label: func_send_info)
+goto(label: next_message)
+
+label(name: not_locked)
+has_message(command: COMMANDS)
+if(false: not_commands)
+call(label: func_verify_commands)
+goto(label: next_message)
+
+label(name: not_commands)
+has_message(command: SERVICE_STATUS)
+if(false: not_service_status)
+call(label: func_verify_service_status)
+call(label: func_reply_to_service_status)
+goto(label: next_message)
+
+label(name: not_service_status)
+has_message(command: FLUID_SETTINGS_LISTEN)
+if(false: not_fluid_settings_listen)
+call(label: func_verify_fluid_settings_listen)
+call(label: func_reply_to_fluid_settings_listen)
+call(label: func_reply_to_fluid_settings_value_updated)
+call(label: func_reply_to_fluid_settings_ready)
+
+// here pretend a client is checking on our status a little too soon
+// (i.e. we'll get a "NO_LOCK" message)
+//
+call(label: func_get_cluckd_status)
+
+goto(label: next_message)
+
+label(name: not_fluid_settings_listen)
+has_message(command: NO_LOCK)
+if(false: not_no_lock)
+call(label: func_verify_no_lock)
+goto(label: next_message)
+
+label(name: not_no_lock)
+has_message(command: CLUSTER_STATUS)
+if(false: not_cluster_status)
+call(label: func_verify_cluster_status)
+call(label: func_send_cluster_up)
+//call(label: func_send_cluster_complete) -- this does not currently happen because the message is tested (at least when we sent a CLUSTER_STATUS message, the broadcast may still send us the message, I think)
+set_variable(name: info_mode, value: "info")
+call(label: func_send_info)
+goto(label: next_message)
+
+label(name: not_cluster_status)
+has_message(command: LOCK_LEADERS)
+if(false: not_lock_leaders)
+call(label: func_verify_lock_leaders)
+
+// try a lock that already timed out
+set_variable(name: timeout, value: 1000)
+set_variable(name: lock_failed, value: "timedout/lock1")
+call(label: func_send_lock)
+
+goto(label: next_message)
+
+label(name: not_lock_leaders)
+has_message(command: LOCK_STARTED)
+if(false: not_lock_started)
+call(label: func_verify_lock_started)
+//call(label: func_send_cluster_up)
+
+// verify error cases
+//
+// 1. same hostname as the sender (in case a broadcast comes back to the sender)
+//    this message is simply ignored
+set_variable(name: server_name, value: ${hostname})
+set_variable(name: lock_id, value: "ignored") // in this case, we return before we verify this identifier
+call(label: func_send_lock_started)
+
+// 2. the lock identifier is invalid (not 5 parts exactly)
+set_variable(name: server_name, value: "two") // second computer
+set_variable(name: lock_id, value: "invalid") // error: received a computer id which does not have exactly 5 parts: "invalid".
+call(label: func_send_lock_started)
+
+// TODO: check all possible invalid IDs? (we already do that in tests/catch_daemon_computer.cpp)
+
+// 3. election should be done now?
+set_variable(name: server_name, value: "two") // second computer
+set_variable(name: lock_id, value: "14|1097898584|127.0.0.1|3712266|two")
+call(label: func_send_lock_started)
+
+goto(label: next_message)
+
+label(name: not_lock_started)
+has_message(command: LOCK_FAILED)
+if(false: not_lock_failed)
+call(label: func_verify_lock_failed)
+now(variable_name: timeout)
+set_variable(name: timeout, value: ${timeout} + 60) // now + 1 minute
+call(label: func_send_lock)
+goto(label: next_message)
+
+label(name: not_lock_failed)
+has_message(command: UNLOCKED)
+if(false: not_unlocked)
+call(label: func_verify_unlocked)
+call(label: func_send_quitting)
+//goto(label: next_message)
+wait(timeout: 5, mode: drain)
+exit()
+
+label(name: not_unlocked)
+has_message(command: UNLOCKING)
+if(false: not_recognized)
+call(label: func_verify_unlocking)
+call(label: func_send_quitting)
+//goto(label: next_message)
+wait(timeout: 5, mode: drain)
+exit()
+
+label(name: not_recognized)
+exit(error_message: "received an unknown command")
+
+// clear processed message, then check the next one
+label(name: next_message)
+clear_message()
+goto(label: process_message)
+
+// Function: verify REGISTER 
+label(name: func_verify_register)
+verify_message(
+	command: REGISTER,
+	required_parameters: {
+		service: "cluckd",
+		version: 1
+	})
+return()
+
+// Function: verify a LOCKED reply
+label(name: func_verify_locked)
+verify_message(
+	command: LOCKED,
+	server: local_server,
+	service: website,
+	required_parameters: {
+		object_name: "lock1",
+		timeout_date: `^[0-9]+(\\.[0-9]+)?$`,
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`
+	})
+return()
+
+// Function: verify a COMMANDS reply
+label(name: func_verify_commands)
+verify_message(
+	command: COMMANDS,
+	required_parameters: {
+		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
+	})
+return()
+
+// Function: verify a SERVICE_STATUS reply
+label(name: func_verify_service_status)
+verify_message(
+	command: SERVICE_STATUS,
+	required_parameters: {
+		service: `^[a-z_][a-z_0-9]*$`
+	})
+return()
+
+// Function: verify a FLUID_SETTINGS_LISTEN
+label(name: func_verify_fluid_settings_listen)
+verify_message(
+	command: FLUID_SETTINGS_LISTEN,
+	required_parameters: {
+		cache: "no;reply",
+		names: "cluckd::server-name"
+	})
+return()
+
+// Function: verify a NO_LOCK
+label(name: func_verify_no_lock)
+verify_message(
+	command: NO_LOCK,
+	server: local_server,
+	service: website,
+	required_parameters: {
+		cache: "no"
+	})
+return()
+
+// Function: verify a CLUSTER_STATUS
+label(name: func_verify_cluster_status)
+verify_message(
+	command: CLUSTER_STATUS,
+	service: communicatord)
+return()
+
+// Function: verify a LOCK LEADERS
+label(name: func_verify_lock_leaders)
+verify_message(
+	command: LOCK_LEADERS,
+	service: "*",
+	required_parameters: {
+		election_date: `^[0-9]+(\\.[0-9]+)?$`,
+		leader0: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|cluckd$`
+	},
+	forbidden_parameters: {
+		leader1,
+		leader2
+	})
+return()
+
+// Function: verify a LOCK STARTED
+label(name: func_verify_lock_started)
+verify_message(
+	command: LOCK_STARTED,
+	service: "*",
+	required_parameters: {
+		//election_date: `^[0-9]+(\\.[0-9]+)?$`,
+		//leader0: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|cluckd$`,
+		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		leader1,
+		leader2
+	})
+return()
+
+// Function: verify a LOCK FAILED
+label(name: func_verify_lock_failed)
+compare(expression: ${lock_failed} <=> "timedout/lock1")
+if(not_equal: not_timedout_lock1_lock_failed)
+verify_message(
+	command: LOCK_FAILED,
+	server: "local_server",
+	service: "website",
+	required_parameters: {
+		error: "timedout",
+		key: "local_server/123",
+		object_name: "lock1"
+	})
+return()
+label(name: not_timedout_lock1_lock_failed)
+exit(error_message: "unhandled LOCK_FAILED")
+
+// Function: verify a UNLOCKED
+label(name: func_verify_unlocked)
+verify_message(
+	command: UNLOCKED,
+	server: "local_server",
+	service: "website",
+	required_parameters: {
+		error: "timedout",
+		object_name: "lock1"
+	})
+return()
+
+// Function: verify a UNLOCKING
+label(name: func_verify_unlocking)
+verify_message(
+	command: UNLOCKING,
+	server: "local_server",
+	service: "website",
+	required_parameters: {
+		error: "timedout",
+		object_name: "lock1",
+		tag: "505"
+	})
+return()
+
+// Function: send HELP
+label(name: func_send_help)
+send_message(
+	command: HELP
+	)
+return()
+
+// Function: send READY
+label(name: func_send_ready)
+send_message(
+	command: READY,
+	parameters: {
+		my_address: "127.0.0.1"
+	})
+return()
+
+// Function: send STATUS
+label(name: func_send_status)
+now(variable_name: now)
+send_message(
+	command: STATUS,
+	parameters: {
+		service: "cluckd",
+		cache: no,
+		server: "this_server",
+		status: "up",
+		up_since: ${now}
+	})
+return()
+
+// Function: send STATUS/fluid_settings
+label(name: func_reply_to_service_status)
+save_parameter_value(parameter_name: service, variable_name: service_name)
+compare(expression: ${service_name} <=> "fluid_settings")
+if(not_equal: not_fluid_settings_status)
+now(variable_name: now)
+send_message(
+	command: STATUS,
+	parameters: {
+		service: "fluid_settings",
+		cache: no,
+		server: "local_server",
+		status: "up",
+		up_since: ${now}
+	})
+label(name: not_fluid_settings_status)
+return()
+
+// Function: send FLUID_SETTINGS_REGISTERED
+label(name: func_reply_to_fluid_settings_listen)
+send_message(
+	command: FLUID_SETTINGS_REGISTERED,
+	server: local_server,
+	service: cluckd)
+return()
+
+// Function: send FLUID_SETTINGS_VALUE_UPDATED
+label(name: func_reply_to_fluid_settings_value_updated)
+send_message(
+	command: FLUID_SETTINGS_VALUE_UPDATED,
+	server: local_server,
+	service: cluckd,
+	parameters: {
+		name: "cluckd::server-name",
+		value: "this_very_server",
+		message: "current value"
+	})
+return()
+
+// Function: send FLUID_SETTINGS_READY
+label(name: func_reply_to_fluid_settings_ready)
+send_message(
+	command: FLUID_SETTINGS_READY,
+	server: local_server,
+	service: cluckd,
+	parameters: {
+		errcnt: 31
+	})
+return()
+
+// Function: send LOCK_STATUS
+label(name: func_get_cluckd_status)
+send_message(
+	command: LOCK_STATUS,
+	sent_server: local_server,
+	sent_service: website,
+	server: local_server,
+	service: cluckd)
+return()
+
+// Function: send INFO
+// Parameters: ${info_mode} -- "info" or "debug"
+label(name: func_send_info)
+send_message(
+	command: INFO,
+	sent_server: local_server,
+	sent_service: website,
+	server: local_server,
+	service: cluckd,
+	parameters: {
+		mode: ${info_mode}
+	})
+return()
+
+// Function: send CLUSTER_UP
+label(name: func_send_cluster_up)
+send_message(
+	command: CLUSTER_UP,
+	sent_server: local_server,
+	sent_service: website,
+	server: local_server,
+	service: cluckd,
+	parameters: {
+		neighbors_count: 2
+	})
+return()
+
+// Function: send CLUSTER_COMPLETE
+label(name: func_send_cluster_complete)
+send_message(
+	command: CLUSTER_COMPLETE,
+	sent_server: local_server,
+	sent_service: website,
+	server: local_server,
+	service: cluckd,
+	parameters: {
+		neighbors_count: 2
+	})
+return()
+
+// Function: send LOCK
+// Parameters: ${timeout} -- when the LOCK request times out
+label(name: func_send_lock)
+send_message(
+	command: LOCK,
+	sent_server: local_server,
+	sent_service: website,
+	server: local_server,
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		tag: 505,
+		pid: 123,
+		duration: 10,
+		timeout: ${timeout}
+	})
+return()
+
+// Function: send LOCK_STARTED
+// Parameters: ${server_name} -- the name of the server sending the message
+// Parameters: ${lock_id} -- the identifier used as the lock_id parameter
+label(name: func_send_lock_started)
+now(variable_name: now)
+send_message(
+	command: LOCK_STARTED,
+	sent_server: local_server,
+	sent_service: website,
+	server: local_server,
+	service: cluckd,
+	parameters: {
+		lock_id: ${lock_id},
+		server_name: ${server_name},
+		start_time: ${now}
+	})
+return()
+
+// Function: send QUIT
+label(name: func_send_quitting)
+send_message(
+	command: QUITTING,
+	sent_server: local_server,
+	sent_service: website,
+	server: local_server,
+	service: cluckd)
+return()
+

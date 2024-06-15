@@ -133,6 +133,10 @@ messenger::messenger(cluckd * c, advgetopt::getopt & opts)
             , ed::Callback(std::bind(&cluckd::msg_get_max_ticket, c, std::placeholders::_1))
         ),
         ed::define_match(
+              ed::Expression(cluck::g_name_cluck_cmd_info)
+            , ed::Callback(std::bind(&cluckd::msg_info, c, std::placeholders::_1))
+        ),
+        ed::define_match(
               ed::Expression(cluck::g_name_cluck_cmd_list_tickets)
             , ed::Callback(std::bind(&cluckd::msg_list_tickets, c, std::placeholders::_1))
         ),

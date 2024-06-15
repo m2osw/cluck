@@ -1,5 +1,7 @@
 // simulate the communicator daemon and a plethora of cluck clients
 
+hostname(variable_name: hostname)
+
 run()
 listen(address: <127.0.0.1:20002>)
 
@@ -24,7 +26,8 @@ label(name: not_register)
 has_message(command: LOCKED)
 if(false: not_locked)
 call(label: func_verify_locked)
-kill(signal: USR2)
+set_variable(name: info_mode, value: "debug")
+call(label: func_send_info)
 goto(label: next_message)
 
 label(name: not_locked)
@@ -67,9 +70,8 @@ if(false: not_cluster_status)
 call(label: func_verify_cluster_status)
 call(label: func_send_cluster_up)
 //call(label: func_send_cluster_complete) -- this does not currently happen because the message is tested (at least when we sent a CLUSTER_STATUS message, the broadcast may still send us the message, I think)
-
-kill(signal: USR1)
-
+set_variable(name: info_mode, value: "info")
+call(label: func_send_info)
 goto(label: next_message)
 
 label(name: not_cluster_status)
@@ -154,7 +156,7 @@ label(name: func_verify_commands)
 verify_message(
 	command: COMMANDS,
 	required_parameters: {
-		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
+		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
 	})
 return()
 
@@ -202,7 +204,7 @@ verify_message(
 	service: "*",
 	required_parameters: {
 		election_date: `^[0-9]+(\\.[0-9]+)?$`,
-		leader0: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|cluckd$`
+		leader0: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`
 	},
 	forbidden_parameters: {
 		leader1,
@@ -217,9 +219,9 @@ verify_message(
 	service: "*",
 	required_parameters: {
 		election_date: `^[0-9]+(\\.[0-9]+)?$`,
-		leader0: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|cluckd$`,
-		lockid: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|cluckd$`,
-		server_name: cluckd,
+		leader0: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
 		start_time: `^[0-9]+(\\.[0-9]+)?$`
 	},
 	forbidden_parameters: {
@@ -358,6 +360,20 @@ send_message(
 	sent_service: website,
 	server: local_server,
 	service: cluckd)
+return()
+
+// Function: send INFO
+// Parameters: ${info_mode} -- "info" or "debug"
+label(name: func_send_info)
+send_message(
+	command: INFO,
+	sent_server: local_server,
+	sent_service: website,
+	server: local_server,
+	service: cluckd,
+	parameters: {
+		mode: ${info_mode}
+	})
 return()
 
 // Function: send CLUSTER_UP

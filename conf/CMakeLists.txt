@@ -16,22 +16,22 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-project(cluck_conf)
+project(cluckd_conf)
 
 
 # logger files
 install(
     FILES
-        logger/cluck.conf
+        logger/cluckd.conf
 
     DESTINATION
         ${SNAPLOGGER_SHARE_CONF_DIR}
 )
 
-# define cluck as a communicator service
+# define cluckd as a communicator service
 install(
     FILES 
-        cluck.service
+        cluckd.service
 
     DESTINATION
         ${COMMUNICATORD_SERVICES_INSTALL_DIR}

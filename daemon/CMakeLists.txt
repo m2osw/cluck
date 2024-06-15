@@ -21,8 +21,6 @@ project(cluckd)
 add_executable(${PROJECT_NAME}
     cluckd.cpp
     computer.cpp
-    debug_info.cpp
-    info.cpp
     interrupt.cpp
     main.cpp
     messenger.cpp
