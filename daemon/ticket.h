@@ -70,7 +70,7 @@ public:
     bool                        send_message_to_leaders(ed::message & msg);
     void                        entering();
     void                        entered();
-    void                        max_ticket(std::int64_t new_max_ticket);
+    void                        max_ticket(ticket_id_t new_max_ticket);
     void                        add_ticket();
     void                        ticket_added(key_map_t const & entering);
     void                        remove_entering(std::string const & key);

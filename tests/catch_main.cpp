@@ -65,9 +65,7 @@ int main(int argc, char * argv[])
 {
     //SNAP_CATCH2_NAMESPACE::g_argv = argv;
 
-    snaplogger::logger::pointer_t l(snaplogger::logger::get_instance());
-    l->add_console_appender();
-    l->set_severity(snaplogger::severity_t::SEVERITY_ALL);
+    snaplogger::setup_catch2_nested_diagnostics();
 
     return SNAP_CATCH2_NAMESPACE::snap_catch2_main(
               "cluck"

@@ -575,7 +575,7 @@ void ticket::entered()
  *
  * \param[in] new_max_ticket  Another possibly larger ticket.
  */
-void ticket::max_ticket(std::int64_t new_max_ticket)
+void ticket::max_ticket(ticket_id_t new_max_ticket)
 {
     if(!f_added_ticket)
     {
@@ -663,7 +663,7 @@ void ticket::ticket_added(key_map_t const & still_entering)
 
         f_still_entering = still_entering;
 
-        // okay, the ticket was added on all cluck daemon
+        // okay, the ticket was added on all cluck daemons
         // now we can forget about the entering flag
         // (equivalent to setting it to false)
         //

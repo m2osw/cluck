@@ -126,7 +126,6 @@ private:
     void                        synchronize_leaders();
     void                        forward_message_to_leader(ed::message & message);
 
-
     //static ed::dispatcher<cluckd>::dispatcher_match::vector_t const    g_snaplock_service_messages;
 
     advgetopt::getopt                   f_opts;
@@ -134,9 +133,6 @@ private:
 
     cluck::timeout_t                    f_start_time = cluck::timeout_t();
     std::string                         f_server_name = std::string();
-//    std::string                         f_service_name = std::string("cluckd");
-//    std::string                         f_communicator_addr = std::string("localhost");
-//    int                                 f_communicator_port = 4040;
     ed::communicator::pointer_t         f_communicator = ed::communicator::pointer_t();
 //    std::string                         f_host_list = std::string("localhost");
     messenger::pointer_t                f_messenger = messenger::pointer_t();

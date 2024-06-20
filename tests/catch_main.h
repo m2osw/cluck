@@ -19,7 +19,7 @@
 
 // catch2
 //
-#include    <catch2/snapcatch2.hpp>
+#include    <snaplogger/snapcatch2.hpp>
 
 // C++
 //

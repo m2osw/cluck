@@ -461,26 +461,6 @@ cluckd::cluckd(int argc, char * argv[])
     {
         f_server_name = snapdev::gethostname();
     }
-//#ifdef _DEBUG
-//    // to debug multiple cluck daemons on the same server each instance
-//    // needs to have a different server name
-//    //
-//    if(f_config.has_parameter("server_name"))
-//    {
-//        f_server_name = f_config["server_name"];
-//    }
-//#endif
-
-//#ifdef _DEBUG
-//    // for test purposes (i.e. to run any number of cluckd on a single
-//    // computer) we allow the administrator to change the name of the
-//    // service, but only in a debug version
-//    //
-//    if(f_config.has_parameter("service_name"))
-//    {
-//        f_service_name = f_config["service_name"];
-//    }
-//#endif
 
     f_start_time = snapdev::now();
 }
@@ -1775,7 +1755,7 @@ void cluckd::cleanup()
  *
  * If no ticket were defined for \p object_name or we are dealing with
  * that object very first ticket, then the function returns NO_TICKET
- * (which is 0.)
+ * (which is 0).
  *
  * \param[in] object_name  The name of the object for which the last ticket
  *                         number is being sought.
@@ -1795,7 +1775,7 @@ ticket::ticket_id_t cluckd::get_last_ticket(std::string const & object_name)
     {
         // note:
         // the std::max_element() algorithm would require many more
-        // get_ticket_number() when our loop uses one per ticket max.
+        // get_ticket_number() when our loop uses one per ticket
         //
         for(auto key_ticket : obj_ticket->second)
         {
@@ -3109,6 +3089,7 @@ void cluckd::msg_lock_entering(ed::message & msg)
             reply.set_command(cluck::g_name_cluck_cmd_lock_entered);
             reply.reply_to(msg);
             reply.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            reply.add_parameter(cluck::g_name_cluck_param_tag, tag);
             reply.add_parameter(cluck::g_name_cluck_param_key, key);
             f_messenger->send_message(reply);
         }
@@ -3128,7 +3109,7 @@ void cluckd::msg_lock_entering(ed::message & msg)
  *
  * This command drops the specified ticket (object_name).
  *
- * \param[in] msg  The entering message.
+ * \param[in] msg  The exiting message.
  */
 void cluckd::msg_lock_exiting(ed::message & msg)
 {
@@ -3731,6 +3712,13 @@ void cluckd::msg_max_ticket(ed::message & msg)
  */
 void cluckd::msg_server_gone(ed::message & msg)
 {
+    // if the server is not defined, ignore that message
+    //
+    if(!msg.has_parameter(communicatord::g_name_communicatord_param_server_name))
+    {
+        return;
+    }
+
     // was it a cluckd service at least?
     //
     std::string const server_name(msg.get_parameter(communicatord::g_name_communicatord_param_server_name));
@@ -3786,8 +3774,8 @@ void cluckd::msg_server_gone(ed::message & msg)
 /** \brief With the STATUS message we know of new communicatord services.
  *
  * This function captures the STATUS message and if it sees that the
- * name of the service is "remote communicator connection" then it
- * sends a new LOCK_STARTED message to make sure that all cluck's
+ * name of the service is a remote communicator daemon then it
+ * sends a new LOCK_STARTED message to make sure that all cluck daemons
  * are aware of us.
  *
  * \param[in] msg  The STATUS message.

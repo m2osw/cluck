@@ -47,6 +47,10 @@
 //#include    <eventdispatcher/reporter/state.h>
 
 
+// snapdev
+//
+#include    <snapdev/gethostname.h>
+
 // advgetopt
 //
 #include    <advgetopt/exception.h>
@@ -194,6 +198,9 @@ CATCH_TEST_CASE("cluck_daemon_two_computers", "[cluckd][daemon]")
             //
             SNAP_CATCH2_NAMESPACE::g_source_dir() + "/daemon/message-definitions:"
                 + SNAP_CATCH2_NAMESPACE::g_dist_dir() + "/share/eventdispatcher/messages",
+
+            "--server-name",
+            snapdev::gethostname(),
         };
 
         // convert arguments so we can use them with execvpe()
