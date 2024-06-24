@@ -756,9 +756,9 @@ computer::pointer_t cluckd::get_leader_a() const
 
     switch(f_leaders.size())
     {
-    case 0:
+    case 0: // LCOV_EXCL -- because of the debug above, this cannot happen here
     default:
-        throw cluck::logic_error("cluckd::get_leader_a(): call this function only when leaders were elected.");
+        throw cluck::logic_error("cluckd::get_leader_a(): call this function only when leaders were elected."); // LCOV_EXCL
 
     case 1:
         return computer::pointer_t();
@@ -782,9 +782,9 @@ computer::pointer_t cluckd::get_leader_b() const
 
     switch(f_leaders.size())
     {
-    case 0:
+    case 0: // LCOV_EXCL -- because of the debug above, this cannot happen here
     default:
-        throw cluck::unexpected_case("cluckd::get_leader_b(): call this function only when leaders were elected.");
+        throw cluck::unexpected_case("cluckd::get_leader_b(): call this function only when leaders were elected."); // LCOV_EXCL
 
     case 1:
     case 2: // we have a leader A but no leader B when we have only 2 leaders
@@ -3739,6 +3739,7 @@ void cluckd::msg_server_gone(ed::message & msg)
         //
         return;
     }
+    computer::pointer_t c(it->second);
 
     // got it, remove it
     //
@@ -3749,7 +3750,7 @@ void cluckd::msg_server_gone(ed::message & msg)
     auto li(std::find(
               f_leaders.begin()
             , f_leaders.end()
-            , it->second));
+            , c));
     if(li != f_leaders.end())
     {
         f_leaders.erase(li);

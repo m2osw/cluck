@@ -37,33 +37,21 @@ namespace cluck_daemon
 
 
 
-//#pragma GCC diagnostic push
-//#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 class cluckd
-    //: public snap::snap_communicator::connection_with_send_message
-    //, public std::enable_shared_from_this<cluckd>
 {
 public:
     typedef std::shared_ptr<cluckd>      pointer_t;
 
-    //static std::int64_t const   DEFAULT_TIMEOUT = 5; // in seconds
-    //static std::int64_t const   MIN_TIMEOUT     = 3; // in seconds
-
                                 cluckd(int argc, char * argv[]);
                                 cluckd(cluckd const & rhs) = delete;
-    virtual                     ~cluckd();
+                                ~cluckd();
 
     cluckd &                    operator = (cluckd const & rhs) = delete;
 
     void                        add_connections();
     void                        run();
-    //void                        process_message(ed::message const & msg);
     void                        tool_message(ed::message const & msg);
     void                        process_connection(int const s);
-
-    // connection_with_send_message implementation; use messenger
-    //
-    //virtual bool                send_message(ed::message const & msg, bool cache = false) override;
 
     int                         get_computer_count() const;
     std::string const &         get_server_name() const;
@@ -156,7 +144,7 @@ private:
     ticket::serial_t                    f_ticket_serial = 0;
     mutable time_t                      f_pace_lockstarted = 0;
 };
-//#pragma GCC diagnostic pop
+
 
 
 } // namespace cluck_daemon

@@ -148,11 +148,10 @@ has_message(command: UNLOCKED)
 if(false: not_unlocked)
 call(label: func_verify_unlocked)
 set_variable(name: cluckd_status, value: "down")
-call(label: func_send_status) // "random" location as if the other cluckd just became available
-call(label: func_send_quitting)
-//goto(label: next_message)
-wait(timeout: 5, mode: drain)
-exit()
+call(label: func_send_status) // "random" location as if the other cluckd just became unavailable
+call(label: func_get_cluckd_status) // the status is again NO_LOCK
+call(label: func_send_stop)
+goto(label: next_message)
 
 label(name: not_unlocked)
 has_message(command: UNLOCKING)
@@ -209,15 +208,19 @@ has_message(command: LOCK_ACTIVATED)
 if(false: not_lock_activated)
 call(label: func_verify_lock_activated)
 set_variable(name: allow_timeout, value: 1)
-//call(label: func_send_quitting)
 goto(label: next_message)
 
 label(name: not_lock_activated)
 has_message(command: DROP_TICKET)
-if(false: not_recognized)
+if(false: not_drop_ticket)
 call(label: func_verify_drop_ticket)
-//call(label: func_send_quitting)
 goto(label: next_message)
+
+label(name: not_drop_ticket)
+has_message(command: UNREGISTER)
+if(false: not_recognized)
+call(label: func_verify_unregister)
+exit()
 
 label(name: not_recognized)
 exit(error_message: "received an unknown command")
@@ -287,8 +290,8 @@ return()
 label(name: func_verify_no_lock)
 verify_message(
 	command: NO_LOCK,
-	server: ${hostname},
-	service: website,
+	server: `${hostname}|`,
+	service: `website|\\.`,
 	required_parameters: {
 		cache: "no"
 	})
@@ -512,6 +515,15 @@ verify_message(
 	})
 return()
 
+// Function: verify an UNREGISTER
+label(name: func_verify_unregister)
+verify_message(
+	command: UNREGISTER,
+	required_parameters: {
+		service: "cluckd"
+	})
+return()
+
 
 // Function: send HELP
 label(name: func_send_help)
@@ -542,6 +554,7 @@ send_message(
 	//server: ${hostname}, -- the source is not added in this case
 	//service: communicatord,
 	parameters: {
+		server_name: two,
 		service: "remote communicator (in)",
 		cache: no,
 		server: two,
@@ -777,7 +790,17 @@ send_message(
 	})
 return()
 
-// Function: send QUIT
+// Function: send STOP
+label(name: func_send_stop)
+send_message(
+	command: STOP,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd)
+return()
+
+// Function: send QUITTING
 label(name: func_send_quitting)
 send_message(
 	command: QUITTING,

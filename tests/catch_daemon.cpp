@@ -30,26 +30,18 @@
 // cluck
 //
 #include    <cluck/exception.h>
-//#include    <cluck/names.h>
-//#include    <cluck/version.h>
 
 
 // eventdispatcher
 //
-//#include    <eventdispatcher/communicator.h>
-//#include    <eventdispatcher/dispatcher.h>
-//#include    <eventdispatcher/names.h>
-//#include    <eventdispatcher/tcp_client_permanent_message_connection.h>
-
 #include    <eventdispatcher/reporter/executor.h>
-//#include    <eventdispatcher/reporter/lexer.h>
 #include    <eventdispatcher/reporter/parser.h>
-//#include    <eventdispatcher/reporter/state.h>
 
 
 // snapdev
 //
 #include    <snapdev/gethostname.h>
+
 
 // advgetopt
 //

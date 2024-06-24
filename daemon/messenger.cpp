@@ -217,6 +217,20 @@ void messenger::finish_parsing()
 }
 
 
+/** \brief Let the server know STOP or QUITTING was sent to us.
+ *
+ * This STOP and QUITTING messages are currently managed through this
+ * overridden virtual function.
+ *
+ * \param[in] quitting  Whether STOP (false) or QUITTING (true) was
+ * received.
+ */
+void messenger::stop(bool quitting)
+{
+    f_cluckd->stop(quitting);
+}
+
+
 /** \brief Send the CLUSTER_STATUS to communicatord once ready.
  *
  * This function builds a message and sends it to communicatord.
