@@ -1,9 +1,9 @@
 // test:
 //
-//   * one real cluckd daemon (server: ${hostname}, service: cluckd)
+//   * one real cluckd daemon (server: ${hostname} ("rc0"), service: cluckd, IP: 127.0.0.1)
 //   * simulate local communicatord (server: ${hostname}, service: communicatord)
-//   * simulate remote communicatord 1 (server: rc1, service: communicatord)
-//   * simulate remote communicatord 2 (server: rc2, service: communicatord)
+//   * simulate remote communicatord 1 (server: rc1, service: communicatord, IP: 10.1.2.3)
+//   * simulate remote communicatord 2 (server: rc2, service: communicatord, IP: 172.16.17.18)
 //   * simulate remote cluckd 1 (server: rc1, service: cluckd)
 //   * simulate remote cluckd 2 (server: rc2, service: cluckd)
 //   * simulate one local client (server: ${hostname}, service: website)
@@ -14,6 +14,13 @@
 
 // basic setup
 //
+random(variable_name: leader0_random)
+random(variable_name: leader0_pid, negative: 0)
+random(variable_name: leader2_random)
+random(variable_name: leader2_pid, negative: 0)
+set_variable(name: leader0, value: "14|" + ${leader0_random} % 0x100000000 + "|10.1.2.3|" + (${leader0_pid} % 0x4FFFFE + 1) + "|rc1") // rc1
+set_variable(name: leader1, value: "invalid-id (search on leader1 so see where it gets set)")
+set_variable(name: leader2, value: "14|" + ${leader2_random} % 0x100000000 + "|172.16.17.18|" + (${leader2_pid} % 0x3FFFFE + 1) + "|rc2") // rc2
 hostname(variable_name: hostname)
 run()
 listen(address: <127.0.0.1:20002>)
@@ -25,8 +32,14 @@ call(label: func_expect_commands)
 call(label: func_expect_service_status)
 call(label: func_expect_fluid_settings_listen)
 call(label: func_expect_cluster_status)
-call(label: func_expect_lock_started)
-call(label: func_expect_lock_started)
+call(label: func_expect_lock_started_initial)
+call(label: func_expect_no_lock)
+call(label: func_expect_lock_started_reply_a)
+call(label: func_expect_no_lock)
+call(label: func_expect_lock_started_reply_b)
+//call(label: func_expect_lock_leaders) -- we send that one in this test
+call(label: func_expect_lock_started_reply_c)
+call(label: func_expect_locked)
 
 
 
@@ -122,10 +135,53 @@ call(label: func_verify_cluster_status)
 call(label: func_send_cluster_up)
 return()
 
-label(name: func_expect_lock_started)
+label(name: func_expect_lock_started_initial)
+print(message: "--- wait for message LOCK_STARTED (initial)....")
 call(label: func_wait_message)
-call(label: func_verify_lock_started_broadcast)
+call(label: func_verify_lock_started_broadcast_initial)
+call(label: func_send_lock_started_from_rc1)
+call(label: func_send_lock_started_from_rc2)
 return()
+
+label(name: func_expect_no_lock)
+print(message: "--- wait for message NO_LOCK....")
+call(label: func_wait_message)
+call(label: func_verify_no_lock)
+return()
+
+label(name: func_expect_lock_started_reply_a)
+// this reply does not yet include the leaders (too early)
+print(message: "--- wait for message LOCK_STARTED (reply_a)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_to_rc1_early)
+return()
+
+label(name: func_expect_lock_leaders)
+call(label: func_wait_message)
+call(label: func_verify_lock_leaders)
+return()
+
+label(name: func_expect_lock_started_reply_b)
+print(message: "--- wait for message LOCK_STARTED (reply_b)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_to_rc2_early)
+call(label: func_send_lock_leaders_from_rc1)
+//call(label: func_send_lock_started_with_leaders_from_rc1)
+return()
+
+label(name: func_expect_lock_started_reply_c)
+print(message: "--- wait for message LOCK_STARTED (reply_c)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_to_rc1)
+return()
+
+label(name: func_expect_locked)
+print(message: "--- LOCKED received?....")
+call(label: func_wait_message)
+call(label: func_verify_locked)
+return()
+
+
 
 
 
@@ -143,6 +199,7 @@ return()
 label(name: func_verify_commands)
 verify_message(
 	command: COMMANDS,
+	sent_service: cluckd,
 	required_parameters: {
 		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_ENTERED,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
 	})
@@ -162,11 +219,181 @@ return()
 label(name: func_verify_fluid_settings_listen)
 verify_message(
 	command: FLUID_SETTINGS_LISTEN,
+	sent_service: cluckd,
+	service: fluid_settings,
 	required_parameters: {
 		cache: "no;reply",
 		names: "cluckd::server-name"
 	})
 return()
+
+// Function: verify LOCK STARTED (initial)
+label(name: func_verify_lock_started_broadcast_initial)
+print(message: "--- verify message LOCK_STARTED (initial)....")
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	service: "*", // this one was broadcast
+	required_parameters: {
+		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2
+	})
+// the leader1 parameter needs to be defined from what that leader sends us
+save_parameter_value(parameter_name: lock_id, variable_name: leader1)
+print(message: "--- message LOCK_STARTED works....")
+return()
+
+// Function: verify LOCK STARTED (to rc1, no leaders)
+label(name: func_verify_lock_started_to_rc1_early)
+print(message: "--- verify message LOCK_STARTED (rc1).... [early]")
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2
+	})
+print(message: "--- message LOCK_STARTED works....")
+return()
+
+// Function: verify LOCK STARTED (to rc2)
+label(name: func_verify_lock_started_to_rc2_early)
+print(message: "--- verify message LOCK_STARTED (rc2).... [early]")
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: rc2,
+	service: cluckd,
+	required_parameters: {
+		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+		//election_date: `^[0-9]+(\\.[0-9]+)?$`,
+		//leader0: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`,
+		//leader1: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`,
+		//leader2: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2,
+		leader3
+	})
+print(message: "--- message LOCK_STARTED works (rc2)....")
+return()
+
+// Function: verify LOCK STARTED (to rc2)
+label(name: func_verify_lock_started_to_rc2)
+print(message: "--- verify message LOCK_STARTED (rc2)....")
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: rc2,
+	service: cluckd,
+	required_parameters: {
+		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`,
+		election_date: `^[0-9]+(\\.[0-9]+)?$`,
+		leader0: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`,
+		leader1: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`,
+		leader2: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`
+	},
+	forbidden_parameters: {
+		leader3
+	})
+print(message: "--- message LOCK_STARTED works (rc2)....")
+return()
+
+// Function: verify LOCK STARTED (to rc1, including leaders)
+label(name: func_verify_lock_started_to_rc1)
+print(message: "--- verify message LOCK_STARTED (rc1 with leaders)....")
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`,
+		election_date: `^[0-9]+(\\.[0-9]+)?$`,
+		leader0: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`,
+		leader1: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`,
+		leader2: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`
+	})
+print(message: "--- message LOCK_STARTED works....")
+return()
+
+// Function: verify a NO_LOCK
+label(name: func_verify_no_lock)
+verify_message(
+	command: NO_LOCK,
+	sent_service: cluckd,
+	service: ".",
+	required_parameters: {
+		cache: no
+	})
+return()
+
+// Function: verify a LOCK LEADERS
+//label(name: func_verify_lock_leaders)
+//verify_message(
+//	command: LOCK_LEADERS,
+//	sent_service: cluckd,
+//	service: "*",
+//	required_parameters: {
+//		election_date: `^[0-9]+(\\.[0-9]+)?$`,
+//		leader0: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`,
+//		leader1: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`,
+//		leader2: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`
+//	},
+//	forbidden_parameters: {
+//		leader3
+//	})
+//save_parameter_value(parameter_name: election_date, variable_name: election_date)
+//save_parameter_value(parameter_name: leader0, variable_name: leader0)
+//save_parameter_value(parameter_name: leader1, variable_name: leader1)
+//save_parameter_value(parameter_name: leader2, variable_name: leader2)
+//return()
+
+// Function: verify LOCKED
+label(name: func_verify_locked)
+verify_message(
+	command: LOCKED,
+	server: ${hostname},
+	service: website,
+	required_parameters: {
+		object_name: "lock1",
+		timeout_date: `^[0-9]+(\\.[0-9]+)?$`,
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`
+	})
+return()
+
+
+
+
+
+
+
+
 
 
 // Function: send HELP
@@ -256,29 +483,85 @@ send_message(
 	server: ${hostname},
 	service: cluckd,
 	parameters: {
-		neighbors_count: 2
+		neighbors_count: 3
 	})
 return()
 
-// Function: verify LOCK STARTED
-label(name: func_verify_lock_started_broadcast)
-print(message: "--- verify message LOCK_STARTED....")
-verify_message(
+// Function: send LOCK_STARTED from rc1 computer
+label(name: func_send_lock_started_from_rc1)
+now(variable_name: now)
+send_message(
 	command: LOCK_STARTED,
-	service: "*", // this one was broadcast
-	required_parameters: {
-		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
-		server_name: ${hostname},
-		start_time: `^[0-9]+(\\.[0-9]+)?$`
-	},
-	forbidden_parameters: {
-		election_date,
-		leader0,
-		leader1,
-		leader2
+	sent_server: rc1,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		lock_id: "14|1315897767|10.1.2.3|824735|rc1",
+		server_name: rc1,
+		start_time: ${now}
 	})
-print(message: "--- message LOCK_STARTED works....")
 return()
+
+// Function: send LOCK_STARTED from rc2 computer
+label(name: func_send_lock_started_from_rc2)
+now(variable_name: now)
+send_message(
+	command: LOCK_STARTED,
+	sent_server: rc2,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		lock_id: "14|1345397261|172.16.17.18|321127|rc2",
+		server_name: rc2,
+		start_time: ${now}
+	})
+return()
+
+// Function: send LOCK_STARTED from rc1 with leaders
+label(name: func_send_lock_started_with_leaders_from_rc1)
+now(variable_name: now)
+send_message(
+	command: LOCK_STARTED,
+	sent_server: rc1,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		lock_id: "14|1315897767|10.1.2.3|824735|rc1",
+		server_name: rc1,
+		election_date: ${election_date},
+		leader0: ${leader0},
+		leader1: ${leader1},
+		leader2: ${leader2},
+		start_time: ${now}
+	})
+return()
+
+// function: send LOCK_LEADERS
+label(name: func_send_lock_leaders_from_rc1)
+// the one cluck sending the LOCK_LEADERS is the one with the smaller IP
+// so in our case here it has to be rc1
+//
+// the computer IDs, as passed through the leader0/1/2 parameters, are
+// defined as:
+//  <priority>|<random>|<IP>|<pid>|<hostname>
+//
+now(variable_name: election_date)
+send_message(
+	command: LOCK_LEADERS,
+	sent_server: rc1,
+	sent_service: cluckd,
+	service: "*", // boarcast
+	parameters: {
+		election_date: ${election_date},
+		leader0: ${leader0},
+		leader1: ${leader1},
+		leader2: ${leader2}
+	})
+return()
+
 
 
 
@@ -489,45 +772,6 @@ return()
 // label(name: next_message)
 // clear_message()
 // goto(label: process_message)
-// 
-// // Function: verify a LOCKED reply
-// label(name: func_verify_locked)
-// verify_message(
-// 	command: LOCKED,
-// 	server: ${hostname},
-// 	service: website,
-// 	required_parameters: {
-// 		object_name: "lock1",
-// 		timeout_date: `^[0-9]+(\\.[0-9]+)?$`,
-// 		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`
-// 	})
-// return()
-// 
-// // Function: verify a NO_LOCK
-// label(name: func_verify_no_lock)
-// verify_message(
-// 	command: NO_LOCK,
-// 	server: `${hostname}|`,
-// 	service: `website|\\.`,
-// 	required_parameters: {
-// 		cache: "no"
-// 	})
-// return()
-// 
-// // Function: verify a LOCK LEADERS
-// label(name: func_verify_lock_leaders)
-// verify_message(
-// 	command: LOCK_LEADERS,
-// 	service: "*",
-// 	required_parameters: {
-// 		election_date: `^[0-9]+(\\.[0-9]+)?$`,
-// 		leader0: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|(${hostname}|two)$`,
-// 		leader1: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|(${hostname}|two)$`
-// 	},
-// 	forbidden_parameters: {
-// 		leader2
-// 	})
-// return()
 // 
 // // Function: verify a LOCK STARTED (to start the elections)
 // label(name: func_verify_first_lock_started)

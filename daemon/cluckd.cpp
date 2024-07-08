@@ -214,120 +214,6 @@ advgetopt::options_environment const g_options_environment =
 
 
 
-/** \brief List of cluck daemon commands.
- *
- * The following table defines the commands understood by cluckd
- * that are not defined as a default by communicator.
- */
-//ed::dispatcher<cluckd>::dispatcher_match::vector_t const cluckd::g_snaplock_service_messages =
-//{
-//    {
-//        "ACTIVATELOCK"
-//      , &cluckd::msg_activate_lock
-//    },
-//    {
-//        "ADDTICKET"
-//      , &cluckd::msg_add_ticket
-//    },
-//    {
-//        "CLUSTERUP"
-//      , &cluckd::msg_cluster_up
-//    },
-//    {
-//        "CLUSTERDOWN"
-//      , &cluckd::msg_cluster_down
-//    },
-//    {
-//        "DISCONNECTED"
-//      , &cluckd::msg_server_gone
-//    },
-//    {
-//        "DROPTICKET"
-//      , &cluckd::msg_drop_ticket
-//    },
-//    {
-//        "GETMAXTICKET"
-//      , &cluckd::msg_get_max_ticket
-//    },
-//    {
-//        "HANGUP"
-//      , &cluckd::msg_server_gone
-//    },
-//    {
-//        "LOCK"
-//      , &cluckd::msg_lock
-//    },
-//    {
-//        "LOCKACTIVATED"
-//      , &cluckd::msg_lock_activated
-//    },
-//    {
-//        "LOCKENTERED"
-//      , &cluckd::msg_lock_entered
-//    },
-//    {
-//        "LOCKENTERING"
-//      , &cluckd::msg_lock_entering
-//    },
-//    {
-//        "LOCKEXITING"
-//      , &cluckd::msg_lock_exiting
-//    },
-//    {
-//        "LOCKFAILED"
-//      , &cluckd::msg_lock_failed
-//    },
-//    {
-//        "LOCKLEADERS"
-//      , &cluckd::msg_lock_leaders
-//    },
-//    {
-//        "LOCKSTARTED"
-//      , &cluckd::msg_lock_started
-//    },
-//    {
-//        "LOCKSTATUS"
-//      , &cluckd::msg_lock_status
-//    },
-//    {
-//        "LOCKTICKETS"
-//      , &cluckd::msg_lock_tickets
-//    },
-//    {
-//        "LISTTICKETS"
-//      , &cluckd::msg_list_tickets
-//    },
-//    {
-//        "MAXTICKET"
-//      , &cluckd::msg_max_ticket
-//    },
-//    {
-//        "STATUS"
-//      , &cluckd::msg_status
-//    },
-//    {
-//        "TICKETADDED"
-//      , &cluckd::msg_ticket_added
-//    },
-//    {
-//        "TICKETREADY"
-//      , &cluckd::msg_ticket_ready
-//    },
-//    {
-//        "UNLOCK"
-//      , &cluckd::msg_unlock
-//    }
-//};
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1073,22 +959,22 @@ void cluckd::election_status()
 
     // the first three are the new leaders
     //
-    ed::message lockleaders_message;
-    lockleaders_message.set_command(cluck::g_name_cluck_cmd_lock_leaders);
-    lockleaders_message.set_service(communicatord::g_name_communicatord_server_any);
+    ed::message lock_leaders_message;
+    lock_leaders_message.set_command(cluck::g_name_cluck_cmd_lock_leaders);
+    lock_leaders_message.set_service(communicatord::g_name_communicatord_server_any);
     f_leaders.clear();
     f_election_date = snapdev::now();
-    lockleaders_message.add_parameter(cluck::g_name_cluck_param_election_date, f_election_date);
+    lock_leaders_message.add_parameter(cluck::g_name_cluck_param_election_date, f_election_date);
     auto leader(sort_by_id.begin());
     std::size_t const max(std::min(static_cast<computer::map_t::size_type>(3), sort_by_id.size()));
     for(std::size_t idx(0); idx < max; ++idx, ++leader)
     {
-        lockleaders_message.add_parameter(
+        lock_leaders_message.add_parameter(
               cluck::g_name_cluck_param_leader + std::to_string(idx)
             , leader->second->get_id());
         f_leaders.push_back(leader->second);
     }
-    f_messenger->send_message(lockleaders_message);
+    f_messenger->send_message(lock_leaders_message);
 
 #if 1
 SNAP_LOG_WARNING
@@ -1115,6 +1001,7 @@ void cluckd::check_lock_status()
     status_message.set_command(f_lock_status
                     ? cluck::g_name_cluck_cmd_lock_ready
                     : cluck::g_name_cluck_cmd_no_lock);
+SNAP_LOG_WARNING << "sending lock status (on a check): " << status_message.get_command() << SNAP_LOG_SEND;
     status_message.set_service(communicatord::g_name_communicatord_server_me);
     status_message.add_parameter(communicatord::g_name_communicatord_param_cache, communicatord::g_name_communicatord_value_no);
     f_messenger->send_message(status_message);
@@ -3313,7 +3200,7 @@ void cluckd::msg_lock_failed(ed::message & msg)
  */
 void cluckd::msg_lock_leaders(ed::message & msg)
 {
-    f_election_date = msg.get_integer_parameter(cluck::g_name_cluck_param_election_date);
+    f_election_date = msg.get_timespec_parameter(cluck::g_name_cluck_param_election_date);
 
     // save the new leaders in our own list
     //
@@ -3521,6 +3408,7 @@ void cluckd::msg_lock_status(ed::message & msg)
     status_message.set_command(is_daemon_ready()
             ? cluck::g_name_cluck_cmd_lock_ready
             : cluck::g_name_cluck_cmd_no_lock);
+SNAP_LOG_WARNING << "sending lock status (reply to LOCK_STATUS): " << status_message.get_command() << SNAP_LOG_SEND;
     status_message.reply_to(msg);
     status_message.add_parameter(communicatord::g_name_communicatord_param_cache, communicatord::g_name_communicatord_value_no);
     f_messenger->send_message(status_message);

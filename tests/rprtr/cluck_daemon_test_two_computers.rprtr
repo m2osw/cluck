@@ -6,6 +6,8 @@
 //    simulate a remote cluckd (server: remote_server, service: cluckd)
 //    simulate a local client (server: ${hostname}, service: website)
 
+// TODO: fix IP address of computer two, it cannot be the same as computer 1's IP
+
 hostname(variable_name: hostname)
 set_variable(name: allow_timeout, value: 0)
 
