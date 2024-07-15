@@ -466,7 +466,7 @@ bool cluckd::is_daemon_ready() const
 {
     // we are not yet properly registered
     //
-    if(!f_messenger->is_ready())
+    if(f_messenger == nullptr || !f_messenger->is_ready())
     {
         return false;
     }

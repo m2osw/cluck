@@ -55,6 +55,9 @@ call(label: func_expect_lock_activated_rc1)
 call(label: func_expect_lock_activated_rc2)
 call(label: func_sleep_quietly)
 call(label: func_send_unlock)
+call(label: func_expect_drop_ticket_rc1)
+call(label: func_expect_drop_ticket_rc2)
+call(label: func_expect_unlocked)
 
 
 
@@ -299,6 +302,12 @@ call(label: func_wait_message)
 call(label: func_verify_locked)
 return()
 
+label(name: func_expect_unlocked)
+print(message: "--- UNLOCKED received?....")
+call(label: func_wait_message)
+call(label: func_verify_unlocked)
+return()
+
 label(name: func_expect_lock_activated_rc1)
 print(message: "--- wait for message LOCK_ACTIVATED (rc1)....")
 call(label: func_wait_message)
@@ -309,6 +318,18 @@ label(name: func_expect_lock_activated_rc2)
 print(message: "--- wait for message LOCK_ACTIVATED (rc2)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_activated_rc2)
+return()
+
+label(name: func_expect_drop_ticket_rc1)
+print(message: "--- wait for message DROP_TICKET (rc1)....")
+call(label: func_wait_message)
+call(label: func_verify_drop_ticket_rc1)
+return()
+
+label(name: func_expect_drop_ticket_rc2)
+print(message: "--- wait for message DROP_TICKET (rc2)....")
+call(label: func_wait_message)
+call(label: func_verify_drop_ticket_rc2)
 return()
 
 
@@ -707,6 +728,18 @@ verify_message(
 	})
 return()
 
+// Function: verify UNLOCKED
+label(name: func_verify_unlocked)
+verify_message(
+	command: UNLOCKED,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: website,
+	required_parameters: {
+		object_name: "book_update"
+	})
+return()
+
 // Function: verify LOCK_ACTIVATED for rc1
 label(name: func_verify_lock_activated_rc1)
 verify_message(
@@ -732,6 +765,34 @@ verify_message(
 	required_parameters: {
 		key: "00000001/${hostname}/439",
 		other_key: "00000001/${hostname}/439",
+		object_name: book_update,
+		tag: 209
+	})
+return()
+
+// Function: verify DROP_TICKET for rc1
+label(name: func_verify_drop_ticket_rc1)
+verify_message(
+	command: DROP_TICKET,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		key: "00000001/${hostname}/439",
+		object_name: book_update,
+		tag: 209
+	})
+return()
+
+// Function: verify DROP_TICKET for rc2
+label(name: func_verify_drop_ticket_rc2)
+verify_message(
+	command: DROP_TICKET,
+	sent_service: cluckd,
+	server: rc2,
+	service: cluckd,
+	required_parameters: {
+		key: "00000001/${hostname}/439",
 		object_name: book_update,
 		tag: 209
 	})
@@ -1096,7 +1157,7 @@ label(name: func_send_quitting)
 send_message(
 	command: QUITTING,
 	sent_server: ${hostname},
-	sent_service: "ed-signal",
+	sent_service: "ed_signal",
 	server: ${hostname},
 	service: cluckd)
 return()
@@ -1363,17 +1424,6 @@ return()
 // return()
 // label(name: not_timedout_lock1_lock_failed)
 // exit(error_message: "unhandled LOCK_FAILED")
-// 
-// // Function: verify a UNLOCKED
-// label(name: func_verify_unlocked)
-// verify_message(
-// 	command: UNLOCKED,
-// 	server: "${hostname}",
-// 	service: "website",
-// 	required_parameters: {
-// 		object_name: "lock1"
-// 	})
-// return()
 // 
 // // Function: verify a UNLOCKING
 // label(name: func_verify_unlocking)
