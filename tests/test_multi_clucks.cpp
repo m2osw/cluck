@@ -1,87 +1,83 @@
-/*
- * Description:
- *      Test "any" number of snaplock/snapcommunicator combo on a single
- *      computer.
+// Copyright (c) 2013-2024  Made to Order Software Corp.  All Rights Reserved
+// 
+// https://snapwebsites.org/
+// contact@m2osw.com
+// 
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+/** \file
+ * \brief Test any number of cluck daemons.
  *
- *      This test creates threads, each of which simulates the
- *      snapcommunicator, at least as much as snaplock requires.
+ * Test "any" number of cluck/communicatord combo on a single
+ * computer.
  *
- *      The simulator still uses local network (127.0.0.1) connections
- *      using ports `9000` to `9000 + n - 1` with `n` being the number of
- *      simulator (WARNING: if you are running a DNS, 5353 is likely
- *      used so you should not create more than 352 instances.
+ * This test creates threads, each of which simulates the
+ * snapcommunicator, at least as much as snaplock requires.
  *
- * Documentation:
- *      What does the test do?
+ * The simulator still uses local network (127.0.0.1) connections
+ * using ports `9000` to `9000 + n - 1` with `n` being the number of
+ * simulator (WARNING: if you are running a DNS, 5353 is likely
+ * used so you should not create more than 352 instances.
  *
- *      It creates `n` (command line parameter) instances of the
- *      snapcommunicator simulator. The simulator is a self contained
- *      class so it can safely be used with threads.
+ * \li What does the test do?
  *
- *      For each snapcommunicator instance, it sets up a configuration
- *      file and starts `snaplock -c <filename>`. That configuration will
- *      specify a service name and a server name on top of the usual
- *      parameters.
+ * It creates `n` (command line parameter) instances of the
+ * snapcommunicator simulator. The simulator is a self contained
+ * class so it can safely be used with threads.
  *
- *      The test checks that the correct leaders get elected depending
- *      on the setup. If you set `n` to a pretty large value, the CLUSTERUP
- *      signal will not happen right away...
+ * For each snapcommunicator instance, it sets up a configuration
+ * file and starts `snaplock -c <filename>`. That configuration will
+ * specify a service name and a server name on top of the usual
+ * parameters.
  *
- * License:
- *      Copyright (c) 2013-2024  Made to Order Software Corp.  All Rights Reserved
- * 
- *      https://snapwebsites.org/
- *      contact@m2osw.com
- * 
- *      Permission is hereby granted, free of charge, to any person obtaining a
- *      copy of this software and associated documentation files (the
- *      "Software"), to deal in the Software without restriction, including
- *      without limitation the rights to use, copy, modify, merge, publish,
- *      distribute, sublicense, and/or sell copies of the Software, and to
- *      permit persons to whom the Software is furnished to do so, subject to
- *      the following conditions:
- *
- *      The above copyright notice and this permission notice shall be included
- *      in all copies or substantial portions of the Software.
- *
- *      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- *      OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- *      MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- *      IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
- *      CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
- *      TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
- *      SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * The test checks that the correct leaders get elected depending
+ * on the setup. If you set `n` to a pretty large value, the CLUSTERUP
+ * signal will not happen right away...
  */
 
 
 // self
 //
-#include "test_multi_snaplocks.h"
+#include "test_multi_clucks.h"
 
 #include "version.h"
 
-// snapwebsites lib
-//
-#include <snapwebsites/mkdir_p.h>
-#include <snapwebsites/qstring_stream.h>
 
-// advgetopt lib
+// snapwebsites
 //
-#include <advgetopt/exception.h>
+#include    <snapdev/mkdir_p.h>
+#include    <snapdev/qstring_stream.h>
+#include    <snapdev/stringize.h>
+
+
+// advgetopt
+//
+#include    <advgetopt/exception.h>
+
 
 // Qt lib
 //
-#include <QFile>
+#include    <QFile>
 
-// C++ lib
+
+// C++
 //
-#include <iostream>
+#include    <iostream>
 
-// boost lib
-//
-#include <boost/preprocessor/stringize.hpp>
 
-// C lib
+// C
 //
 #include <sys/wait.h>
 
@@ -89,13 +85,6 @@
 namespace snap_test
 {
 
-
-
-/***************************************************************************
- *** COMMAND LINE OPTIONS **************************************************
- ***************************************************************************/
-
-QString g_log_conf = QString("/etc/snapwebsites/logger/test_multi_snaplocks.properties");
 
 
 advgetopt::option const g_options[] =
@@ -174,10 +163,8 @@ advgetopt::options_environment const g_options_environment =
     .f_version = SNAPLOCK_VERSION_STRING,
     .f_license = "GNU GPL v2",
     .f_copyright = "Copyright (c) 2013-"
-                   BOOST_PP_STRINGIZE(UTC_BUILD_YEAR)
+                   SNAPDEV_STRINGIZE(UTC_BUILD_YEAR)
                    " by Made to Order Software Corporation -- All Rights Reserved",
-    //.f_build_date = UTC_BUILD_DATE,
-    //.f_build_time = UTC_BUILD_TIME
 };
 #pragma GCC diagnostic pop
 
@@ -1129,7 +1116,7 @@ void snapcommunicator_emulator::mark_unlocked()
 snaplock_executable::snaplock_executable(test_multi_snaplocks_pointer_t test, int port, std::string const & snaplock_path, std::string const & config_path)
     : snap_timer(-1)
     , f_port(port)
-    , f_snaplock_executable(snaplock_path)
+    , f_cluck_executable(snaplock_path)
     , f_config_path(config_path)
     , f_test(test)
 {
@@ -1210,7 +1197,7 @@ void snaplock_executable::start()
         snaplock_config.save(false);
 
         std::vector<std::string> args;
-        args.push_back(f_snaplock_executable);
+        args.push_back(f_cluck_executable);
         args.push_back("--debug");
         args.push_back("--config");
         args.push_back(f_config_path);
@@ -1225,7 +1212,7 @@ void snaplock_executable::start()
         args_strings.push_back(nullptr); // NULL terminated
 
         execvp(
-            f_snaplock_executable.c_str(),
+            f_cluck_executable.c_str(),
             const_cast<char * const *>(&args_strings[0])
         );
         int const e(errno);
@@ -1233,7 +1220,7 @@ void snaplock_executable::start()
         // execvp() failed?!
         //
         throw test_exception_exit("error: execvp() failed to start snaplock ("
-                  + f_snaplock_executable
+                  + f_cluck_executable
                   + ") with errno: "
                   + std::to_string(e)
                   + ", "
@@ -1343,7 +1330,7 @@ void snaplock_executable::process_timeout()
 
 
 communicator_and_lock::communicator_and_lock(test_multi_snaplocks_pointer_t test, int port, std::string const & snaplock_path, std::string const & config_path)
-    : f_snaplock_executable(snaplock_path)
+    : f_cluck_executable(snaplock_path)
     , f_config_path(config_path)
     , f_communicator(std::make_shared<snapcommunicator_emulator>(test, port))
     , f_snaplock(std::make_shared<snaplock_executable>(test, port, snaplock_path, config_path))
@@ -1638,7 +1625,7 @@ test_multi_snaplocks::test_multi_snaplocks(int argc, char ** argv)
 {
     f_count = f_opt.get_long("count", 0, 1, 1000);
     f_port = f_opt.get_long("port", 0, 1, 65535);
-    f_snaplock_executable = f_opt.get_string("snaplock");
+    f_cluck_executable = f_opt.get_string("cluck");
 
     // ensure configuration path is properly setup, we'll manually create
     // config files, one per snaplock instance
@@ -1665,19 +1652,9 @@ test_multi_snaplocks::test_multi_snaplocks(int argc, char ** argv)
         std::cerr << "starting with seed: " << seed << ", use --seed to reuse the same seed again and again." << std::endl;
     }
 
-    QFile log(g_log_conf);
-    if(!log.exists())
-    {
-        std::cerr << "error: \""
-                  << g_log_conf
-                  << "\" does not exist, it is required for this test to start."
-                  << std::endl;
-        throw test_exception_exit("log property file missing");
-    }
+    snaplogger::setup_catch2_nested_diagnostics();
 
-    snap::logging::configure_conffile(g_log_conf);
-
-    SNAP_LOG_INFO("--------------------------- starting test_multi_snaplocks");
+    SNAP_LOG_INFO << "--------------------------- starting test_multi_snaplocks" << SNAP_LOG_SEND;
 
     // Stop on these signals, log them, then terminate.
     //
@@ -1746,7 +1723,7 @@ void test_multi_snaplocks::run()
         communicator_and_lock::pointer_t t(std::make_shared<communicator_and_lock>(
                                   shared_from_this()
                                 , port
-                                , f_snaplock_executable
+                                , f_cluck_executable
                                 , f_config_path + "/" + std::to_string(port)));
         f_emulators.push_back(t);
 

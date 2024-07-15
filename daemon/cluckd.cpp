@@ -1166,8 +1166,8 @@ ticket::pointer_t cluckd::find_first_lock(std::string const & object_name)
         {
             if(key_ticket->second->timed_out())
             {
-                // that ticket timed out, send an UNLOCK or LOCKFAILED
-                // message and get rid of it
+                // that ticket timed out, send an UNLOCKING, UNLOCKED,
+                // or LOCK_FAILED message and get rid of it
                 //
                 key_ticket->second->lock_failed();
                 if(key_ticket->second->timed_out())
@@ -1988,7 +1988,7 @@ void cluckd::msg_activate_lock(ed::message & msg)
     auto ticket(find_first_lock(object_name));
     if(ticket != nullptr)
     {
-        // found it!
+        // found a lock
         //
         first_key = ticket->get_ticket_key();
 
@@ -2188,6 +2188,7 @@ void cluckd::msg_add_ticket(ed::message & msg)
     ticket_added_message.reply_to(msg);
     ticket_added_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
     ticket_added_message.add_parameter(cluck::g_name_cluck_param_key, key);
+    ticket_added_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
     f_messenger->send_message(ticket_added_message);
 }
 
@@ -2408,13 +2409,14 @@ void cluckd::msg_get_max_ticket(ed::message & msg)
     //
     cleanup();
 
-    ticket::ticket_id_t last_ticket(get_last_ticket(object_name));
+    ticket::ticket_id_t const last_ticket(get_last_ticket(object_name));
 
     ed::message reply;
     reply.set_command(cluck::g_name_cluck_cmd_max_ticket);
     reply.reply_to(msg);
     reply.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
     reply.add_parameter(cluck::g_name_cluck_param_key, key);
+    reply.add_parameter(cluck::g_name_cluck_param_tag, tag);
     reply.add_parameter(cluck::g_name_cluck_param_ticket_id, last_ticket);
     f_messenger->send_message(reply);
 }
@@ -3728,7 +3730,7 @@ void cluckd::msg_ticket_added(ed::message & msg)
             if(obj_entering_ticket == f_entering_tickets.end())
             {
                 // this happens all the time because the entering ticket
-                // gets removed on the first TICKETADDED we receive so
+                // gets removed on the first TICKET_ADDED we receive so
                 // on the second one we get here...
                 //
                 SNAP_LOG_TRACE
@@ -3736,7 +3738,7 @@ void cluckd::msg_ticket_added(ed::message & msg)
                     << object_name
                     << "\" not present in f_entering_ticket (key: \""
                     << key
-                    << "\".)"
+                    << "\")."
                     << SNAP_LOG_SEND;
                 return;
             }
@@ -3744,10 +3746,10 @@ void cluckd::msg_ticket_added(ed::message & msg)
         }
         else
         {
-            SNAP_LOG_DEBUG
+            SNAP_LOG_WARNING
                 << "found object \""
                 << object_name
-                << "\" but could not find a ticket with key \""
+                << "\" but could not find a corresponding ticket with key \""
                 << key
                 << "\"..."
                 << SNAP_LOG_SEND;
@@ -3755,7 +3757,7 @@ void cluckd::msg_ticket_added(ed::message & msg)
     }
     else
     {
-        SNAP_LOG_DEBUG
+        SNAP_LOG_WARNING
             << "object \""
             << object_name
             << "\" not found."
@@ -3867,7 +3869,7 @@ void cluckd::msg_unlock(ed::message & msg)
                 f_tickets.erase(obj_ticket);
             }
         }
-else SNAP_LOG_WARNING << "and we could not find that key in that object's map..." << SNAP_LOG_SEND;
+else SNAP_LOG_WARNING << "and we could not find key \"" << entering_key << "\" in that object's map..." << SNAP_LOG_SEND;
     }
 
     // reset the timeout with the other locks

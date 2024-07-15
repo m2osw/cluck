@@ -1,11 +1,4 @@
 /*
- * Text:
- *      snaplock/tests/test_multi_snaplocks.h
- *
- * Description:
- *      Test used to verify that snaplock works as expected in large numbers
- *      and only using a single computer.
- *
  * License:
  *      Copyright (c) 2013-2024  Made to Order Software Corp.  All Rights Reserved
  * 
@@ -34,17 +27,27 @@
 #pragma once
 
 
-// snapwebsites lib
+/** \file
+ * \brief Test cluck in a simulated multi-computer environment.
+ *
+ * This test is used to verify that cluck works as expected in large numbers.
+ * The test runs on a single computer by assigning specific names and IP
+ * addresses to each instance of cluck.
+ */
+
+
+// eventdispatcher
 //
-#include <snapwebsites/snap_communicator_dispatcher.h>
+#include    <eventdispatcher/dispatcher.h>
 
-// advgetopt lib
+
+// advgetopt
 //
-#include <advgetopt/advgetopt.h>
+#include    <advgetopt/advgetopt.h>
 
 
 
-namespace snap_test
+namespace cluck_test
 {
 
 
@@ -292,7 +295,7 @@ public:
 
 private:
     int const           f_port;
-    std::string const   f_snaplock_executable;
+    std::string const   f_cluck_executable;
     std::string const   f_config_path;
     pid_t               f_child = static_cast<pid_t>(-1);
     test_multi_snaplocks_pointer_t
@@ -328,7 +331,7 @@ public:
     snaplock_executable::pointer_t          get_snaplock() const;
 
 private:
-    std::string const                       f_snaplock_executable;
+    std::string const                       f_cluck_executable;
     std::string const                       f_config_path;
     snapcommunicator_emulator::pointer_t    f_communicator;
     snaplock_executable::pointer_t          f_snaplock;
@@ -448,7 +451,7 @@ private:
     advgetopt::getopt                   f_opt;
     int                                 f_count = 0;        // number of instances
     int                                 f_port = 9000;      // starting port
-    std::string                         f_snaplock_executable = std::string("snaplock");
+    std::string                         f_cluck_executable = std::string("snaplock");
     std::string                         f_config_path = std::string("/tmp/test-multi-snaplock");
     QString                             f_cluster_status = QString("CLUSTERDOWN");
     communicator_and_lock::vector_t     f_emulators = communicator_and_lock::vector_t();

@@ -573,6 +573,12 @@ void ticket::entered()
  * QUORUM, then we have the largest number and we can move on to the
  * next stage, which is to add the ticket.
  *
+ * \note
+ * We reach quorum immediately in our current implementation since we
+ * have 1, 2, or 3 leaders. So this function takes the input in account
+ * once, calls add_ticket() immediately and if the 3rd leader does send
+ * a reply too, it gets ignored.
+ *
  * \param[in] new_max_ticket  Another possibly larger ticket.
  */
 void ticket::max_ticket(ticket_id_t new_max_ticket)
@@ -1197,7 +1203,7 @@ cluck::timeout_t ticket::get_unlock_duration() const
  */
 void ticket::set_ticket_number(ticket_id_t const number)
 {
-    if(f_our_ticket != 0)
+    if(f_our_ticket != NO_TICKET)
     {
         throw cluck::logic_error("ticket::set_ticket_number() called with "
                 + std::to_string(number)
@@ -1236,10 +1242,10 @@ void ticket::set_ready()
  *
  * This function returns the ticket number of this ticket. This
  * is generally used to determine the largest ticket number
- * currently in use in order to assign a new ticket number
- * to a process.
+ * currently in use in order to attach a new ticket number
+ * to a lock object.
  *
- * By default the value is 0 meaning that no ticket number was
+ * By default the value is NO_TICKET meaning that no ticket number was
  * yet assigned to that ticket object.
  *
  * \return The current ticket number.
