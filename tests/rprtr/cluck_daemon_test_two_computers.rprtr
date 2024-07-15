@@ -81,6 +81,12 @@ call(label: func_verify_no_lock)
 goto(label: next_message)
 
 label(name: not_no_lock)
+has_message(command: LOCK_READY)
+if(false: not_lock_ready)
+call(label: func_verify_lock_ready)
+goto(label: next_message)
+
+label(name: not_lock_ready)
 has_message(command: CLUSTER_STATUS)
 if(false: not_cluster_status)
 call(label: func_verify_cluster_status)
@@ -294,6 +300,17 @@ verify_message(
 	command: NO_LOCK,
 	server: `${hostname}|`,
 	service: `website|\\.`,
+	required_parameters: {
+		cache: "no"
+	})
+return()
+
+// Function: verify a LOCK READY
+label(name: func_verify_lock_ready)
+verify_message(
+	command: LOCK_READY,
+	sent_service: "cluckd",
+	service: ".",
 	required_parameters: {
 		cache: "no"
 	})

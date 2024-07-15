@@ -33,11 +33,12 @@ call(label: func_expect_service_status)
 call(label: func_expect_fluid_settings_listen)
 call(label: func_expect_cluster_status)
 call(label: func_expect_lock_started_initial)
-call(label: func_expect_no_lock)
+//call(label: func_expect_no_lock)
 call(label: func_expect_lock_started_reply_a)
-call(label: func_expect_no_lock)
+//call(label: func_expect_no_lock)
 call(label: func_expect_lock_started_reply_b)
 //call(label: func_expect_lock_leaders) -- we send that one in this test
+call(label: func_expect_lock_ready)
 call(label: func_expect_lock_entering_rc1)
 call(label: func_expect_lock_entering_rc2)
 call(label: func_expect_get_max_ticket_rc1)
@@ -194,6 +195,7 @@ label(name: func_expect_lock_started_reply_a)
 print(message: "--- wait for message LOCK_STARTED (reply_a)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_started_to_rc1_early)
+call(label: func_send_lock_leaders_from_rc1)
 return()
 
 //label(name: func_expect_lock_leaders)
@@ -205,7 +207,12 @@ label(name: func_expect_lock_started_reply_b)
 print(message: "--- wait for message LOCK_STARTED (reply_b)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_started_to_rc2_early)
-call(label: func_send_lock_leaders_from_rc1)
+return()
+
+label(name: func_expect_lock_ready)
+print(message: "--- wait for message LOCK_READY....")
+call(label: func_wait_message)
+call(label: func_verify_lock_ready)
 // WARNING: variable is reused in the verify_lock_started and others
 now(variable_name: lock_timeout)
 set_variable(name: lock_timeout, value: ${lock_timeout} + 60) // now + 1 minute
@@ -459,6 +466,19 @@ verify_message(
 		leader3
 	})
 print(message: "--- message LOCK_STARTED works (rc2)....")
+return()
+
+// Function: verify LOCK READY
+label(name: func_verify_lock_ready)
+print(message: "--- verify message LOCK_READY....")
+verify_message(
+	command: LOCK_READY,
+	sent_service: cluckd,
+	service: ".",
+	required_parameters: {
+		cache: no
+	})
+print(message: "--- message LOCK_READY works....")
 return()
 
 // Function: verify LOCK STARTED (to rc2)

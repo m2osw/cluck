@@ -28,6 +28,7 @@ configure_file(
 
 add_library(${PROJECT_NAME} SHARED
     cluck.cpp
+    cluck_status.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/names.cpp
     version.cpp
 )
