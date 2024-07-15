@@ -991,7 +991,7 @@ SNAP_LOG_WARNING
 void cluckd::check_lock_status()
 {
     bool const ready(is_daemon_ready());
-    if(f_lock_status != ready)
+    if(f_lock_status == ready)
     {
         return;
     }
