@@ -3410,7 +3410,7 @@ void cluckd::msg_lock_status(ed::message & msg)
     status_message.set_command(is_daemon_ready()
             ? cluck::g_name_cluck_cmd_lock_ready
             : cluck::g_name_cluck_cmd_no_lock);
-SNAP_LOG_WARNING << "sending lock status (reply to LOCK_STATUS): " << status_message.get_command() << SNAP_LOG_SEND;
+
     status_message.reply_to(msg);
     status_message.add_parameter(communicatord::g_name_communicatord_param_cache, communicatord::g_name_communicatord_value_no);
     f_messenger->send_message(status_message);

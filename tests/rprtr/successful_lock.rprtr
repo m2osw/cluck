@@ -34,6 +34,17 @@ save_parameter_value(parameter_name: tag, variable_name: tag)
 save_parameter_value(parameter_name: pid, variable_name: pid)
 save_parameter_value(parameter_name: serial, variable_name: serial)
 
+// pretend we now send the LOCK_READY signal
+send_message(
+	command: LOCK_READY,
+	sent_server: lock_server,
+	sent_service: cluckd,
+	server: my_server,
+	service: cluck_test,
+	parameters: {
+		cache: "no"
+	})
+
 // there are no duration & unlock_duration in this event, use the
 // defaults which are 5 seconds
 //
@@ -65,7 +76,7 @@ verify_message(
         server: ".",
         service: communicatord,
         required_parameters: {
-                list: "DATA,LOCKED,LOCK_FAILED,TRANSMISSION_REPORT,UNLOCKED,UNLOCKING"
+                list: "DATA,LOCKED,LOCK_FAILED,LOCK_READY,NO_LOCK,TRANSMISSION_REPORT,UNLOCKED,UNLOCKING"
         })
 goto(label: next_message)
 

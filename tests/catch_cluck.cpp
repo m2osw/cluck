@@ -25,6 +25,7 @@
 // cluck
 //
 #include    <cluck/cluck.h>
+#include    <cluck/cluck_status.h>
 #include    <cluck/exception.h>
 #include    <cluck/names.h>
 #include    <cluck/version.h>
@@ -844,6 +845,22 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
         ed::communicator::instance()->add_connection(timer);
         messenger->set_timer(timer);
 
+        bool was_ready(false);
+        cluck::listen_to_cluck_status(
+              messenger
+            , messenger->get_dispatcher()
+            , [&was_ready](ed::message & msg) {
+                if(msg.get_command() != cluck::g_name_cluck_cmd_lock_ready
+                && msg.get_command() != cluck::g_name_cluck_cmd_no_lock)
+                {
+                    throw std::runtime_error("listen to cluck status receive an unexpected mesage.");
+                }
+                if(cluck::is_lock_ready())
+                {
+                    was_ready = true;
+                }
+            });
+
         cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
               "lock-name"
             , messenger
@@ -870,6 +887,8 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
         CATCH_REQUIRE(guarded->get_timeout_date() == cluck::timeout_t());
 
         messenger->unset_guard();
+
+        CATCH_REQUIRE(was_ready);
     }
     CATCH_END_SECTION()
 

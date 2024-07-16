@@ -26,9 +26,10 @@ namespace cluck
 
 
 
-void                initialize_cluck_status(
+void                listen_to_cluck_status(
                               ed::connection_with_send_message::pointer_t messenger
-                            , ed::dispatcher::pointer_t dispatcher);
+                            , ed::dispatcher::pointer_t dispatcher
+                            , typename ed::dispatcher_match::execute_callback_t callback);
 bool                is_lock_ready();
 
 
