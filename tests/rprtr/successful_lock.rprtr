@@ -34,7 +34,12 @@ save_parameter_value(parameter_name: tag, variable_name: tag)
 save_parameter_value(parameter_name: pid, variable_name: pid)
 save_parameter_value(parameter_name: serial, variable_name: serial)
 
-// pretend we now send the LOCK_READY signal
+// pretend we now send the LOCK_READY or NO_LOCK signal
+//
+print(message: "--- test_case = [${test_case}]....")
+compare(expression: "${test_case}" <=> "invalid_tag")
+if(equal: send_no_lock)
+print(message: "--- test_case = not equal invalid tag....")
 send_message(
 	command: LOCK_READY,
 	sent_server: lock_server,
@@ -44,11 +49,46 @@ send_message(
 	parameters: {
 		cache: "no"
 	})
+goto(label: skip_no_lock)
+label(name: send_no_lock)
+print(message: "--- test_case = EQUAL?! invalid tag....")
+send_message(
+	command: NO_LOCK,
+	sent_server: lock_server,
+	sent_service: cluckd,
+	server: my_server,
+	service: cluck_test,
+	parameters: {
+		cache: "no"
+	})
+label(name: skip_no_lock)
+
+now(variable_name: now)
+
+compare(expression: "${test_case}" <=> "invalid_tag")
+if(not_equal: send_valid_lock)
+
+// send LOCKED with an invalid tag
+//
+send_message(
+	command: LOCKED,
+	sent_server: lock_server,
+	sent_service: cluckd,
+	server: my_server,
+	service: cluck_test,
+	parameters: {
+		object_name: "lock-name",
+		tag: "bad_tag",
+		timeout_date: ${now},
+		unlocked_date: ${now}
+	})
+wait(timeout: 1, mode: drain)
+exit()
 
 // there are no duration & unlock_duration in this event, use the
 // defaults which are 5 seconds
 //
-now(variable_name: now)
+label(name: send_valid_lock)
 set_variable(name: locked_date, value: ${now} + 5)
 set_variable(name: unlocked_date, value: ${locked_date} + 5)
 send_message(

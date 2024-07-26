@@ -42,6 +42,7 @@
 #include    <eventdispatcher/reporter/lexer.h>
 #include    <eventdispatcher/reporter/parser.h>
 #include    <eventdispatcher/reporter/state.h>
+#include    <eventdispatcher/reporter/variable_string.h>
 
 
 // advgetopt
@@ -150,18 +151,15 @@ public:
         //
         tcp_client_permanent_message_connection::process_connected();
 
-std::cerr << "--- received process_connected()! " << static_cast<void *>(f_guarded.get()) << "\n";
         CATCH_REQUIRE_FALSE(f_guarded->is_locked());
         CATCH_REQUIRE_FALSE(f_guarded->is_busy());
         CATCH_REQUIRE(f_guarded->lock());
         CATCH_REQUIRE_FALSE(f_guarded->is_locked());
         CATCH_REQUIRE(f_guarded->is_busy());
-std::cerr << "--- ready!\n";
     }
 
     bool lock_obtained(cluck::cluck * c)
     {
-std::cerr << "--- LOCK obtained!\n";
         CATCH_REQUIRE(c->is_locked());
         CATCH_REQUIRE(c->is_busy());
         CATCH_REQUIRE_FALSE(c->lock());
@@ -178,7 +176,6 @@ std::cerr << "--- LOCK obtained!\n";
         {
         case sequence_t::SEQUENCE_SUCCESS:
             {
-std::cerr << "--- got a message in SEQUENCE SUCCESS... LOCK was obtained, we acted on it, we're done when we return\n";
                 // in lock simple the cluck object is expected to
                 // automatically call the f_guarded->unlock() function
                 // so we do not need it here
@@ -189,7 +186,6 @@ std::cerr << "--- got a message in SEQUENCE SUCCESS... LOCK was obtained, we act
 
         case sequence_t::SEQUENCE_EXTENDED:
             {
-std::cerr << "--- got a message in SEQUENCE EXTENDED... LOCK was obtained, we send a 'unique' message (READ), wait for reply to unlock\n";
                 // the cluck object does that, not us!?
                 ed::message read;
                 read.set_service("tester");
@@ -214,7 +210,6 @@ std::cerr << "--- got a message in SEQUENCE EXTENDED... LOCK was obtained, we se
 
         case sequence_t::SEQUENCE_EXTENDED_SMALL_GAP:
             {
-std::cerr << "--- got a message in SEQUENCE EXTENDED (small gap: 3s)... LOCK was obtained, we send a 'unique' message (READ), wait for reply to unlock\n";
                 // the cluck object does that, not us!?
                 ed::message read;
                 read.set_service("tester");
@@ -240,7 +235,6 @@ std::cerr << "--- got a message in SEQUENCE EXTENDED (small gap: 3s)... LOCK was
         case sequence_t::SEQUENCE_FAIL_MISSING_UNLOCKED_PARAMETERS:
             // send the UNLOCK immediately
             //
-std::cerr << "--- processing the lock_obtained() SEQUENCE_FAIL_MISSING_UNLOCKED_PARAMETERS by sending an UNLOCK\n";
             c->unlock();
             break;
 
@@ -265,7 +259,6 @@ std::cerr << "--- processing the lock_obtained() SEQUENCE_FAIL_MISSING_UNLOCKED_
         CATCH_REQUIRE_FALSE(c->is_locked());
         //CATCH_REQUIRE_FALSE(c->is_busy()); -- on error without any valid locking this is not reliable
 
-std::cerr << "--- lock failed was called: " << std::boolalpha << f_expect_lock_failed << "\n";
         CATCH_REQUIRE(f_expect_lock_failed);
 
         switch(f_sequence)
@@ -308,7 +301,6 @@ std::cerr << "--- lock failed was called: " << std::boolalpha << f_expect_lock_f
         CATCH_REQUIRE_FALSE(c->is_locked());
         //CATCH_REQUIRE_FALSE(c->is_busy()); -- on error we cannot be sure of this state
 
-std::cerr << "--- and finally was called: " << std::boolalpha << f_expect_finally << "\n";
         CATCH_REQUIRE(f_expect_finally);
         f_expect_finally = false;
 
@@ -316,7 +308,6 @@ std::cerr << "--- and finally was called: " << std::boolalpha << f_expect_finall
         {
         case sequence_t::SEQUENCE_FAIL_MISSING_LOCKED_PARAMETERS:
             ++f_step;
-std::cerr << "--- step: " << f_step << "\n";
             if(f_step < 5)
             {
                 // adjust the "select" value in the script
@@ -386,7 +377,6 @@ std::cerr << "--- step: " << f_step << "\n";
 
     void msg_data(ed::message & msg)
     {
-std::cerr << "--- got DATA message...\n";
         CATCH_REQUIRE(msg.get_sent_from_server() == "my_server");
         CATCH_REQUIRE(msg.get_sent_from_service() == "tester");
         CATCH_REQUIRE(msg.get_server() == "other_server");
@@ -403,7 +393,6 @@ std::cerr << "--- got DATA message...\n";
         }
         if(auto_unlock)
         {
-std::cerr << "--- DATA message -> send UNLOCK\n";
             f_guarded->unlock();
         }
 
@@ -832,6 +821,10 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
         SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
         SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
         p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::variable_string::pointer_t var(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::variable_string>("test_case", "string"));
+        var->set_string("valid");
+        s->set_variable(var);
 
         SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
         e->start();
@@ -1815,6 +1808,83 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
         //CATCH_REQUIRE(guarded->get_timeout_date() == ...); -- we could test this with a proper range
 
         messenger->unset_guard();
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("cluck_client_error: LOCKED with invalid tag")
+    {
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/successful_lock.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::variable_string::pointer_t var(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::variable_string>("test_case", "string"));
+        var->set_string("invalid_tag");
+        s->set_variable(var);
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        test_messenger::pointer_t messenger(std::make_shared<test_messenger>(
+                  get_address()
+                , ed::mode_t::MODE_PLAIN
+                , test_messenger::sequence_t::SEQUENCE_SUCCESS));
+        ed::communicator::instance()->add_connection(messenger);
+        test_timer::pointer_t timer(std::make_shared<test_timer>(messenger));
+        ed::communicator::instance()->add_connection(timer);
+        messenger->set_timer(timer);
+
+        bool was_ready(true);
+        cluck::listen_to_cluck_status(
+              messenger
+            , messenger->get_dispatcher()
+            , [&was_ready](ed::message & msg) {
+                if(msg.get_command() != cluck::g_name_cluck_cmd_lock_ready
+                && msg.get_command() != cluck::g_name_cluck_cmd_no_lock)
+                {
+                    throw std::runtime_error("listen to cluck status receive an unexpected mesage.");
+                }
+                if(!cluck::is_lock_ready())
+                {
+                    was_ready = false;
+                }
+            });
+
+        cluck::cluck::pointer_t guarded(std::make_shared<cluck::cluck>(
+              "lock-name"
+            , messenger
+            , messenger->get_dispatcher()
+            , cluck::mode_t::CLUCK_MODE_SIMPLE));
+        ed::communicator::instance()->add_connection(guarded);
+        CATCH_REQUIRE(guarded->get_mode() == cluck::mode_t::CLUCK_MODE_SIMPLE);
+        CATCH_REQUIRE(guarded->get_type() == cluck::type_t::CLUCK_TYPE_READ_WRITE);
+        messenger->set_guard(guarded);
+
+        e->set_thread_done_callback([messenger, timer, guarded]()
+            {
+                ed::communicator::instance()->remove_connection(messenger);
+                ed::communicator::instance()->remove_connection(timer);
+                ed::communicator::instance()->remove_connection(guarded);
+            });
+
+        messenger->set_expect_lock_obtained(true);
+        CATCH_REQUIRE_THROWS_MATCHES(
+              //e->run() -- this one catches exceptions so bypass that
+              ed::communicator::instance()->run()
+            , ed::invalid_message
+            , Catch::Matchers::ExceptionMessage("event_dispatcher_exception: message::get_integer_parameter(): command \"LOCKED\" expected an integer for \"tag\" but \"bad_tag\" could not be converted."));
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+        CATCH_REQUIRE_FALSE(messenger->get_expect_finally());
+        CATCH_REQUIRE(guarded->get_reason() == cluck::reason_t::CLUCK_REASON_NONE);
+        CATCH_REQUIRE(guarded->get_timeout_date() == cluck::timeout_t());
+
+        messenger->unset_guard();
+
+        CATCH_REQUIRE_FALSE(was_ready);
     }
     CATCH_END_SECTION()
 }
