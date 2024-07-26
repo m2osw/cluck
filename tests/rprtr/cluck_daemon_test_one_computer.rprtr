@@ -117,8 +117,19 @@ if(false: not_recognized)
 call(label: func_verify_unlocking)
 call(label: func_send_quitting)
 //goto(label: next_message)
+clear_message()
+has_message()
+if(true: got_unexpected_message)
 wait(timeout: 5, mode: drain)
+has_message()
+if(true: got_unexpected_message)
 exit()
+
+label(name: got_unexpected_message)
+show_message()
+exit(error_message: "got message while draining final send()")
+
+
 
 label(name: not_recognized)
 exit(error_message: "received an unknown command")
@@ -420,7 +431,7 @@ send_message(
 	})
 return()
 
-// Function: send QUIT
+// Function: send QUITTING
 label(name: func_send_quitting)
 send_message(
 	command: QUITTING,
