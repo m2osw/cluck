@@ -21,10 +21,16 @@
   things such as how much longer it will take for a lock to succeed
   giving applications a way to decide whether to continue to wait or not.
 
+* Look into properly handling the case where the other two leaders go out
+  and we are currently waiting on replies that will never make it. For example,
+  the ticket::entered() sends a `GET_MAX_TICKET` event. If we never receive
+  a reply that lock will linger forever (i.e. no timeout exists for that
+  and most of the other inter-leader messages).
+
 * Convert the Paxos conversation to use UDP, albeit probably not in
-  broadcast mode because VPNs do not always allow it and if we only
-  have 3 to 5 instances of cluckd when we use 100 computers, it would
-  be a huge waste.
+  broadcast mode because VPNs do not always allow it and for only
+  3 instances (i.e. leaders) of cluckd, it would be a huge waste if
+  broadcasting to 100 computers in the cluster.
 
 * When we lose the cluster (see `CLUSTER_DOWN` message handling), we void
   the existing locks, but I do think that this is not required.

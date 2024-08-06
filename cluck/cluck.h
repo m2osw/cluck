@@ -47,7 +47,7 @@ enum class reason_t
     CLUCK_REASON_REMOTE_TIMEOUT,        // FAILED_LOCK was received with a "timeout" error
     CLUCK_REASON_DEADLOCK,              // FAILED_LOCK was received with a "deadlock" error
     CLUCK_REASON_TRANSMISSION_ERROR,    // communicatord could not forward the message to a cluckd
-    CLUCK_REASON_INVALID,               // communicatord did not like our message
+    CLUCK_REASON_INVALID,               // someone did not like our message
 };
 
 
@@ -87,6 +87,9 @@ inline timeout_t  CLUCK_LOCK_OBTENTION_MAXIMUM_TIMEOUT = timeout_t(60 * 60, 0); 
 inline timeout_t  CLUCK_LOCK_DURATION_DEFAULT_TIMEOUT = timeout_t(5, 0);
 inline timeout_t  CLUCK_UNLOCK_DEFAULT_TIMEOUT = timeout_t(5, 0);
 inline timeout_t  CLUCK_UNLOCK_MINIMUM_TIMEOUT = timeout_t(3, 0);
+
+
+inline std::size_t          CLUCK_MAXIMUM_ENTERING_LOCKS = 100;
 
 
 timeout_t                   get_lock_obtention_timeout();

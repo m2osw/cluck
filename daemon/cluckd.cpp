@@ -1001,7 +1001,6 @@ void cluckd::check_lock_status()
     status_message.set_command(f_lock_status
                     ? cluck::g_name_cluck_cmd_lock_ready
                     : cluck::g_name_cluck_cmd_no_lock);
-SNAP_LOG_WARNING << "sending lock status (on a check): " << status_message.get_command() << SNAP_LOG_SEND;
     status_message.set_service(communicatord::g_name_communicatord_server_me);
     status_message.add_parameter(communicatord::g_name_communicatord_param_cache, communicatord::g_name_communicatord_value_no);
     f_messenger->send_message(status_message);
@@ -1503,6 +1502,8 @@ void cluckd::cleanup()
                 << object_name
                 << "\" / \""
                 << client_pid
+                << "\" / \""
+                << tag
                 << "\" timed out before leaders were known."
                 << SNAP_LOG_SEND;
 
@@ -2055,7 +2056,12 @@ void cluckd::msg_add_ticket(ed::message & msg)
             {
                 // this ticket exists on this system
                 //
-                throw cluck::logic_error("cluck::add_ticket() ticket already exists");
+                throw cluck::logic_error(
+                      "cluckd::msg_add_ticket(): ticket \""
+                    + object_name
+                    + "\" with key \""
+                    + key
+                    + "\" already exists");
             }
         }
     }
@@ -2389,6 +2395,12 @@ void cluckd::msg_drop_ticket(ed::message & msg)
  * This function searches the list of tickets for the largest one
  * and returns that number.
  *
+ * Note that this is specific to a given lock as defined by the object
+ * name of that lock. It is not the largest of all tickets across the
+ * entire set.
+ *
+ * The function replies with the MAX_TICKET message.
+ *
  * \param[in] msg  The message just received.
  *
  * \return The largest ticket number that currently exist in the list
@@ -2704,6 +2716,30 @@ void cluckd::msg_lock(ed::message & msg)
 
             return;
         }
+        if(obj_ticket->second.size() >= cluck::CLUCK_MAXIMUM_ENTERING_LOCKS)
+        {
+            // this is a failure in the algorithm (unfortunately), if you
+            // send LOCK commands without much pause, the number of entering
+            // ticket can grow forever; the following is a way to avoid
+            // that situation by preventing such inconsiderate growth.
+            //
+            SNAP_LOG_ERROR
+                << "too many entering tickets for object name \""
+                << object_name
+                << "\"."
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_overflow);
+            f_messenger->send_message(lock_failed_message);
+
+            return;
+        }
     }
 
     ticket::pointer_t ticket(std::make_shared<ticket>(
@@ -2725,7 +2761,7 @@ void cluckd::msg_lock(ed::message & msg)
 
     // generate a serial number for that ticket
     //
-    f_ticket_serial = (f_ticket_serial + 1) & 0x00FFFFFF;
+    f_ticket_serial = (f_ticket_serial + 1) & 0x00FFFFFF;   // 0 is a valid serial number (-1 is not)
     if(f_leaders[0]->get_id() != f_my_id)
     {
         if(f_leaders.size() >= 2
@@ -2808,13 +2844,11 @@ void cluckd::msg_lock_activated(ed::message & msg)
 }
 
 
-/** \brief Tell all the tickets that we received a LOCK_ENTERED message.
+/** \brief Tell the specified ticket LOCK_ENTERED was received.
  *
- * This function calls all the tickets entered() function which
- * processes the LOCK_ENTERED message.
- *
- * We pass the key and "our ticket" number along so it can actually
- * create the ticket if required.
+ * This function calls the specified ticket entered() function, which
+ * processes the LOCK_ENTERED message and sends the GET_MAX_TICKET
+ * message to the other leaders.
  *
  * \param[in] msg  The LOCK_ENTERED message.
  */
@@ -2840,11 +2874,24 @@ void cluckd::msg_lock_entered(ed::message & msg)
 }
 
 
-/** \brief Remove a ticket we are done with (i.e. unlocked).
+/** \brief Create an entering ticket.
  *
- * This command drops the specified ticket (object_name).
+ * When the cluck daemon receives a LOCK message, it sends a LOCK_ENTERING
+ * to the other leaders so that way of all them have a complete list of all
+ * the tickets.
  *
- * \param[in] msg  The entering message.
+ * This function creates an "entering ticket." This is a "real" ticket,
+ * but it is still in an "entering" state.
+ *
+ * The function sends a LOCK_ENTERED as a reply to the LOCK_ENTERING
+ * message.
+ *
+ * \note
+ * Since a cluck daemon may receive this message multiple times, if it
+ * finds an existing entering ticket with the same parameters (object
+ * name and key), then it does not re-create yet another instance.
+ *
+ * \param[in] msg  The LOCK_ENTERING message.
  */
 void cluckd::msg_lock_entering(ed::message & msg)
 {
@@ -2938,7 +2985,9 @@ void cluckd::msg_lock_entering(ed::message & msg)
                 if(snapdev::tokenize_string(source_segments, source, "/") != 2)
                 {
                     SNAP_LOG_ERROR
-                        << "Invalid number of parameters in source parameter (found "
+                        << "Invalid number of parameters in source parameter \""
+                        << source
+                        << "\" (found "
                         << source_segments.size()
                         << ", expected 2)."
                         << SNAP_LOG_SEND;
@@ -2994,11 +3043,13 @@ void cluckd::msg_lock_entering(ed::message & msg)
 }
 
 
-/** \brief Remove a ticket we are done with (i.e. unlocked).
+/** \brief Exit a ticket.
  *
- * This command drops the specified ticket (object_name).
+ * This command exits a ticket, which means we got the GET_MAX_TICKET
+ * result and thus can be sure that the ticket is properly sorted in
+ * the list of tickets.
  *
- * \param[in] msg  The exiting message.
+ * \param[in] msg  The LOCK_EXITING message.
  */
 void cluckd::msg_lock_exiting(ed::message & msg)
 {
@@ -3035,6 +3086,11 @@ void cluckd::msg_lock_exiting(ed::message & msg)
             }
             if(run_activation)
             {
+                // hmm... looking at the code closer, it seems that this is
+                // still very much necessary
+                //
+                // --------------------------------------------------
+                //
                 // try to activate the lock right now since it could
                 // very well be the only ticket and that is exactly
                 // when it is viewed as active!
@@ -3553,13 +3609,21 @@ void cluckd::msg_lock_tickets(ed::message & msg)
 }
 
 
-/** \brief Search for the largest ticket.
+/** \brief Got the largest ticket from another leader.
  *
- * This function searches the list of tickets for the largest one
- * and records that number.
+ * This function searches the list of entering tickets for the specified
+ * object name and key parameters found in the MAX_TICKET message.
  *
- * If a quorum is reached when adding this ticket, then an ADD_TICKET reply
- * is sent back to the sender.
+ * On the first MAX_TICKET received for an entering ticket, that maximum + 1
+ * gets saved in the ticket as its identifier. In other words, we place that
+ * ticket at the end of the list.
+ *
+ * \note
+ * Whenever a list of locks goes empty, its maximum ticket number returns to
+ * the default: NO_TICKET (0). In the unlikely case where the locks happen
+ * back to back and thus the list never becomes empty, the maximum ticket
+ * number could end up wrapping around. This is an error we can and it
+ * has the side effect of killing the cluck daemon.
  *
  * \param[in] msg  The MAX_TICKET message being handled.
  */
@@ -3868,8 +3932,32 @@ void cluckd::msg_unlock(ed::message & msg)
                 //
                 f_tickets.erase(obj_ticket);
             }
+
+            // TBD: the clean up calls this function if it removes a lock
+            //      that timed out but not otherwise; maybe we could consider
+            //      doing it slightly differently where we pass a flag to
+            //      the clean up function to force the call either way
+            //
+            activate_first_lock(object_name);
         }
-else SNAP_LOG_WARNING << "and we could not find key \"" << entering_key << "\" in that object's map..." << SNAP_LOG_SEND;
+        else
+        {
+            SNAP_LOG_MAJOR
+                << "UNLOCK could not find key \""
+                << entering_key
+                << "\" in object \""
+                << object_name
+                << "\"."
+                << SNAP_LOG_SEND;
+        }
+    }
+    else
+    {
+        SNAP_LOG_WARNING
+            << "UNLOCK could not find object \""
+            << object_name
+            << "\"."
+            << SNAP_LOG_SEND;
     }
 
     // reset the timeout with the other locks

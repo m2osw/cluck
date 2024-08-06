@@ -65,6 +65,7 @@ value_duplicate=duplicate
 value_failed=failed
 value_info=info
 value_invalid=invalid
+value_overflow=overflow
 value_timedout=timedout
 value_unknown=unknown
 

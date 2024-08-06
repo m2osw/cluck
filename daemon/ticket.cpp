@@ -256,33 +256,33 @@ namespace cluck_daemon
  *
  *  Client->SnapLockA [label="LOCK"];
  *
- *  SnapLockA->SnapLockA [label="LOCKENTERING"];
- *  SnapLockA->SnapLockB [label="LOCKENTERING"];
- *  SnapLockA->SnapLockC [label="LOCKENTERING"];
+ *  SnapLockA->SnapLockA [label="LOCK_ENTERING"];
+ *  SnapLockA->SnapLockB [label="LOCK_ENTERING"];
+ *  SnapLockA->SnapLockC [label="LOCK_ENTERING"];
  *
- *  SnapLockA->SnapLockA [label="LOCKENTERED"];
- *  SnapLockB->SnapLockA [label="LOCKENTERED"];
- *  SnapLockC->SnapLockA [label="LOCKENTERED"];
+ *  SnapLockA->SnapLockA [label="LOCK_ENTERED"];
+ *  SnapLockB->SnapLockA [label="LOCK_ENTERED"];
+ *  SnapLockC->SnapLockA [label="LOCK_ENTERED"];
  *
- *  SnapLockA->SnapLockA [label="GETMAXTICKET"];
- *  SnapLockA->SnapLockB [label="GETMAXTICKET"];
- *  SnapLockA->SnapLockC [label="GETMAXTICKET"];
+ *  SnapLockA->SnapLockA [label="GET_MAX_TICKET"];
+ *  SnapLockA->SnapLockB [label="GET_MAX_TICKET"];
+ *  SnapLockA->SnapLockC [label="GET_MAX_TICKET"];
  *
- *  SnapLockA->SnapLockA [label="MAXTICKET"];
- *  SnapLockB->SnapLockA [label="MAXTICKET"];
- *  SnapLockC->SnapLockA [label="MAXTICKET"];
+ *  SnapLockA->SnapLockA [label="MAX_TICKET"];
+ *  SnapLockB->SnapLockA [label="MAX_TICKET"];
+ *  SnapLockC->SnapLockA [label="MAX_TICKET"];
  *
- *  SnapLockA->SnapLockA [label="ADDTICKET"];
- *  SnapLockA->SnapLockB [label="ADDTICKET"];
- *  SnapLockA->SnapLockC [label="ADDTICKET"];
+ *  SnapLockA->SnapLockA [label="ADD_TICKET"];
+ *  SnapLockA->SnapLockB [label="ADD_TICKET"];
+ *  SnapLockA->SnapLockC [label="ADD_TICKET"];
  *
- *  SnapLockA->SnapLockA [label="TICKETADDED"];
- *  SnapLockB->SnapLockA [label="TICKETADDED"];
- *  SnapLockC->SnapLockA [label="TICKETADDED"];
+ *  SnapLockA->SnapLockA [label="TICKET_ADDED"];
+ *  SnapLockB->SnapLockA [label="TICKET_ADDED"];
+ *  SnapLockC->SnapLockA [label="TICKET_ADDED"];
  *
- *  SnapLockA->SnapLockA [label="LOCKEXITING"];
- *  SnapLockA->SnapLockB [label="LOCKEXITING"];
- *  SnapLockA->SnapLockC [label="LOCKEXITING"];
+ *  SnapLockA->SnapLockA [label="LOCK_EXITING"];
+ *  SnapLockA->SnapLockB [label="LOCK_EXITING"];
+ *  SnapLockA->SnapLockC [label="LOCK_EXITING"];
  *
  *  SnapLockA->Client [label="LOCKED"];
  * \endmsc
@@ -292,10 +292,11 @@ namespace cluck_daemon
  *
  * \subsection timeouts Timeouts
  *
- * Note that our locks have a timeout, by default it is very small
+ * All our locks come with a timeout. The default is defined in
+ * CLUCK_LOCK_DURATION_DEFAULT_TIMEOUT, which is 5 seconds.
  * (5 seconds, which for a front end hit to a website is very
  * long already!) If that timeout is too short (i.e. a backend
- * does heavy lifting work on the data,) then you can make it
+ * does heavy lifting work on the data), then you can make it
  * larger. Our backends are given 4h by default.
  *
  * \subsection deadlock Deadlock
@@ -311,33 +312,9 @@ namespace cluck_daemon
  *
  * P2 tries to get L1, and creates a deadlock.
  *
- * The deadlock itself will be resolved once the lock times out,
- * but P2 will "never" have a chance to work on L1.
- *
- * \subsection one_lock One lock at a time.
- *
- * The process of obtaining a lock assumes that the process requesting
- * a lock gets blocked between the time it sends the request and the
- * time it receives the confirmation for that lock.
- *
- * This is very important because we manage objects coming from a
- * specific process as unique by using theid PID. If the same process
- * could send more than one lock request, the PID would be the same
- * and if trying to lock the same object twice, you would have a bug
- * because this system does not have any way to distinguish two
- * such requests if received simlutaneously.
- *
- * The lock should look as follow, although we have two implementations
- * one of which does no work in a local place like this because it
- * will be asynchronous.
- *
- * \code
- * {
- *   SnapLock lock("some name");
- *
- *   // do protected work here...
- * }
- * \endcode
+ * The deadlock itself will be resolved once a lock times out,
+ * but P2 will "never" have a chance to work on L1 if that sequence
+ * always happens.
  */
 
 
@@ -354,9 +331,11 @@ namespace cluck_daemon
  *
  * \note
  * We create a key from the server name, client PID, and object
- * name for the entering process to run. This key are unique
+ * name for the entering process to run. This key is unique
  * among all computers assuming (1) your client PID is unique and
- * (2) your servers all have unique names.
+ * (2) your servers all have unique names and both of these conditions
+ * are always true (i.e. we do not allow a cluckd to join a cluster if
+ * its name was already registered).
  *
  * \note
  * If you use threads, or are likely to use threads, make sure to
@@ -591,6 +570,16 @@ void ticket::max_ticket(ticket_id_t new_max_ticket)
         }
 
         ++f_our_ticket;
+        if(f_our_ticket == NO_TICKET)
+        {
+            // f_out_ticket is a 32 bit number, this can happen only if you
+            // created over 4 billion locks back to back--i.e. created a new
+            // one before the previous one was released; or put in a different
+            // way: the list of tickets with that "object name" never went
+            // back to being empty for that long...
+            //
+            throw cluck::out_of_range("ticket::max_ticket() tried to generate the next ticket and got a wrapping around number.");
+        }
 
         add_ticket();
     }
@@ -608,7 +597,7 @@ void ticket::add_ticket()
     //
     if(f_added_ticket)
     {
-        throw cluck::logic_error("ticket::add_ticket() called more than once.");
+        throw cluck::logic_error("ticket::add_ticket() called more than once."); // LCOV_EXCL_LINE
     }
     f_added_ticket = true;
 
@@ -794,6 +783,7 @@ void ticket::lock_activated()
             locked_message.add_parameter(cluck::g_name_cluck_param_object_name, f_object_name);
             locked_message.add_parameter(cluck::g_name_cluck_param_timeout_date, f_lock_timeout_date);
             locked_message.add_parameter(cluck::g_name_cluck_param_unlocked_date, f_unlocked_timeout_date);
+            locked_message.add_parameter(cluck::g_name_cluck_param_tag, f_tag);
             f_messenger->send_message(locked_message);
         }
     }
@@ -802,7 +792,7 @@ void ticket::lock_activated()
 
 /** \brief We are done with the ticket.
  *
- * This function sends the DROP_TICKET message to get read of a ticket
+ * This function sends the DROP_TICKET message to get rid of a ticket
  * from another leader's list of tickets.
  *
  * Another leader has a list of tickets as it receives LOCK and ADDTICKET
@@ -832,7 +822,7 @@ void ticket::drop_ticket()
         f_lock_failed = lock_failure_t::LOCK_FAILURE_UNLOCKING;
 
         //if(f_owner == f_cluckd->get_server_name()) -- this can happen with any leader so we have to send the UNLOCKED
-        //                                              the other leaders won't call this function they receive DROPTICKET
+        //                                              the other leaders won't call this function they receive DROP_TICKET
         //                                              instead and as mentioned in the TODO below, we should get a QUORUM
         //                                              instead...
         {
@@ -853,6 +843,8 @@ void ticket::drop_ticket()
             unlocked_message.set_server(f_server_name);
             unlocked_message.set_service(f_service_name);
             unlocked_message.add_parameter(cluck::g_name_cluck_param_object_name, f_object_name);
+            unlocked_message.add_parameter(cluck::g_name_cluck_param_unlocked_date, snapdev::now());
+            unlocked_message.add_parameter(cluck::g_name_cluck_param_tag, f_tag);
             f_messenger->send_message(unlocked_message);
         }
     }
@@ -1021,7 +1013,7 @@ void ticket::lock_failed()
                 << f_object_name
                 << "\" ("
                 << f_tag
-                << ")with key \""
+                << ") with key \""
                 << f_entering_key
                 << "\" failed."
                 << SNAP_LOG_SEND;
@@ -1064,6 +1056,15 @@ void ticket::set_owner(std::string const & owner)
  * This function returns the name of the owner of this ticket. When a
  * leader dies out, its name stick around until a new leader gets
  * assigned to it.
+ *
+ * The owner is actually the name of the sending server. So if leader 1
+ * is named "alfred" and it sends a ticket message (i.e. LOCK_ENTERING),
+ * then the ticket owner parameter will be set  "alfred".
+ *
+ * The owner name is set when you create a ticket or by unserializing
+ * a ticket dump. Serialization is used to share tickets between
+ * cluck daemon when we lose a leader and a new computer becomes a
+ * new leader.
  *
  * \return  The name of this ticket owner.
  */
