@@ -21,6 +21,12 @@
 //
 #include    <snaplogger/snapcatch2.hpp>
 
+
+// cppthread
+//
+#include    <cppthread/log.h>
+
+
 // C++
 //
 #include    <string>
@@ -39,6 +45,16 @@ namespace SNAP_CATCH2_NAMESPACE
 
 
 
+class reset_log_errors
+{
+public:
+    ~reset_log_errors()
+    {
+std::cerr << "--- errors before reset: " << cppthread::log.get_errors() << "\n";
+        cppthread::log.reset_counters();
+std::cerr << "--- errors after reset: " << cppthread::log.get_errors() << "\n";
+    }
+};
 
 
 

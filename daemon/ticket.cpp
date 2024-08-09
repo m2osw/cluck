@@ -578,7 +578,7 @@ void ticket::max_ticket(ticket_id_t new_max_ticket)
             // way: the list of tickets with that "object name" never went
             // back to being empty for that long...
             //
-            throw cluck::out_of_range("ticket::max_ticket() tried to generate the next ticket and got a wrapping around number.");
+            throw cluck::out_of_range("ticket::max_ticket() tried to generate the next ticket and got a wrapping around number."); // LCOV_EXCL_LINE
         }
 
         add_ticket();

@@ -301,12 +301,14 @@ call(label: func_send_fluid_settings_value_updated)
 call(label: func_send_fluid_settings_ready)
 return()
 
+// Function: expect CLUSTER_STATUS
 label(name: func_expect_cluster_status)
 call(label: func_wait_message)
 call(label: func_verify_cluster_status)
 call(label: func_send_cluster_up)
 return()
 
+// Function: expect LOCK_STARTED
 label(name: func_expect_lock_started_initial)
 print(message: "--- wait for message LOCK_STARTED (initial)....")
 call(label: func_wait_message)
@@ -340,6 +342,7 @@ call(label: func_wait_message)
 call(label: func_verify_lock_started_to_rc2_early)
 return()
 
+// Function:: expect LOCK_READY
 label(name: func_expect_lock_ready)
 print(message: "--- wait for message LOCK_READY....")
 call(label: func_wait_message)
@@ -1141,7 +1144,6 @@ verify_message(
 	})
 // the leader1 parameter needs to be defined from what that leader sends us
 save_parameter_value(parameter_name: lock_id, variable_name: leader1)
-print(message: "--- message LOCK_STARTED works....")
 return()
 
 // Function: verify LOCK STARTED (to rc1, no leaders)
@@ -1203,7 +1205,6 @@ verify_message(
 	required_parameters: {
 		cache: no
 	})
-print(message: "--- message LOCK_READY works....")
 return()
 
 // Function: verify LOCK STARTED (to rc2)
@@ -1470,6 +1471,7 @@ verify_message(
 	service: cluckd,
 	required_parameters: {
 		duration: 10,
+		unlock_duration: 5,
 		key: "${hostname}/973",
 		object_name: "book_update",
 		serial: `^[0-9]+$`,
@@ -1488,6 +1490,7 @@ verify_message(
 	service: cluckd,
 	required_parameters: {
 		duration: 10,
+		unlock_duration: 5,
 		key: "${hostname}/973",
 		object_name: "book_update",
 		serial: `^[0-9]+$`,
@@ -4131,6 +4134,7 @@ send_message(  // lk5
 		tag: 301,
 		pid: 973,
 		duration: 10,
+		unlock_duration: 5,
 		timeout: ${lock_timeout}
 	})
 return()

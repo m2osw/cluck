@@ -815,7 +815,7 @@ void cluckd::election_status()
     //
     if(!f_leaders.empty())
     {
-        // the results may have been "temperred" with (i.e. one of
+        // the results may have been "tempered" with (i.e. one of
         // the leaders was lost)
         //
         if(f_leaders.size() == 3
@@ -1042,8 +1042,8 @@ void cluckd::send_lock_started(ed::message const * msg)
         // (i.e. the following ends up sending the message to ourselves only
         // and does not forward to any remote communicators).
         //
-        //lock_started_message.set_server("*");
-        //lock_started_message.set_service("cluckd");
+        //lock_started_message.set_server(communicatord::g_name_communicatord_server_any);
+        //lock_started_message.set_service(cluck::g_name_cluck_service_name);
     }
     else
     {
@@ -2294,6 +2294,7 @@ void cluckd::msg_cluster_up(ed::message & msg)
 
     election_status();
     send_lock_started(nullptr);
+    check_lock_status();
 }
 
 

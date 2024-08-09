@@ -1,4 +1,8 @@
 // simulate the communicator daemon and a plethora of cluck clients
+//
+// TODO: change the designed to a similar implementation as we have in
+//       cluck_daemon_test_three_computers.rprtr
+//       (i.e. expected messages are in a clear order)
 
 hostname(variable_name: hostname)
 
@@ -94,6 +98,13 @@ call(label: func_verify_lock_started)
 goto(label: next_message)
 
 label(name: not_lock_started)
+has_message(command: LOCK_READY)
+if(false: not_lock_ready)
+call(label: func_verify_lock_ready)
+//call(label: func_send_cluster_up)
+goto(label: next_message)
+
+label(name: not_lock_ready)
 has_message(command: LOCK_FAILED)
 if(false: not_lock_failed)
 call(label: func_verify_lock_failed)
@@ -238,6 +249,17 @@ verify_message(
 	forbidden_parameters: {
 		leader1,
 		leader2
+	})
+return()
+
+// Function: verify a LOCK READY
+label(name: func_verify_lock_ready)
+verify_message(
+	command: LOCK_READY,
+	sent_service: cluckd,
+	service: ".",
+	required_parameters: {
+		cache: no
 	})
 return()
 
