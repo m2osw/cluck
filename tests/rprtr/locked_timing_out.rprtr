@@ -85,6 +85,7 @@ send_message(
 		unlock: false
 	})
 print(message: "drain DATA")
+clear_message()
 wait(timeout: 1, mode: drain)
 
 // sleep a long time on purpose to miss the deadline
@@ -121,7 +122,8 @@ send_message(
 		object_name: "lock-name",
 		tag: "${tag}"
 	})
-print(message: "drain unlocked")
+print(message: "drain UNLOCKED")
+clear_message()
 wait(timeout: 1, mode: drain)
 exit()
 

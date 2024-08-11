@@ -49,6 +49,7 @@ send_message(
 		error: "timedout"
 	})
 
+clear_message()
 wait(timeout: 1, mode: drain)
 exit()
 

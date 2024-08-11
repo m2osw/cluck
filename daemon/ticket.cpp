@@ -398,7 +398,7 @@ ticket::ticket(
 
 /** \brief Send a message to the other two leaders.
  *
- * The send_message() is "broadcast" to the other two leaders.
+ * The \p msg is "broadcast" to the other two leaders.
  *
  * This is a safe guard so if one of our three leaders fails, we have
  * a backup of the lock status.
@@ -578,7 +578,7 @@ void ticket::max_ticket(ticket_id_t new_max_ticket)
             // way: the list of tickets with that "object name" never went
             // back to being empty for that long...
             //
-            throw cluck::out_of_range("ticket::max_ticket() tried to generate the next ticket and got a wrapping around number."); // LCOV_EXCL_LINE
+            throw cluck::out_of_range("ticket::max_ticket() tried to generate the next ticket and got a wrapping around number.");
         }
 
         add_ticket();
@@ -590,6 +590,10 @@ void ticket::max_ticket(ticket_id_t new_max_ticket)
  *
  * This function sends the ADD_TICKET message to all the cluckd
  * instances currently known.
+ *
+ * \exception logic_error
+ * This exception is raised if the function gets called twice or more.
+ * Since it is considered an internal function, it should not be an issue.
  */
 void ticket::add_ticket()
 {
@@ -675,12 +679,14 @@ void ticket::ticket_added(key_map_t const & still_entering)
 /** \brief Call any time time an entering flag is reset.
  *
  * This function gets called whenever an entering flag gets set
- * back to false (i.e. removed in our implementation.)
+ * back to false (i.e. removed in our implementation).
  *
  * This function knows whether this ticket received its number
  * and is not yet ready. In both of these circumstances, we
  * are waiting for all entering flags that got created while
  * we determined the largest ticket number to be removed.
+ *
+ * \param[in] key  The key of the ticket that was entered.
  */
 void ticket::remove_entering(std::string const & key)
 {
@@ -733,7 +739,10 @@ void ticket::remove_entering(std::string const & key)
  * it sends the LOCKED message back to the system that required it.
  *
  * This function can be called multiple times. It will send
- * the LOCKED message only once.
+ * the ACTIVATE_LOCK message only once.
+ *
+ * On a system with only one computer, it will also send the LOCKED
+ * message immediately.
  */
 void ticket::activate_lock()
 {
@@ -1138,25 +1147,24 @@ ticket::serial_t ticket::get_serial() const
 }
 
 
-/** \brief Change the lock duration to the specified value.
+/** \brief Change the unlock duration to the specified value.
  *
  * If the service requesting a lock fails to acknowledge an unlock, then
- * the lock still gets unlocked after this number of seconds.
+ * the lock still gets unlocked after this \p duration.
  *
  * By default, this parameter gets set to the same value as duration with
- * a minimum of 60. When the message includes an `unlock_duration` parameter
- * then that value is used instead.
+ * a minimum of 3 seconds. When the message includes an `unlock_duration`
+ * parameter then that value is used instead.
  *
  * \note
- * If \p duration is less than SNAP_UNLOCK_MINIMUM_TIMEOUT,
- * then SNAP_UNLOCK_MINIMUM_TIMEOUT is used. At time of writing
- * SNAP_UNLOCK_MINIMUM_TIMEOUT is 60 seconds or one minute.
+ * If \p duration is less than cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT,
+ * then cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT is used. At time of writing
+ * cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT is 3 seconds.
  *
  * \warning
  * It is important to understand that as soon as an UNLOCKED event arrives,
- * you should acknowledge it if it includes an "error" parameter. Not
- * doing so increases the risk that two or more processes access the same
- * resource simultaneously.
+ * you should acknowledge it. Not doing so increases the risk that two or
+ * more processes access the same resource simultaneously.
  *
  * \param[in] duration  The amount of time to acknowledge an UNLOCKED
  *            event; after that the lock is released no matter what.
@@ -1180,6 +1188,9 @@ void ticket::set_unlock_duration(cluck::timeout_t duration)
  * The unlock duration is used in case the lock times out. It extends
  * the lock duration for that much longer until the client acknowledge
  * the locks or the lock really times out.
+ *
+ * \note
+ * If not yet set, this function returns zero (a null timestamp).
  *
  * \return The unlock acknowledgement timeout duration.
  */

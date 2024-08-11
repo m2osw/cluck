@@ -126,6 +126,7 @@ send_message(
 		object_name: "lock-name",
 		tag: "${tag}"
 	})
+clear_message()
 wait(timeout: 1, mode: drain)
 exit()
 

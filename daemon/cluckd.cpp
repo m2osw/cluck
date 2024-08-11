@@ -2906,139 +2906,146 @@ void cluckd::msg_lock_entering(ed::message & msg)
         return;
     }
 
-    // the server_name and client_pid never include a slash so using
-    // such as separators is safe
+    // lock still in the future?
     //
-    if(timeout > snapdev::now())  // lock still in the future?
+    if(timeout <= snapdev::now())
     {
-        if(is_daemon_ready())              // still have leaders?
-        {
-            // the entering is just a flag (i.e. entering[i] = true)
-            // in our case the existance of a ticket is enough to know
-            // that we entered
-            //
-            bool allocate(true);
-            auto const obj_ticket(f_entering_tickets.find(object_name));
-            if(obj_ticket != f_entering_tickets.end())
-            {
-                auto const key_ticket(obj_ticket->second.find(key));
-                allocate = key_ticket == obj_ticket->second.end();
-            }
-            if(allocate)
-            {
-                // ticket does not exist, so create it now
-                // (note: ticket should only exist on originator)
-                //
-                cluck::timeout_t const duration(msg.get_timespec_parameter(cluck::g_name_cluck_param_duration));
-                if(duration < cluck::CLUCK_MINIMUM_TIMEOUT)
-                {
-                    // invalid duration
-                    //
-                    SNAP_LOG_ERROR
-                        << duration
-                        << " is an invalid duration, the minimum accepted is "
-                        << cluck::CLUCK_MINIMUM_TIMEOUT
-                        << "."
-                        << SNAP_LOG_SEND;
-
-                    ed::message lock_failed_message;
-                    lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-                    lock_failed_message.reply_to(msg);
-                    lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
-                    lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
-                    lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
-                    f_messenger->send_message(lock_failed_message);
-
-                    return;
-                }
-
-                cluck::timeout_t unlock_duration(cluck::CLUCK_DEFAULT_TIMEOUT);
-                if(msg.has_parameter(cluck::g_name_cluck_param_unlock_duration))
-                {
-                    unlock_duration = msg.get_timespec_parameter(cluck::g_name_cluck_param_unlock_duration);
-                    if(unlock_duration != cluck::CLUCK_DEFAULT_TIMEOUT
-                    && unlock_duration < cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT)
-                    {
-                        // invalid duration, minimum is 60
-                        //
-                        SNAP_LOG_ERROR
-                            << duration
-                            << " is an invalid unlock duration, the minimum accepted is "
-                            << cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
-                            << "."
-                            << SNAP_LOG_SEND;
-
-                        ed::message lock_failed_message;
-                        lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-                        lock_failed_message.reply_to(msg);
-                        lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
-                        lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
-                        lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
-                        f_messenger->send_message(lock_failed_message);
-
-                        return;
-                    }
-                }
-
-                // we have to know where this message comes from
-                //
-                std::vector<std::string> source_segments;
-                if(snapdev::tokenize_string(source_segments, source, "/") != 2)
-                {
-                    SNAP_LOG_ERROR
-                        << "Invalid number of parameters in source parameter \""
-                        << source
-                        << "\" (found "
-                        << source_segments.size()
-                        << ", expected 2)."
-                        << SNAP_LOG_SEND;
-
-                    ed::message lock_failed_message;
-                    lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-                    lock_failed_message.reply_to(msg);
-                    lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
-                    lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
-                    lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
-                    f_messenger->send_message(lock_failed_message);
-
-                    return;
-                }
-
-                ticket::pointer_t ticket(std::make_shared<ticket>(
-                                          this
-                                        , f_messenger
-                                        , object_name
-                                        , tag
-                                        , key
-                                        , timeout
-                                        , duration
-                                        , source_segments[0]
-                                        , source_segments[1]));
-
-                f_entering_tickets[object_name][key] = ticket;
-
-                // finish up on ticket initialization
-                //
-                ticket->set_owner(msg.get_sent_from_server());
-                ticket->set_unlock_duration(unlock_duration);
-                ticket->set_serial(msg.get_integer_parameter(cluck::g_name_cluck_param_serial));
-            }
-
-            ed::message reply;
-            reply.set_command(cluck::g_name_cluck_cmd_lock_entered);
-            reply.reply_to(msg);
-            reply.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
-            reply.add_parameter(cluck::g_name_cluck_param_tag, tag);
-            reply.add_parameter(cluck::g_name_cluck_param_key, key);
-            f_messenger->send_message(reply);
-        }
-        else
-        {
-            SNAP_LOG_DEBUG
-                << "received LOCK_ENTERING while we are thinking we are not ready."
-                << SNAP_LOG_SEND;
-        }
+        SNAP_LOG_DEBUG
+            << "received LOCK_ENTERING for \""
+            << object_name
+            << "\" that already timed out."
+            << SNAP_LOG_SEND;
+        return;
     }
+
+    // do we have enough leaders?
+    //
+    if(!is_daemon_ready())
+    {
+        SNAP_LOG_DEBUG
+            << "received LOCK_ENTERING while we are thinking we are not ready."
+            << SNAP_LOG_SEND;
+        return;
+    }
+
+    // the entering is just a flag (i.e. entering[i] = true)
+    // in our case the existance of a ticket is enough to know
+    // that we entered
+    //
+    bool allocate(true);
+    auto const obj_ticket(f_entering_tickets.find(object_name));
+    if(obj_ticket != f_entering_tickets.end())
+    {
+        auto const key_ticket(obj_ticket->second.find(key));
+        allocate = key_ticket == obj_ticket->second.end();
+    }
+    if(allocate)
+    {
+        // ticket does not exist, so create it now
+        // (note: ticket should only exist on originator)
+        //
+        cluck::timeout_t const duration(msg.get_timespec_parameter(cluck::g_name_cluck_param_duration));
+        if(duration < cluck::CLUCK_MINIMUM_TIMEOUT)
+        {
+            // invalid duration
+            //
+            SNAP_LOG_ERROR
+                << duration
+                << " is an invalid duration, the minimum accepted is "
+                << cluck::CLUCK_MINIMUM_TIMEOUT
+                << "."
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+            f_messenger->send_message(lock_failed_message);
+
+            return;
+        }
+
+        cluck::timeout_t unlock_duration(cluck::CLUCK_DEFAULT_TIMEOUT);
+        if(msg.has_parameter(cluck::g_name_cluck_param_unlock_duration))
+        {
+            unlock_duration = msg.get_timespec_parameter(cluck::g_name_cluck_param_unlock_duration);
+            if(unlock_duration != cluck::CLUCK_DEFAULT_TIMEOUT
+            && unlock_duration < cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT)
+            {
+                // invalid duration, minimum is 60
+                //
+                SNAP_LOG_ERROR
+                    << duration
+                    << " is an invalid unlock duration, the minimum accepted is "
+                    << cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
+                    << "."
+                    << SNAP_LOG_SEND;
+
+                ed::message lock_failed_message;
+                lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+                lock_failed_message.reply_to(msg);
+                lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+                lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
+                lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+                f_messenger->send_message(lock_failed_message);
+
+                return;
+            }
+        }
+
+        // we have to know where this message comes from
+        //
+        std::vector<std::string> source_segments;
+        if(snapdev::tokenize_string(source_segments, source, "/") != 2)
+        {
+            SNAP_LOG_ERROR
+                << "Invalid number of parameters in source parameter \""
+                << source
+                << "\" (found "
+                << source_segments.size()
+                << ", expected 2)."
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+            f_messenger->send_message(lock_failed_message);
+
+            return;
+        }
+
+        ticket::pointer_t ticket(std::make_shared<ticket>(
+                                  this
+                                , f_messenger
+                                , object_name
+                                , tag
+                                , key
+                                , timeout
+                                , duration
+                                , source_segments[0]
+                                , source_segments[1]));
+
+        f_entering_tickets[object_name][key] = ticket;
+
+        // finish up on ticket initialization
+        //
+        ticket->set_owner(msg.get_sent_from_server());
+        ticket->set_unlock_duration(unlock_duration);
+        ticket->set_serial(msg.get_integer_parameter(cluck::g_name_cluck_param_serial));
+    }
+
+    ed::message reply;
+    reply.set_command(cluck::g_name_cluck_cmd_lock_entered);
+    reply.reply_to(msg);
+    reply.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+    reply.add_parameter(cluck::g_name_cluck_param_tag, tag);
+    reply.add_parameter(cluck::g_name_cluck_param_key, key);
+    f_messenger->send_message(reply);
 
     cleanup();
 }
@@ -3115,6 +3122,24 @@ void cluckd::msg_lock_exiting(ed::message & msg)
                 f_entering_tickets.erase(obj_entering);
             }
         }
+        else
+        {
+            SNAP_LOG_WARNING
+                << "entering lock \""
+                << object_name
+                << "\" with key \""
+                << key
+                << "\" in LOCK_EXITING specified lock not found."
+                << SNAP_LOG_SEND;
+        }
+    }
+    else
+    {
+        SNAP_LOG_WARNING
+            << "LOCK_EXITING specified lock \""
+            << object_name
+            << "\" not found."
+            << SNAP_LOG_SEND;
     }
 
     // the list of tickets is not unlikely changed so we need to make

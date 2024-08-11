@@ -1,5 +1,5 @@
 // do a valid LOCK but send a MAX_TICKET which will overflow
-
+//
 //   * simulate local communicatord (12.0.0.1)
 //   * simulate remote communicatord (server: rc, service: communicatord, IP: 172.16.17.18)
 
@@ -18,8 +18,10 @@ call(label: func_expect_lock_leaders)
 call(label: func_expect_lock_ready)
 call(label: func_expect_lock_started_second_instance)
 call(label: func_expect_lock_entering)
-call(label: func_expect_get_max_ticket)
+call(label: func_expect_get_max_ticket) // this one creates an exception and then it all breaks
 
+call(label: func_send_quitting)
+clear_message()
 wait(timeout: 5, mode: drain)
 exit()
 
@@ -173,7 +175,7 @@ verify_message(
 	command: COMMANDS,
 	sent_service: cluckd,
 	required_parameters: {
-		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_ENTERED,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
+		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_ENTERED,LOCK_ENTERING,LOCK_EXITING,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
 	})
 return()
 
@@ -480,5 +482,15 @@ send_message(
 		tag: 12109,
 		ticket_id: 0xffffffff	// this will "explode" in ticket::max_ticket()
 	})
+return()
+
+// Function: send QUITTING
+label(name: func_send_quitting)
+send_message(
+	command: QUITTING,
+	sent_server: ${hostname},
+	sent_service: "ed_signal",
+	server: ${hostname},
+	service: cluckd)
 return()
 

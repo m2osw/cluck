@@ -122,6 +122,7 @@ send_message(
 		object_name: "unlocking-lock",
 		tag: "${tag}"
 	})
+clear_message()
 wait(timeout: 1, mode: drain)
 exit()
 

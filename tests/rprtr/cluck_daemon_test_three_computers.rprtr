@@ -1090,7 +1090,7 @@ verify_message(
 	command: COMMANDS,
 	sent_service: cluckd,
 	required_parameters: {
-		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_ENTERED,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
+		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_ENTERED,LOCK_ENTERING,LOCK_EXITING,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
 	})
 return()
 
@@ -1165,7 +1165,6 @@ verify_message(
 		leader1,
 		leader2
 	})
-print(message: "--- message LOCK_STARTED works....")
 return()
 
 // Function: verify LOCK STARTED (to rc2)
@@ -1192,7 +1191,6 @@ verify_message(
 		leader2,
 		leader3
 	})
-print(message: "--- message LOCK_STARTED works (rc2)....")
 return()
 
 // Function: verify LOCK READY
@@ -1857,7 +1855,7 @@ verify_message(
 	service: cluckd,
 	required_parameters: {
 		key: "${hostname}/439",
-		object_name: book_update,
+		object_name: "book_update",
 		tag: 209
 	})
 return()
@@ -2536,7 +2534,7 @@ verify_message(
 	required_parameters: {
 		key: "00000001/${hostname}/439",
 		other_key: "00000001/${hostname}/439",
-		object_name: book_update,
+		object_name: "book_update",
 		tag: 209
 	})
 return()
@@ -2551,7 +2549,7 @@ verify_message(
 	required_parameters: {
 		key: "00000001/${hostname}/439",
 		other_key: "00000001/${hostname}/439",
-		object_name: book_update,
+		object_name: "book_update",
 		tag: 209
 	})
 return()
@@ -3610,7 +3608,7 @@ send_message(
 	service: cluckd,
 	parameters: {
             key: "00000001/${hostname}/439",
-            object_name: book_update,
+            object_name: "book_update",
 	    tag: 209
 	})
 return()

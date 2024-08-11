@@ -153,6 +153,14 @@ messenger::messenger(cluckd * c, advgetopt::getopt & opts)
             , ed::Callback(std::bind(&cluckd::msg_lock_entered, c, std::placeholders::_1))
         ),
         ed::define_match(
+              ed::Expression(cluck::g_name_cluck_cmd_lock_entering)
+            , ed::Callback(std::bind(&cluckd::msg_lock_entering, c, std::placeholders::_1))
+        ),
+        ed::define_match(
+              ed::Expression(cluck::g_name_cluck_cmd_lock_exiting)
+            , ed::Callback(std::bind(&cluckd::msg_lock_exiting, c, std::placeholders::_1))
+        ),
+        ed::define_match(
               ed::Expression(cluck::g_name_cluck_cmd_lock_failed)
             , ed::Callback(std::bind(&cluckd::msg_lock_failed, c, std::placeholders::_1))
         ),

@@ -48,6 +48,7 @@ send_message(
 		no_error: "wrong name"
 	})
 
+clear_message()
 wait(timeout: 1, mode: drain)
 exit()
 

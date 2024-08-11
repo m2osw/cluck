@@ -87,6 +87,7 @@ send_message(
 		tag: "${tag}"
 	})
 
+clear_message()
 wait(timeout: 5, mode: drain)
 exit()
 

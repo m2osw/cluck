@@ -1884,6 +1884,15 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
 
         messenger->unset_guard();
 
+        // the communicator daemon may still have connections because of
+        // the exception
+        //
+        ed::connection::vector_t connections(ed::communicator::instance()->get_connections());
+        for(auto c : connections)
+        {
+            ed::communicator::instance()->remove_connection(c);
+        }
+
         CATCH_REQUIRE_FALSE(was_ready);
     }
     CATCH_END_SECTION()
