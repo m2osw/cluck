@@ -44,7 +44,7 @@ public:
 
                                 cluckd(int argc, char * argv[]);
                                 cluckd(cluckd const & rhs) = delete;
-                                ~cluckd();
+    virtual                     ~cluckd();
 
     cluckd &                    operator = (cluckd const & rhs) = delete;
 

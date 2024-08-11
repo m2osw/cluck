@@ -1200,6 +1200,20 @@ cluck::timeout_t ticket::get_unlock_duration() const
 }
 
 
+/** \brief Mark the ticket as being ready.
+ *
+ * This ticket is marked as being ready.
+ *
+ * A ticket is ready when all the entering tickets were removed from it
+ * on the owning leader. On the other two leaders, the ticket gets marked
+ * as being ready once they receive the LOCKEXITING message.
+ */
+void ticket::set_ready()
+{
+    f_ticket_ready = true;
+}
+
+
 /** \brief Set the ticket number.
  *
  * The other two leaders receive the ticket number in the ADDTICKET
@@ -1233,20 +1247,6 @@ void ticket::set_ticket_number(ticket_id_t const number)
     f_ticket_key = snapdev::int_to_hex(f_our_ticket, false, 8)
                  + '/'
                  + f_entering_key;
-}
-
-
-/** \brief Mark the ticket as being ready.
- *
- * This ticket is marked as being ready.
- *
- * A ticket is ready when all the entering tickets were removed from it
- * on the owning leader. On the other two leaders, the ticket gets marked
- * as being ready once they receive the LOCKEXITING message.
- */
-void ticket::set_ready()
-{
-    f_ticket_ready = true;
 }
 
 
@@ -1318,7 +1318,7 @@ cluck::timeout_t ticket::get_obtention_timeout() const
  * transferred to another leader. To not attempt to lock a ticket
  * for nothing, the new leader first checks that the service
  * which requested that lock is indeed still alive by send an
- * ALIVE message to it. In return it expects an ABSOLUTELY
+ * ALIVE message to it. In return, it expects an ABSOLUTELY
  * reply.
  *
  * If the ABSOLUTELY reply does not make it in time (at this time

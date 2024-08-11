@@ -331,10 +331,10 @@ cluckd::cluckd(int argc, char * argv[])
         throw advgetopt::getopt_exit("logger options generated an error.", 0);
     }
 
-    // get the server name using the library function
+    // determine this server name
     //
     // TODO: if the name of the server is changed, we should reboot, but
-    //       to the minimum we need to restart cluck (among other daemons)
+    //       to the minimum we need to restart cluckd (among other daemons)
     //       remember that snapmanager.cgi gives you that option;
     //       we CANNOT use fluid-settings for this one since each computer
     //       must have a different name
@@ -386,12 +386,13 @@ void cluckd::add_connections()
     f_timer = std::make_shared<timer>(this);
     f_communicator->add_connection(f_timer);
 
-    // create a messenger to connect with the Communicator daemon
+    // add the messenger used to communicate with the communicator daemon
     // and other services as required
     //
     f_communicator->add_connection(f_messenger);
 
-    // the following call connects to the communicator daemon
+    // the following call actually connects the messenger to the
+    // communicator daemon
     //
     f_messenger->finish_parsing();
 }
