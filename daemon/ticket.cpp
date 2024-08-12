@@ -1662,12 +1662,14 @@ void ticket::unserialize(std::string const & data)
 #ifdef _DEBUG
                 if(f_entering_key != value)
                 {
+                    // LCOV_EXCL_START
                     throw cluck::logic_error(
                                 "ticket::unserialize() not unserializing entering key \""
                                 + value
                                 + "\" over itself \""
                                 + f_entering_key
                                 + "\" (entering key mismatch).");
+                    // LCOV_EXCL_STOP
                 }
 #endif
                 f_entering_key = value;
@@ -1722,12 +1724,14 @@ void ticket::unserialize(std::string const & data)
 #ifdef _DEBUG
                 if(f_object_name != value)
                 {
+                    // LCOV_EXCL_START
                     throw cluck::logic_error(
                                 "ticket::unserialize() not unserializing object name \""
                                 + value
                                 + "\" over itself \""
                                 + f_object_name
                                 + "\" (object name mismatch).");
+                    // LCOV_EXCL_STOP
                 }
 #endif
                 f_object_name = value;

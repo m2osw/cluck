@@ -785,27 +785,27 @@ std::string cluckd::ticket_list() const
                 << "  object name: \""
                 << key_ticket.second->get_object_name()
                 << "\"  key: "
-                << key_ticket.second->get_entering_key()
-                << "  ";
+                << key_ticket.second->get_entering_key();
 
             cluck::timeout_t const lock_timeout(key_ticket.second->get_lock_timeout_date());
-            if(!lock_timeout)
+            if(lock_timeout != cluck::timeout_t())
             {
                 list
-                    << "timeout "
+                    << "  timeout "
                     << lock_timeout.to_string();
             }
             else
             {
                 cluck::timeout_t const obtention_timeout(key_ticket.second->get_obtention_timeout());
                 list
-                    << "obtention "
+                    << "  obtention "
                     << obtention_timeout.to_string();
             }
 
             list << '\n';
         }
     }
+
     return list.str();
 }
 
