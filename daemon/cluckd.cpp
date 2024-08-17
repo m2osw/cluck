@@ -2861,7 +2861,7 @@ void cluckd::msg_lock_entered(ed::message & msg)
     std::string key;
     if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
     auto const obj_entering_ticket(f_entering_tickets.find(object_name));
@@ -2904,7 +2904,7 @@ void cluckd::msg_lock_entering(ed::message & msg)
     std::string source;
     if(!get_parameters(msg, &object_name, &tag, nullptr, &timeout, &key, &source))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
     // lock still in the future?
@@ -3067,7 +3067,7 @@ void cluckd::msg_lock_exiting(ed::message & msg)
     std::string key;
     if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
     // when exiting we just remove the entry with that key
@@ -3150,7 +3150,7 @@ void cluckd::msg_lock_exiting(ed::message & msg)
 }
 
 
-/** \brief Acknowledgement a lock failure.
+/** \brief Acknowledge a lock failure.
  *
  * This function handles the LOCK_FAILED event that another leader may send
  * to us. In that case we have to stop the process.
@@ -3182,8 +3182,11 @@ void cluckd::msg_lock_failed(ed::message & msg)
     std::string key;
     if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
+
+    std::string errmsg("get LOCK_FAILED: ");
+    errmsg += msg.get_parameter("error");
 
     std::string forward_server;
     std::string forward_service;
@@ -3200,15 +3203,13 @@ void cluckd::msg_lock_failed(ed::message & msg)
             forward_service = key_entering->second->get_service_name();
 
             obj_entering->second.erase(key_entering);
+
+            errmsg += " -- happened while entering";
         }
 
         if(obj_entering->second.empty())
         {
-            obj_entering = f_entering_tickets.erase(obj_entering);
-        }
-        else
-        {
-            ++obj_entering;
+            f_entering_tickets.erase(obj_entering);
         }
     }
 
@@ -3240,22 +3241,19 @@ void cluckd::msg_lock_failed(ed::message & msg)
 
             obj_ticket->second.erase(key_ticket);
             try_activate = true;
+
+            errmsg += " -- happened when locked"; // TBD: are we really always locked in this case?
         }
 
         if(obj_ticket->second.empty())
         {
-            obj_ticket = f_tickets.erase(obj_ticket);
+            f_tickets.erase(obj_ticket);
         }
-        else
+        else if(try_activate)
         {
-            if(try_activate)
-            {
-                // something was erased, a new ticket may be first
-                //
-                activate_first_lock(obj_ticket->first);
-            }
-
-            ++obj_ticket;
+            // something was erased, a new ticket may be first
+            //
+            activate_first_lock(obj_ticket->first);
         }
     }
 
@@ -3268,7 +3266,17 @@ void cluckd::msg_lock_failed(ed::message & msg)
         msg.set_server(forward_server);
         msg.set_service(forward_service);
         f_messenger->send_message(msg);
+
+        errmsg += " -> ";
+        errmsg += forward_server;
+        errmsg += ":";
+        errmsg += forward_service;
     }
+
+    SNAP_LOG_IMPORTANT
+        << errmsg
+        << '.'
+        << SNAP_LOG_SEND;
 
     // the list of tickets is not unlikely changed so we need to make
     // a call to cleanup to make sure the timer is reset appropriately
@@ -3661,7 +3669,7 @@ void cluckd::msg_max_ticket(ed::message & msg)
     std::string key;
     if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
     // the MAX_TICKET is an answer that has to go in a still un-added ticket
@@ -3683,24 +3691,25 @@ void cluckd::msg_max_ticket(ed::message & msg)
  * This function is used to know that a remote connection was
  * disconnected.
  *
- * This function handles the HANGUP, DISCONNECTED, and STATUS(down)
- * nessages as required.
+ * This function handles the HANGUP and DISCONNECTED nessages as required.
  *
  * This allows us to manage the f_computers list of computers running
- * cluckd services.
+ * cluckd services. If a cluckd was affected, we verify we still have
+ * enough leaders.
  *
- * \param[in] msg  The DISCONNECTED or HANGUP or STATUS message.
+ * \param[in] msg  The DISCONNECTED or HANGUP message.
  */
 void cluckd::msg_server_gone(ed::message & msg)
 {
     // if the server is not defined, ignore that message
+    // (already tested by the dispatcher)
     //
     if(!msg.has_parameter(communicatord::g_name_communicatord_param_server_name))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
-    // was it a cluckd service at least?
+    // is it us?
     //
     std::string const server_name(msg.get_parameter(communicatord::g_name_communicatord_param_server_name));
     if(server_name.empty()
@@ -3806,7 +3815,7 @@ void cluckd::msg_ticket_added(ed::message & msg)
     std::string key;
     if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
     auto const obj_ticket(f_tickets.find(object_name));
@@ -3871,7 +3880,7 @@ void cluckd::msg_ticket_ready(ed::message & msg)
     std::string key;
     if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
     auto obj_ticket(f_tickets.find(object_name));
