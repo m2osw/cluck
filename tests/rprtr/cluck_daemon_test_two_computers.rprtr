@@ -25,13 +25,14 @@ listen(address: <127.0.0.1:20002>)
 call(label: func_expect_register)
 call(label: func_expect_commands)
 call(label: func_expect_service_status)
+//call(label: func_expect_fluid_settings_listen) -- this does not happen here because we used the --server-name ... on the command line
 call(label: func_expect_cluster_status)
 call(label: func_expect_no_lock)
 call(label: func_expect_lock_started_initial)
 call(label: func_expect_cluckd_status_without_tickets)
 call(label: func_expect_lock_leaders)
 call(label: func_expect_lock_ready)
-//call(label: func_expect_lock_started_reply_a)
+//call(label: func_expect_lock_started_reply_a) -- no early response here
 call(label: func_expect_lock_started_reply_b)
 call(label: func_expect_lock_failed)
 call(label: func_expect_lock_entering)
@@ -48,8 +49,6 @@ call(label: func_sleep_quietly_25cs)
 call(label: func_send_unlock)
 call(label: func_expect_drop_ticket)
 
-//call(label: func_expect_lock_failed_early)
-//call(label: func_expect_fluid_settings_listen) -- this does not happen here because we used the --server-name ... on the command line
 
 
 
