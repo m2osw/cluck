@@ -35,6 +35,11 @@
 #include    <communicatord/names.h>
 
 
+// as2js
+//
+#include    <as2js/json.h>
+
+
 // eventdispatcher
 //
 #include    <eventdispatcher/names.h>
@@ -685,82 +690,123 @@ computer::pointer_t cluckd::get_leader_b() const
 
 
 
-/** \brief Output the state of this cluckd object.
+/** \brief Return a JSON with the state of this cluckd object.
  *
- * This function outputs the current state of a cluck daemon to
- * the cluckd.log file.
+ * This function generates a JSON string of the current state of this
+ * cluck daemon and replies with that message back to the caller.
  *
- * This is used to debug a cluck instance and make sure that the
+ * This is primarily used to debug a cluckd instance and make sure that the
  * state is how you would otherwise expect it to be.
+ *
+ * \todo
+ * The list of tickets uses the internal serialization mechanism, which
+ * creates a much small array of tickets. At some point, we should transform
+ * that to output JSON instead.
  *
  * \param[in] msg  The INFO message.
  */
 void cluckd::msg_info(ed::message & msg)
 {
-    SNAP_LOG_INFO
-        << "++++++++ CLUCK INFO ++++++++"
-        << SNAP_LOG_SEND;
-    SNAP_LOG_INFO
-        << "My leader ID: "
-        << (f_my_id.empty() ? "<not ready>" : f_my_id)
-        << SNAP_LOG_SEND;
-    addr::addr zero;
-    SNAP_LOG_INFO
-        << "My IP address: "
-        << (f_my_ip_address == zero ? "<not assigned>" : f_my_ip_address.to_ipv4or6_string(addr::STRING_IP_ADDRESS | addr::STRING_IP_BRACKET_ADDRESS))
-        << SNAP_LOG_SEND;
-    SNAP_LOG_INFO
-        << "Total number of computers: "
-        << f_neighbors_count
-        << " (quorum: "
-        << f_neighbors_quorum
-        << ", leaders: "
-        << f_leaders.size()
-        << ")"
-        << SNAP_LOG_SEND;
-    SNAP_LOG_INFO
-        << "Known computers: "
-        << f_computers.size()
-        << SNAP_LOG_SEND;
-    for(auto const & c : f_computers)
+    std::stringstream ss;
+
+    as2js::position p;
+    p.set_filename("cluckd.cpp");
+    p.set_function("msg_info");
+
+    as2js::json::json_value::object_t obj;
+    as2js::json::json_value::pointer_t result(std::make_shared<as2js::json::json_value>(p, obj));
+
     {
-        auto const it(std::find_if(
-                  f_leaders.begin()
-                , f_leaders.end()
-                , [&c](auto const & l)
-                {
-                    return c.second == l;
-                }));
-        std::string leader;
-        if(it != f_leaders.end())
+        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p,
+            f_my_id.empty()
+                ? "<not ready>"
+                : f_my_id));
+        result->set_member("id", value);
+    }
+
+    {
+        addr::addr zero;
+        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p,
+            f_my_ip_address == zero
+                ? "<not assigned>"
+                : f_my_ip_address.to_ipv4or6_string(addr::STRING_IP_ADDRESS | addr::STRING_IP_BRACKET_ADDRESS)));
+        result->set_member("ip", value);
+    }
+
+    {
+        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, as2js::integer(f_neighbors_count)));
+        result->set_member("neighbors_count", value);
+    }
+
+    {
+        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, as2js::integer(f_neighbors_quorum)));
+        result->set_member("neighbors_quorum", value);
+    }
+
+    {
+        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, as2js::integer(f_leaders.size())));
+        result->set_member("leaders_count", value);
+    }
+
+    {
+        as2js::json::json_value::array_t computers;
+        as2js::json::json_value::pointer_t list(std::make_shared<as2js::json::json_value>(p, computers));
+
+        for(auto const & c : f_computers)
         {
-            leader = " (LEADER #";
-            leader += std::to_string(it - f_leaders.begin());
-            leader += ')';
+            as2js::json::json_value::object_t computer;
+            as2js::json::json_value::pointer_t item(std::make_shared<as2js::json::json_value>(p, computer));
+
+            {
+                as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, c.second->get_name()));
+                item->set_member("name", value);
+            }
+
+            {
+                as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, c.second->get_id()));
+                item->set_member("id", value);
+            }
+
+            {
+                as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, c.second->get_ip_address().to_ipv4or6_string(addr::STRING_IP_ALL)));
+                item->set_member("ip", value);
+            }
+
+            {
+                auto const it(std::find_if(
+                          f_leaders.begin()
+                        , f_leaders.end()
+                        , [&c](auto const & l)
+                        {
+                            return c.second == l;
+                        }));
+                std::string leader;
+                if(it != f_leaders.end())
+                {
+                    as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, as2js::integer(it - f_leaders.begin())));
+                    item->set_member("leader", value);
+                }
+            }
+
+            list->set_item(list->get_array().size(), item);
         }
-        SNAP_LOG_INFO
-            << " --          Computer Name: "
-            << c.second->get_name()
-            << leader
-            << SNAP_LOG_SEND;
-        SNAP_LOG_INFO
-            << " --            Computer ID: "
-            << c.second->get_id()
-            << SNAP_LOG_SEND;
-        SNAP_LOG_INFO
-            << " --    Computer IP Address: "
-            << c.second->get_ip_address()
-            << SNAP_LOG_SEND;
+        result->set_member("computers", list);
     }
 
     if(msg.has_parameter(cluck::g_name_cluck_param_mode)
     && msg.get_parameter(cluck::g_name_cluck_param_mode) == cluck::g_name_cluck_value_debug)
     {
-        SNAP_LOG_INFO
-            << "++++ serialized tickets: "
-            << serialized_tickets()
-            << SNAP_LOG_SEND;
+        // TODO: create a serialization to JSON instead of a specialized string
+        //
+        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, serialized_tickets()));
+        result->set_member("tickets", value);
     }
+
+    ed::message reply_message;
+    reply_message.set_command(cluck::g_name_cluck_cmd_cluckd_status);
+    reply_message.reply_to(msg);
+    reply_message.add_parameter(communicatord::g_name_communicatord_param_status, result->to_string());
+    f_messenger->send_message(reply_message);
 }
 
 
@@ -822,6 +868,8 @@ void cluckd::election_status()
         if(f_leaders.size() == 3
         || (f_neighbors_count < 3 && f_leaders.size() == f_neighbors_count))
         {
+            // status is fine
+            //
             return;
         }
     }
@@ -2249,34 +2297,6 @@ void cluckd::msg_cluster_up(ed::message & msg)
                                 , computer::PRIORITY_USER_MIN
                                 , computer::PRIORITY_MAX);
     }
-    //else if(f_config.has_parameter("candidate_priority"))
-    //{
-    //    std::string const candidate_priority(f_config["candidate_priority"]);
-    //    if(candidate_priority == "off")
-    //    {
-    //        // a priority 15 means that this computer is not a candidate
-    //        // at all (useful for nodes that get dynamically added
-    //        // and removed--i.e. avoid re-election each time that happens.)
-    //        //
-    //        priority = computer::PRIORITY_OFF;
-    //    }
-    //    else
-    //    {
-    //        bool ok(false);
-    //        priority = candidate_priority.toLong(&ok, 10);
-    //        if(!ok)
-    //        {
-    //            SNAP_LOG_FATAL("invalid candidate_priority, a valid decimal number was expected instead of \"")(candidate_priority)("\".");
-    //            exit(1);
-    //        }
-    //        if(priority < computer::PRIORITY_USER_MIN
-    //        || priority > computer::PRIORITY_MAX)
-    //        {
-    //            SNAP_LOG_FATAL("candidate_priority must be between 1 and 15, \"")(candidate_priority)("\" is not valid.");
-    //            exit(1);
-    //        }
-    //    }
-    //}
 
     // add ourselves to the list of computers; mark us connected; get our ID
     //

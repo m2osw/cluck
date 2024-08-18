@@ -5,6 +5,7 @@
 //       (i.e. expected messages are in a clear order)
 
 hostname(variable_name: hostname)
+set_variable(name: leader0, value: "invalid-id (search on leader0 or save_parameter_value() so see where it gets set)")
 
 run()
 listen(address: <127.0.0.1:20002>)
@@ -20,10 +21,12 @@ call(label: func_expect_lock_leaders)
 call(label: func_send_unlock_with_bad_pid)
 call(label: func_expect_lock_started)
 call(label: func_expect_lock_ready)
+call(label: func_expect_cluckd_status_without_tickets)
 call(label: func_expect_lock_failed)
 call(label: func_expect_locked)
 call(label: func_send_unlock_with_bad_server_name)
 call(label: func_send_unlock_with_bad_object_name)
+call(label: func_expect_cluckd_status_with_ticket)
 call(label: func_expect_unlocking)
 call(label: func_expect_unlocked)	// this one timed out
 
@@ -161,6 +164,20 @@ print(message: "--- wait for message LOCK_READY ---")
 call(label: func_wait_message)
 call(label: func_verify_lock_ready)
 //call(label: func_send_cluster_up)
+return()
+
+// Function: expect CLUCKD_STATUS (without tickets)
+label(name: func_expect_cluckd_status_without_tickets)
+print(message: "--- wait for message CLUCKD_STATUS (without tickets)....")
+call(label: func_wait_message)
+call(label: func_verify_cluckd_status_without_tickets)
+return()
+
+// Function: expect CLUCKD_STATUS (with ticket)
+label(name: func_expect_cluckd_status_with_ticket)
+print(message: "--- wait for message CLUCKD_STATUS (with ticket)....")
+call(label: func_wait_message)
+call(label: func_verify_cluckd_status_with_ticket)
 return()
 
 // Function: expect LOCK_FAILED
@@ -304,6 +321,8 @@ verify_message(
 		leader1,
 		leader2
 	})
+// the leader0 parameter needs to be defined from what that leader sends us
+save_parameter_value(parameter_name: lock_id, variable_name: leader0)
 return()
 
 // Function: verify a LOCK READY
@@ -314,6 +333,71 @@ verify_message(
 	service: ".",
 	required_parameters: {
 		cache: no
+	})
+return()
+
+// Function: verify CLUCKD_STATUS (without tickets)
+label(name: func_verify_cluckd_status_without_tickets)
+save_parameter_value(parameter_name: status, variable_name: cluckd_status)
+print(message: "--- verify message CLUCKD_STATUS: ${cluckd_status}")
+verify_message(
+	command: CLUCKD_STATUS,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: website,
+	required_parameters: {
+		status: '{"computers":['
+			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1:0/32","leader":0,"name":"' + "${hostname}" + '"}'
+			+ '],'
+			+ '"id":"' + "${leader0}" + '",'
+			+ '"ip":"127.0.0.1",'
+			+ '"leaders_count":1,'
+			+ '"neighbors_count":1,'
+			+ '"neighbors_quorum":1}'
+	})
+return()
+
+// Function: verify CLUCKD_STATUS (with ticket)
+label(name: func_verify_cluckd_status_with_ticket)
+save_parameter_value(parameter_name: status, variable_name: cluckd_status)
+print(message: "--- verify message CLUCKD_STATUS: ${cluckd_status}")
+print(message: "--- timeout: ${timeout}")
+verify_message(
+	command: CLUCKD_STATUS,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: website,
+	required_parameters: {
+		// we cannot use ${leader0} at the moment because it includes
+		// pipes (|) and those are interpreted by the regex system
+		//
+		status: '{"computers":['
+			+ '{"id":"' + "${leader0}" + '","ip":"127.0.0.1:0/32","leader":0,"name":"' + "${hostname}" + '"}'
+			+ '],'
+			+ '"id":"' + "${leader0}" + '",'
+			+ '"ip":"127.0.0.1",'
+			+ '"leaders_count":1,'
+			+ '"neighbors_count":1,'
+			+ '"neighbors_quorum":1,'
+			+ '"tickets":"added_ticket=true'
+				+ '|added_ticket_quorum=true'
+				+ '|entering_key=monster/123'
+				+ '|get_max_ticket=true'
+				+ '|lock_duration=10'
+				+ '|lock_failed=none'
+				+ '|lock_timeout_date=' + `[0-9]+(\\.[0-9]+)?`
+				+ '|locked=true'
+				+ '|object_name=lock1'
+				+ '|obtention_timeout=' + `[0-9]+(\\.[0-9]+)?`
+				+ '|our_ticket=1'
+				+ '|owner=' + "${hostname}"
+				+ '|serial=1'
+				+ '|server_name=' + "${hostname}"
+				+ '|service_name=website'
+				+ '|tag=505'
+				+ '|ticket_key=00000001/' + "${hostname}" + '/123'
+				+ '|ticket_ready=true'
+				+ '|unlock_duration=10\\n"}'
 	})
 return()
 

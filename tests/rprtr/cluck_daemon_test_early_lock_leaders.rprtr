@@ -1,29 +1,19 @@
 // test:
 //
-//   * one real cluckd daemon (server: ${hostname} ("rc0"), service: cluckd, IP: 127.0.0.1)
-//   * simulate local communicatord (server: ${hostname}, service: communicatord)
-//   * simulate remote communicatord 1 (server: rc1, service: communicatord, IP: 10.1.2.3)
-//   * simulate remote communicatord 2 (server: rc2, service: communicatord, IP: 172.16.17.18)
-//   * simulate remote cluckd 1 (server: rc1, service: cluckd)
-//   * simulate remote cluckd 2 (server: rc2, service: cluckd)
-//   * simulate one local client (server: ${hostname}, service: website)
-//   * simulate one remote client 1 (server: rc1, service: website)
-//   * simulate one remote client 2 (server: rc2, service: website)
-//   * simulate another local client (server: ${hostname}, service: database)
-//   * simulate another local client (server: ${hostname}, service: manager)
+//   * send the LOCK_LEADERS message before cluckd receives all the
+//     lock_started
 //
 
 
 // basic setup
 //
-max_pid(variable_name: max_pid)
 random(variable_name: leader0_random)
 random(variable_name: leader0_pid, negative: 0)
 random(variable_name: leader2_random)
 random(variable_name: leader2_pid, negative: 0)
-set_variable(name: leader0, value: "14|" + ${leader0_random} % 0x100000000 + "|10.1.2.3|" + (${leader0_pid} % ${max_pid} + 1) + "|rc1") // rc1
-set_variable(name: leader1, value: "invalid-id (search on leader1 or save_parameter_value() so see where it gets set)")
-set_variable(name: leader2, value: "14|" + ${leader2_random} % 0x100000000 + "|172.16.17.18|" + (${leader2_pid} % ${max_pid} + 1) + "|rc2") // rc2
+set_variable(name: leader0, value: "14|" + ${leader0_random} % 0x100000000 + "|10.1.2.3|" + (${leader0_pid} % 0x3FFFFE + 1) + "|rc1") // rc1
+set_variable(name: leader1, value: "invalid-id (search on leader1 so see where it gets set)")
+set_variable(name: leader2, value: "14|" + ${leader2_random} % 0x100000000 + "|172.16.17.18|" + (${leader2_pid} % 0x3FFFFE + 1) + "|rc2") // rc2
 hostname(variable_name: hostname)
 run()
 listen(address: <127.0.0.1:20002>)
@@ -36,175 +26,13 @@ call(label: func_expect_service_status)
 call(label: func_expect_fluid_settings_listen)
 call(label: func_expect_cluster_status)
 call(label: func_expect_lock_started_initial)
-//call(label: func_expect_no_lock)
 call(label: func_expect_lock_started_reply_a)
-//call(label: func_expect_no_lock)
 call(label: func_expect_lock_started_reply_b)
-//call(label: func_expect_lock_leaders) -- we send that one in this test
 call(label: func_expect_lock_ready)
-call(label: func_expect_lock_entering_rc1)
-call(label: func_expect_lock_entering_rc2)
-call(label: func_expect_get_max_ticket_rc1)
-call(label: func_expect_get_max_ticket_rc2)
-call(label: func_expect_add_ticket_rc1)
-call(label: func_send_list_tickets)
-call(label: func_expect_add_ticket_rc2)
-call(label: func_expect_lock_exiting_rc1)
-call(label: func_expect_lock_exiting_rc2)
-call(label: func_expect_ticket_ready_rc1)
-call(label: func_expect_ticket_ready_rc2)
-call(label: func_expect_activate_lock_rc1)
-call(label: func_expect_activate_lock_rc2)
-call(label: func_expect_ticket_list)
-call(label: func_expect_locked)
-call(label: func_send_hang_up_with_our_server_name)
-call(label: func_expect_lock_activated_rc1)
-call(label: func_expect_lock_activated_rc2)
-call(label: func_sleep_quietly_3s)
-call(label: func_send_unlock)
-call(label: func_expect_drop_ticket_rc1)
-call(label: func_expect_drop_ticket_rc2)
-call(label: func_expect_unlocked)
-
-// we tested a first lock and it worked since we reached here
-//
-// now try 6 locks from 4 different services:
-//
-//     send lock "book_update" from remote client 1 / website
-//     send lock "schema_manager" from local client database
-//     send lock "book_update" from remote client 2 / website
-//     send lock "settings" from remote client 2 manager
-//     send lock "book_update" from local client / website
-//     send lock "fail_early" from remote client 2 / engine
-//     send lock "failing_bloom" from remote client 4 / bloom_filter
-//     send lock "failing_bloom" from remote client 5 / bloom_filter
-//
-// this checks that locks with different names (and thus keys) can indeed
-// be obtained simultaneously
-call(label: func_send_multilocks)
-call(label: func_expect_lock_entering_lk1_rc1)
-call(label: func_expect_lock_entering_lk1_rc2)
-call(label: func_expect_lock_entering_lk2_rc1)
-call(label: func_expect_lock_entering_lk2_rc2)
-call(label: func_expect_lock_entering_lk3_rc1)
-call(label: func_expect_lock_entering_lk3_rc2)
-call(label: func_expect_lock_entering_lk4_rc1)
-call(label: func_expect_lock_entering_lk4_rc2)
-call(label: func_expect_lock_entering_lk5_rc1)
-call(label: func_expect_lock_entering_lk5_rc2)
-call(label: func_expect_lock_entering_lk6_rc1)
-call(label: func_expect_lock_entering_lk6_rc2)
-call(label: func_expect_lock_entering_lk7_rc1)
-call(label: func_expect_lock_entering_lk7_rc2)
-call(label: func_expect_lock_entering_lk8_rc1)
-call(label: func_expect_lock_entering_lk8_rc2)
-call(label: func_send_list_tickets)
-call(label: func_expect_get_max_ticket_lk1_rc1)
-call(label: func_expect_get_max_ticket_lk1_rc2)
-call(label: func_expect_get_max_ticket_lk2_rc1)
-call(label: func_expect_get_max_ticket_lk2_rc2)
-call(label: func_expect_get_max_ticket_lk3_rc1)
-call(label: func_expect_get_max_ticket_lk3_rc2)
-call(label: func_expect_get_max_ticket_lk4_rc1)
-call(label: func_expect_get_max_ticket_lk4_rc2)
-call(label: func_expect_get_max_ticket_lk5_rc1)
-call(label: func_expect_get_max_ticket_lk5_rc2)
-call(label: func_expect_lock_failed_early)
-call(label: func_expect_get_max_ticket_lk7_rc1)
-call(label: func_expect_get_max_ticket_lk7_rc2)
-call(label: func_expect_get_max_ticket_lk8_rc1)
-call(label: func_expect_get_max_ticket_lk8_rc2)
-call(label: func_expect_empty_ticket_list)
-call(label: func_expect_add_ticket_lk1_rc1)
-call(label: func_expect_add_ticket_lk1_rc2)
-call(label: func_expect_add_ticket_lk2_rc1)
-call(label: func_expect_add_ticket_lk2_rc2)
-call(label: func_send_hang_up_with_unknown_server_name)
-call(label: func_expect_add_ticket_lk3_rc1)
-call(label: func_expect_add_ticket_lk3_rc2)
-call(label: func_expect_add_ticket_lk4_rc1)
-call(label: func_expect_add_ticket_lk4_rc2)
-call(label: func_expect_add_ticket_lk5_rc1)
-call(label: func_expect_add_ticket_lk5_rc2)
-call(label: func_expect_add_ticket_lk7_rc1)
-call(label: func_expect_add_ticket_lk7_rc2)
-call(label: func_expect_add_ticket_lk8_rc1)
-call(label: func_expect_add_ticket_lk8_rc2)
-call(label: func_send_list_tickets)
-call(label: func_expect_lock_exiting_lk1_rc1)
-call(label: func_expect_lock_exiting_lk1_rc2)
-call(label: func_expect_lock_exiting_lk2_rc1)
-call(label: func_expect_lock_exiting_lk2_rc2)
-call(label: func_expect_ticket_ready_lk2_rc1)
-call(label: func_expect_ticket_ready_lk2_rc2)
-call(label: func_expect_activate_lock_lk2_rc1)
-call(label: func_expect_activate_lock_lk2_rc2)
-call(label: func_expect_lock_exiting_lk3_rc1)
-call(label: func_expect_lock_exiting_lk3_rc2)
-call(label: func_expect_lock_exiting_lk4_rc1)
-call(label: func_expect_lock_exiting_lk4_rc2)
-call(label: func_expect_ticket_ready_lk4_rc1)
-call(label: func_expect_ticket_ready_lk4_rc2)
-call(label: func_expect_activate_lock_lk4_rc1)
-call(label: func_expect_activate_lock_lk4_rc2)
-call(label: func_expect_lock_exiting_lk5_rc1)
-call(label: func_expect_lock_exiting_lk5_rc2)
-call(label: func_expect_ticket_ready_lk1_rc1)
-call(label: func_expect_ticket_ready_lk1_rc2)
-call(label: func_expect_ticket_ready_lk3_rc1)
-call(label: func_expect_ticket_ready_lk3_rc2)
-call(label: func_expect_ticket_ready_lk5_rc1)
-call(label: func_expect_ticket_ready_lk5_rc2)
-call(label: func_expect_activate_lock_lk1_rc1) // Note: this happens here because lk1, lk2, and lk3 tickets need to be processed
-call(label: func_expect_activate_lock_lk1_rc2)
-call(label: func_expect_lock_failed_bloom_lk7)
-call(label: func_expect_lock_failed_bloom_lk8)
-call(label: func_expect_long_ticket_list)
-call(label: func_expect_locked_lk1)
-call(label: func_expect_lock_activated_lk1_rc1)
-call(label: func_expect_lock_activated_lk1_rc2)
-call(label: func_expect_locked_lk2)
-call(label: func_expect_lock_activated_lk2_rc1)
-call(label: func_expect_lock_activated_lk2_rc2)
-call(label: func_expect_locked_lk4)
-call(label: func_expect_lock_activated_lk4_rc1)
-call(label: func_expect_lock_activated_lk4_rc2)
-call(label: func_send_list_tickets)
-call(label: func_expect_locked_ticket_list)
-call(label: func_sleep_quietly_25cs)
-call(label: func_send_unlock_lk1)
-call(label: func_expect_drop_ticket_lk1_rc1)
-call(label: func_expect_drop_ticket_lk1_rc2)
-call(label: func_expect_unlocked_lk1)
-call(label: func_expect_activate_lock_lk3_rc1)
-call(label: func_expect_activate_lock_lk3_rc2)
-call(label: func_expect_locked_lk3)
-//call(label: func_expect_lock_activated_lk3_rc1)
-//call(label: func_expect_lock_activated_lk3_rc2)
-call(label: func_sleep_quietly_25cs)
-call(label: func_send_unlock_lk4)
-call(label: func_send_unlock_lk2)
-call(label: func_sleep_quietly_25cs)
-call(label: func_send_unlock_lk3)
-call(label: func_expect_drop_ticket_lk4_rc1)	// TODO: determine why this does not happen before the sleep 0.25s
-call(label: func_expect_drop_ticket_lk4_rc2)
-call(label: func_expect_unlocked_lk4)
-call(label: func_expect_drop_ticket_lk2_rc1)
-call(label: func_expect_drop_ticket_lk2_rc2)
-call(label: func_expect_unlocked_lk2)
-call(label: func_expect_drop_ticket_lk3_rc1)
-call(label: func_expect_drop_ticket_lk3_rc2)
-call(label: func_expect_unlocked_lk3)
-call(label: func_expect_activate_lock_lk5_rc1)
-call(label: func_expect_activate_lock_lk5_rc2)
-call(label: func_expect_locked_lk5)
-//call(label: func_expect_lock_activated_lk5_rc1)
-//call(label: func_expect_lock_activated_lk5_rc2)
-call(label: func_sleep_quietly_25cs)
-call(label: func_send_unlock_lk5)
-call(label: func_expect_drop_ticket_lk5_rc1)
-call(label: func_expect_drop_ticket_lk5_rc2)
-call(label: func_expect_unlocked_lk5)
+call(label: func_expect_lock_started_reply_c)
+call(label: func_send_info)
+call(label: func_expect_lock_started_reply_d)
+call(label: func_expect_cluckd_status)
 
 
 
@@ -302,7 +130,6 @@ return()
 
 // Function: expect REGISTER
 label(name: func_expect_register)
-print(message: "--- expect REGISTER ---")
 call(label: func_wait_message)
 call(label: func_verify_register)
 call(label: func_send_help)
@@ -311,7 +138,6 @@ return()
 
 // Function: expect COMMANDS
 label(name: func_expect_commands)
-print(message: "--- expect COMMANDS ---")
 call(label: func_wait_message)
 call(label: func_verify_commands)
 return()
@@ -347,7 +173,6 @@ print(message: "--- wait for message LOCK_STARTED (initial)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_started_broadcast_initial)
 call(label: func_send_lock_started_from_rc1)
-call(label: func_send_lock_started_from_rc2)
 return()
 
 label(name: func_expect_no_lock)
@@ -356,7 +181,6 @@ call(label: func_wait_message)
 call(label: func_verify_no_lock)
 return()
 
-// Function: expect LOCK_STARTED (reply A)
 label(name: func_expect_lock_started_reply_a)
 // this reply does not yet include the leaders (too early)
 print(message: "--- wait for message LOCK_STARTED (reply_a)....")
@@ -373,7 +197,30 @@ return()
 label(name: func_expect_lock_started_reply_b)
 print(message: "--- wait for message LOCK_STARTED (reply_b)....")
 call(label: func_wait_message)
-call(label: func_verify_lock_started_to_rc2_early)
+call(label: func_verify_lock_started_to_rc2)
+call(label: func_send_lock_started_from_rc2) // this one is late
+return()
+
+// Function: expect LOCK_STARTED (reply C)
+label(name: func_expect_lock_started_reply_c)
+print(message: "--- wait for message LOCK_STARTED (reply_c)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_to_rc2)
+call(label: func_send_lock_started_from_rc2) // this one is late
+return()
+
+// Function: expect LOCK_STARTED (reply D)
+label(name: func_expect_lock_started_reply_d)
+print(message: "--- wait for message LOCK_STARTED (reply_d)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_to_rc2)
+return()
+
+// Function: expect CLUCKD_STATUS
+label(name: func_expect_cluckd_status)
+print(message: "--- wait for message CLUCKD_STATUS....")
+call(label: func_wait_message)
+call(label: func_verify_cluckd_status)
 return()
 
 // Function:: expect LOCK_READY
@@ -384,7 +231,6 @@ call(label: func_verify_lock_ready)
 // WARNING: variable is reused in the verify_lock_started and others
 now(variable_name: lock_timeout)
 set_variable(name: lock_timeout, value: ${lock_timeout} + 60) // now + 1 minute
-call(label: func_send_lock)
 return()
 
 label(name: func_expect_lock_entering_rc1)
@@ -1307,7 +1153,6 @@ verify_message(
 	sent_service: cluckd,
 	service: "*", // this one was broadcast
 	required_parameters: {
-		// here we do not yet know what the ${leader1} id is going to be
 		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
 		server_name: ${hostname},
 		start_time: `^[0-9]+(\\.[0-9]+)?$`
@@ -1331,7 +1176,7 @@ verify_message(
 	server: rc1,
 	service: cluckd,
 	required_parameters: {
-		lock_id: ${leader1},
+		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
 		server_name: ${hostname},
 		start_time: `^[0-9]+(\\.[0-9]+)?$`
 	},
@@ -1343,43 +1188,9 @@ verify_message(
 	})
 return()
 
-// Function: verify LOCK STARTED (to rc2)
-label(name: func_verify_lock_started_to_rc2_early)
-print(message: "--- verify message LOCK_STARTED (rc2).... [early]")
-verify_message(
-	command: LOCK_STARTED,
-	sent_service: cluckd,
-	server: rc2,
-	service: cluckd,
-	required_parameters: {
-		lock_id: ${leader1},
-		server_name: ${hostname},
-		start_time: `^[0-9]+(\\.[0-9]+)?$`
-	},
-	forbidden_parameters: {
-		election_date,
-		leader0,
-		leader1,
-		leader2,
-		leader3
-	})
-return()
-
-// Function: verify LOCK READY
-label(name: func_verify_lock_ready)
-print(message: "--- verify message LOCK_READY....")
-verify_message(
-	command: LOCK_READY,
-	sent_service: cluckd,
-	service: ".",
-	required_parameters: {
-		cache: no
-	})
-return()
-
-// Function: verify LOCK STARTED (to rc2)
+// Function: verify LOCK_STARTED (to rc2)
 label(name: func_verify_lock_started_to_rc2)
-print(message: "--- verify message LOCK_STARTED (rc2)....")
+print(message: "--- verify message LOCK_STARTED (rc2).... [early]")
 verify_message(
 	command: LOCK_STARTED,
 	sent_service: cluckd,
@@ -1397,8 +1208,68 @@ verify_message(
 	forbidden_parameters: {
 		leader3
 	})
-print(message: "--- message LOCK_STARTED works (rc2)....")
 return()
+
+// Function: verify CLUCKD_STATUS (to rc2)
+label(name: func_verify_cluckd_status)
+save_parameter_value(parameter_name: status, variable_name: cluckd_status)
+print(message: "--- verify message CLUCKD_STATUS: ${cluckd_status}")
+print(message: "--- leader0: ${leader0}")
+print(message: "--- leader1: ${leader1}")
+print(message: "--- leader2: ${leader2}")
+verify_message(
+	command: CLUCKD_STATUS,
+	sent_service: cluckd,
+	server: rc3,
+	service: prinbee,
+	required_parameters: {
+		status: '{"computers":['
+			+ '{"id":"'+ "${leader1}" + '","ip":"127.0.0.1:0/32","leader":1,"name":"monster"},'
+			+ '{"id":"'+ "${leader0}" + '","ip":"10.1.2.3:0/32","leader":0,"name":"rc1"},'
+			+ '{"id":"'+ "${leader2}" + '","ip":"172.16.17.18:0/32","leader":2,"name":"rc2"}'
+			+ '],'
+			+ '"id":"' + "${leader1}" + '",'
+			+ '"ip":"127.0.0.1",'
+			+ '"leaders_count":3,'
+			+ '"neighbors_count":3,'
+			+ '"neighbors_quorum":2}'
+	})
+return()
+
+// Function: verify LOCK READY
+label(name: func_verify_lock_ready)
+print(message: "--- verify message LOCK_READY....")
+verify_message(
+	command: LOCK_READY,
+	sent_service: cluckd,
+	service: ".",
+	required_parameters: {
+		cache: no
+	})
+return()
+
+// Function: verify LOCK STARTED (to rc2)
+//label(name: func_verify_lock_started_to_rc2)
+//print(message: "--- verify message LOCK_STARTED (rc2)....")
+//verify_message(
+//	command: LOCK_STARTED,
+//	sent_service: cluckd,
+//	server: rc2,
+//	service: cluckd,
+//	required_parameters: {
+//		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+//		server_name: ${hostname},
+//		start_time: `^[0-9]+(\\.[0-9]+)?$`,
+//		election_date: `^[0-9]+(\\.[0-9]+)?$`,
+//		leader0: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`,
+//		leader1: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`,
+//		leader2: `^14\\|[0-9]+\\|[0-9.]+\\|[0-9]+\\|(${hostname}|rc1|rc2)$`
+//	},
+//	forbidden_parameters: {
+//		leader3
+//	})
+//print(message: "--- message LOCK_STARTED works (rc2)....")
+//return()
 
 // Function: verify LOCK STARTED (to rc1, including leaders)
 label(name: func_verify_lock_started_to_rc1)
@@ -3485,6 +3356,37 @@ send_message(
 	parameters: {
 		lock_id: ${leader2},
 		server_name: rc2,
+		start_time: ${now}
+	})
+return()
+
+// Function: send INFO from rc3 computer
+label(name: func_send_info)
+now(variable_name: now)
+send_message(
+	command: INFO,
+	sent_server: rc3,
+	sent_service: prinbee,
+	server: ${hostname},
+	service: cluckd)
+return()
+
+// Function: send LOCK_STARTED from rc1 with leaders
+label(name: func_send_lock_started_with_leaders_from_rc1)
+now(variable_name: now)
+send_message(
+	command: LOCK_STARTED,
+	sent_server: rc1,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		lock_id: "14|1315897767|10.1.2.3|824735|rc1",
+		server_name: rc1,
+		election_date: ${election_date},
+		leader0: ${leader0},
+		leader1: ${leader1},
+		leader2: ${leader2},
 		start_time: ${now}
 	})
 return()

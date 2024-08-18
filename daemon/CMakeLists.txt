@@ -31,6 +31,7 @@ add_executable(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME}
     PUBLIC
         ${ADVGETOPT_INCLUDE_DIRS}
+        ${AS2JS_INCLUDE_DIRS}
         ${CPPTHREAD_INCLUDE_DIRS}
         ${EVENTDISPATCHER_INCLUDE_DIRS}
         ${LIBADDR_INCLUDE_DIRS}
@@ -42,6 +43,7 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     cluck
     ${ADVGETOPT_LIBRARIES}
+    ${AS2JS_LIBRARIES}
     ${CPPTHREAD_LIBRARIES}
     ${LIBADDR_LIBRARIES}
     ${OPENSSL_LIBRARIES}

@@ -6,6 +6,7 @@ project=cluck
 [public]
 cmd_activate_lock=ACTIVATE_LOCK
 cmd_add_ticket=ADD_TICKET
+cmd_cluckd_status=CLUCKD_STATUS
 cmd_cluster_status=CLUSTER_STATUS
 cmd_drop_ticket=DROP_TICKET
 cmd_get_max_ticket=GET_MAX_TICKET

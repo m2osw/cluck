@@ -21,6 +21,7 @@ cmake_minimum_required(VERSION 3.10.2)
 project(cluck_project)
 
 find_package(AdvGetOpt                REQUIRED)
+find_package(As2Js                    REQUIRED)
 find_package(AtomicNames              REQUIRED)
 find_package(Communicatord            REQUIRED)
 find_package(CppThread                REQUIRED)
