@@ -7,13 +7,13 @@
 
 // basic setup
 //
-random(variable_name: leader0_random)
+random(variable_name: leader0_random, negative: 0)
 random(variable_name: leader0_pid, negative: 0)
-random(variable_name: leader2_random)
+random(variable_name: leader2_random, negative: 0)
 random(variable_name: leader2_pid, negative: 0)
-set_variable(name: leader0, value: "14|" + ${leader0_random} % 0x100000000 + "|10.1.2.3|" + (${leader0_pid} % 0x3FFFFE + 1) + "|rc1") // rc1
+set_variable(name: leader0, value: "14|" + ${leader0_random} % 0x100000000 + "|10.1.2.3|" + (${leader0_pid} % 0x3FFFFE + 1) + "|rc1")
 set_variable(name: leader1, value: "invalid-id (search on leader1 so see where it gets set)")
-set_variable(name: leader2, value: "14|" + ${leader2_random} % 0x100000000 + "|172.16.17.18|" + (${leader2_pid} % 0x3FFFFE + 1) + "|rc2") // rc2
+set_variable(name: leader2, value: "14|" + ${leader2_random} % 0x100000000 + "|172.16.17.18|" + (${leader2_pid} % 0x3FFFFE + 1) + "|rc2")
 hostname(variable_name: hostname)
 run()
 listen(address: <127.0.0.1:20002>)

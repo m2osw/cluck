@@ -12,7 +12,7 @@ hostname(variable_name: hostname)
 set_variable(name: allow_timeout, value: 0)
 max_pid(variable_name: max_pid)
 
-random(variable_name: leader1_random)
+random(variable_name: leader1_random, negative: 0)
 random(variable_name: leader1_pid, negative: 0)
 set_variable(name: leader0, value: "invalid-id (search on leader0 or save_parameter_value() so see where it gets set)")
 set_variable(name: leader1, value: "14|" + ${leader1_random} % 0x100000000 + "|172.1.2.3|" + (${leader1_pid} % ${max_pid} + 1) + "|two")

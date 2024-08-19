@@ -967,7 +967,8 @@ void cluckd::election_status()
 
     if(f_computers.size() <= 3)
     {
-        if(off != 0)
+        if(off != 0
+        && f_computers.size() >= f_neighbors_count)
         {
             SNAP_LOG_FATAL
                 << "you cannot have any cluck computer turned OFF when you"
@@ -978,7 +979,8 @@ void cluckd::election_status()
             return;
         }
     }
-    else if(f_computers.size() - off < 3)
+    else if(f_computers.size() - off < 3
+         && f_computers.size() >= f_neighbors_count)
     {
         SNAP_LOG_FATAL
             << "you have a total of "

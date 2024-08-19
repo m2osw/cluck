@@ -152,9 +152,6 @@ bool computer::get_connected() const
  */
 bool computer::set_id(std::string const & id)
 {
-SNAP_LOG_WARNING
-<< "set_id(" << id << ")"
-<< SNAP_LOG_SEND;
     if(f_priority != PRIORITY_UNDEFINED)
     {
         throw cluck::logic_error("computer::set_id() cannot be called more than once.");

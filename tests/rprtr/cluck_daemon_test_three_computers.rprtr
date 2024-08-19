@@ -17,9 +17,9 @@
 // basic setup
 //
 max_pid(variable_name: max_pid)
-random(variable_name: leader0_random)
+random(variable_name: leader0_random, negative: 0)
 random(variable_name: leader0_pid, negative: 0)
-random(variable_name: leader2_random)
+random(variable_name: leader2_random, negative: 0)
 random(variable_name: leader2_pid, negative: 0)
 set_variable(name: leader0, value: "14|" + ${leader0_random} % 0x100000000 + "|10.1.2.3|" + (${leader0_pid} % ${max_pid} + 1) + "|rc1") // rc1
 set_variable(name: leader1, value: "invalid-id (search on leader1 or save_parameter_value() so see where it gets set)")
