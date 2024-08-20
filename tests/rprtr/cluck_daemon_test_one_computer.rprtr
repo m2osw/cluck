@@ -24,6 +24,7 @@ call(label: func_expect_lock_ready)
 call(label: func_expect_cluckd_status_without_tickets)
 call(label: func_expect_lock_failed)
 call(label: func_expect_locked)
+call(label: func_expect_lock_failed_duplicate)
 call(label: func_send_unlock_with_bad_server_name)
 call(label: func_send_unlock_with_bad_object_name)
 call(label: func_expect_cluckd_status_with_ticket)
@@ -187,7 +188,9 @@ call(label: func_wait_message)
 call(label: func_verify_lock_failed)
 now(variable_name: timeout)
 set_variable(name: timeout, value: ${timeout} + 60) // now + 1 minute
+call(label: func_send_lock_with_invalid_pid)
 call(label: func_send_lock)
+call(label: func_send_lock) // send it twice, the second time it generates a LOCK_FAILED (duplicate)
 return()
 
 // Function: expect LOCKED
@@ -197,6 +200,13 @@ call(label: func_wait_message)
 call(label: func_verify_locked)
 set_variable(name: info_mode, value: "debug")
 call(label: func_send_info)
+return()
+
+// Function: expect LOCK_FAILED
+label(name: func_expect_lock_failed_duplicate)
+print(message: "--- wait for message LOCK_FAILED (duplicate) ---")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_duplicate)
 return()
 
 // Function: expect UNLOCKED
@@ -412,11 +422,26 @@ verify_message(
 	required_parameters: {
 		error: "timedout",
 		key: "${hostname}/123",
-		object_name: "lock1"
+		object_name: "lock1",
+		tag: 505
 	})
 return()
 label(name: not_timedout_lock1_lock_failed)
 exit(error_message: "unhandled LOCK_FAILED")
+
+// Function: verify a LOCK FAILED
+label(name: func_verify_lock_failed_duplicate)
+verify_message(
+	command: LOCK_FAILED,
+	server: ${hostname},
+	service: "website",
+	required_parameters: {
+		error: "duplicate",
+		key: "${hostname}/123",
+		object_name: "lock1",
+		tag: 505
+	})
+return()
 
 // Function: verify a UNLOCKED
 label(name: func_verify_unlocked)
@@ -624,6 +649,24 @@ send_message(
 	service: cluckd,
 	parameters: {
 		neighbors_count: 1
+	})
+return()
+
+// Function: send LOCK with invalid pid
+// Parameters: ${timeout} -- when the LOCK request times out
+label(name: func_send_lock_with_invalid_pid)
+send_message(
+	command: LOCK,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		tag: 505,
+		pid: -9123,
+		duration: 10,
+		timeout: ${timeout}
 	})
 return()
 

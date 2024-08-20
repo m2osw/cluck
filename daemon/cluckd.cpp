@@ -2437,7 +2437,7 @@ void cluckd::msg_get_max_ticket(ed::message & msg)
     std::string key;
     if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
     // remove any f_tickets that timed out by now because these should

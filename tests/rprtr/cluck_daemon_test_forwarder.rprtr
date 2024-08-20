@@ -40,184 +40,23 @@ call(label: func_expect_commands)
 call(label: func_expect_service_status)
 call(label: func_expect_fluid_settings_listen)
 call(label: func_expect_cluster_status)
+call(label: func_send_random_absolutely)
 call(label: func_expect_lock_started_initial)
 call(label: func_expect_lock_started_reply_a)
 call(label: func_expect_lock_started_reply_b)
+call(label: func_send_absolutely_with_unknown_serial)
 call(label: func_expect_lock_leaders)
 call(label: func_expect_lock_ready)
 call(label: func_expect_lock_started_reply_c)
 call(label: func_expect_lock_started_reply_d)
+call(label: func_expect_lock_failed_duration_too_small)
 call(label: func_expect_lock)
+call(label: func_expect_lock_failed_unlock_duration_too_small)
 call(label: func_sleep_quietly_25cs)
 call(label: func_send_unlock)
 call(label: func_expect_unlock)
+call(label: func_send_cluster_down)
 
-
-//call(label: func_expect_lock_entering_rc1)
-//call(label: func_expect_lock_entering_rc2)
-//call(label: func_expect_get_max_ticket_rc1)
-//call(label: func_expect_get_max_ticket_rc2)
-//call(label: func_expect_add_ticket_rc1)
-//call(label: func_send_list_tickets)
-//call(label: func_expect_add_ticket_rc2)
-//call(label: func_expect_lock_exiting_rc1)
-//call(label: func_expect_lock_exiting_rc2)
-//call(label: func_expect_ticket_ready_rc1)
-//call(label: func_expect_ticket_ready_rc2)
-//call(label: func_expect_activate_lock_rc1)
-//call(label: func_expect_activate_lock_rc2)
-//call(label: func_expect_ticket_list)
-//call(label: func_expect_locked)
-//call(label: func_send_hang_up_with_our_server_name)
-//call(label: func_expect_lock_activated_rc1)
-//call(label: func_expect_lock_activated_rc2)
-//call(label: func_sleep_quietly_3s)
-//call(label: func_send_unlock)
-//call(label: func_expect_drop_ticket_rc1)
-//call(label: func_expect_drop_ticket_rc2)
-//
-////call(label: func_expect_no_lock)
-////call(label: func_expect_no_lock)
-//
-//// we tested a first lock and it worked since we reached here
-////
-//// now try 6 locks from 4 different services:
-////
-////     send lock "book_update" from remote client 1 / website
-////     send lock "schema_manager" from local client database
-////     send lock "book_update" from remote client 2 / website
-////     send lock "settings" from remote client 2 manager
-////     send lock "book_update" from local client / website
-////     send lock "fail_early" from remote client 2 / engine
-////     send lock "failing_bloom" from remote client 4 / bloom_filter
-////     send lock "failing_bloom" from remote client 5 / bloom_filter
-////
-//// this checks that locks with different names (and thus keys) can indeed
-//// be obtained simultaneously
-//call(label: func_send_multilocks)
-//call(label: func_expect_lock_entering_lk1_rc1)
-//call(label: func_expect_lock_entering_lk1_rc2)
-//call(label: func_expect_lock_entering_lk2_rc1)
-//call(label: func_expect_lock_entering_lk2_rc2)
-//call(label: func_expect_lock_entering_lk3_rc1)
-//call(label: func_expect_lock_entering_lk3_rc2)
-//call(label: func_expect_lock_entering_lk4_rc1)
-//call(label: func_expect_lock_entering_lk4_rc2)
-//call(label: func_expect_lock_entering_lk5_rc1)
-//call(label: func_expect_lock_entering_lk5_rc2)
-//call(label: func_expect_lock_entering_lk6_rc1)
-//call(label: func_expect_lock_entering_lk6_rc2)
-//call(label: func_expect_lock_entering_lk7_rc1)
-//call(label: func_expect_lock_entering_lk7_rc2)
-//call(label: func_expect_lock_entering_lk8_rc1)
-//call(label: func_expect_lock_entering_lk8_rc2)
-//call(label: func_send_list_tickets)
-//call(label: func_expect_get_max_ticket_lk1_rc1)
-//call(label: func_expect_get_max_ticket_lk1_rc2)
-//call(label: func_expect_get_max_ticket_lk2_rc1)
-//call(label: func_expect_get_max_ticket_lk2_rc2)
-//call(label: func_expect_get_max_ticket_lk3_rc1)
-//call(label: func_expect_get_max_ticket_lk3_rc2)
-//call(label: func_expect_get_max_ticket_lk4_rc1)
-//call(label: func_expect_get_max_ticket_lk4_rc2)
-//call(label: func_expect_get_max_ticket_lk5_rc1)
-//call(label: func_expect_get_max_ticket_lk5_rc2)
-//call(label: func_expect_lock_failed_early)
-//call(label: func_expect_get_max_ticket_lk7_rc1)
-//call(label: func_expect_get_max_ticket_lk7_rc2)
-//call(label: func_expect_get_max_ticket_lk8_rc1)
-//call(label: func_expect_get_max_ticket_lk8_rc2)
-//call(label: func_expect_empty_ticket_list)
-//call(label: func_expect_add_ticket_lk1_rc1)
-//call(label: func_expect_add_ticket_lk1_rc2)
-//call(label: func_expect_add_ticket_lk2_rc1)
-//call(label: func_expect_add_ticket_lk2_rc2)
-//call(label: func_send_hang_up_with_unknown_server_name)
-//call(label: func_expect_add_ticket_lk3_rc1)
-//call(label: func_expect_add_ticket_lk3_rc2)
-//call(label: func_expect_add_ticket_lk4_rc1)
-//call(label: func_expect_add_ticket_lk4_rc2)
-//call(label: func_expect_add_ticket_lk5_rc1)
-//call(label: func_expect_add_ticket_lk5_rc2)
-//call(label: func_expect_add_ticket_lk7_rc1)
-//call(label: func_expect_add_ticket_lk7_rc2)
-//call(label: func_expect_add_ticket_lk8_rc1)
-//call(label: func_expect_add_ticket_lk8_rc2)
-//call(label: func_send_list_tickets)
-//call(label: func_expect_lock_exiting_lk1_rc1)
-//call(label: func_expect_lock_exiting_lk1_rc2)
-//call(label: func_expect_lock_exiting_lk2_rc1)
-//call(label: func_expect_lock_exiting_lk2_rc2)
-//call(label: func_expect_ticket_ready_lk2_rc1)
-//call(label: func_expect_ticket_ready_lk2_rc2)
-//call(label: func_expect_activate_lock_lk2_rc1)
-//call(label: func_expect_activate_lock_lk2_rc2)
-//call(label: func_expect_lock_exiting_lk3_rc1)
-//call(label: func_expect_lock_exiting_lk3_rc2)
-//call(label: func_expect_lock_exiting_lk4_rc1)
-//call(label: func_expect_lock_exiting_lk4_rc2)
-//call(label: func_expect_ticket_ready_lk4_rc1)
-//call(label: func_expect_ticket_ready_lk4_rc2)
-//call(label: func_expect_activate_lock_lk4_rc1)
-//call(label: func_expect_activate_lock_lk4_rc2)
-//call(label: func_expect_lock_exiting_lk5_rc1)
-//call(label: func_expect_lock_exiting_lk5_rc2)
-//call(label: func_expect_ticket_ready_lk1_rc1)
-//call(label: func_expect_ticket_ready_lk1_rc2)
-//call(label: func_expect_ticket_ready_lk3_rc1)
-//call(label: func_expect_ticket_ready_lk3_rc2)
-//call(label: func_expect_ticket_ready_lk5_rc1)
-//call(label: func_expect_ticket_ready_lk5_rc2)
-//call(label: func_expect_activate_lock_lk1_rc1) // Note: this happens here because lk1, lk2, and lk3 tickets need to be processed
-//call(label: func_expect_activate_lock_lk1_rc2)
-//call(label: func_expect_lock_failed_bloom_lk7)
-//call(label: func_expect_lock_failed_bloom_lk8)
-//call(label: func_expect_long_ticket_list)
-//call(label: func_expect_locked_lk1)
-//call(label: func_expect_lock_activated_lk1_rc1)
-//call(label: func_expect_lock_activated_lk1_rc2)
-//call(label: func_expect_locked_lk2)
-//call(label: func_expect_lock_activated_lk2_rc1)
-//call(label: func_expect_lock_activated_lk2_rc2)
-//call(label: func_expect_locked_lk4)
-//call(label: func_expect_lock_activated_lk4_rc1)
-//call(label: func_expect_lock_activated_lk4_rc2)
-//call(label: func_send_list_tickets)
-//call(label: func_expect_locked_ticket_list)
-//call(label: func_sleep_quietly_25cs)
-//call(label: func_send_unlock_lk1)
-//call(label: func_expect_drop_ticket_lk1_rc1)
-//call(label: func_expect_drop_ticket_lk1_rc2)
-//call(label: func_expect_unlocked_lk1)
-//call(label: func_expect_activate_lock_lk3_rc1)
-//call(label: func_expect_activate_lock_lk3_rc2)
-//call(label: func_expect_locked_lk3)
-////call(label: func_expect_lock_activated_lk3_rc1)
-////call(label: func_expect_lock_activated_lk3_rc2)
-//call(label: func_sleep_quietly_25cs)
-//call(label: func_send_unlock_lk4)
-//call(label: func_send_unlock_lk2)
-//call(label: func_sleep_quietly_25cs)
-//call(label: func_send_unlock_lk3)
-//call(label: func_expect_drop_ticket_lk4_rc1)	// TODO: determine why this does not happen before the sleep 0.25s
-//call(label: func_expect_drop_ticket_lk4_rc2)
-//call(label: func_expect_unlocked_lk4)
-//call(label: func_expect_drop_ticket_lk2_rc1)
-//call(label: func_expect_drop_ticket_lk2_rc2)
-//call(label: func_expect_unlocked_lk2)
-//call(label: func_expect_drop_ticket_lk3_rc1)
-//call(label: func_expect_drop_ticket_lk3_rc2)
-//call(label: func_expect_unlocked_lk3)
-//call(label: func_expect_activate_lock_lk5_rc1)
-//call(label: func_expect_activate_lock_lk5_rc2)
-//call(label: func_expect_locked_lk5)
-////call(label: func_expect_lock_activated_lk5_rc1)
-////call(label: func_expect_lock_activated_lk5_rc2)
-//call(label: func_sleep_quietly_25cs)
-//call(label: func_send_unlock_lk5)
-//call(label: func_expect_drop_ticket_lk5_rc1)
-//call(label: func_expect_drop_ticket_lk5_rc2)
-//call(label: func_expect_unlocked_lk5)
 
 
 
@@ -398,10 +237,24 @@ call(label: func_wait_message)
 call(label: func_verify_lock_started_to_rc4)
 return()
 
+// Function: expect LOCK_FAILED (duration too small)
+label(name: func_expect_lock_failed_duration_too_small)
+print(message: "--- wait for message LOCK_FAILED (duration too small)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_duration_too_small)
+return()
+
 label(name: func_expect_lock)
 print(message: "--- wait for message LOCK....")
 call(label: func_wait_message)
 call(label: func_verify_lock)
+return()
+
+// Function: expect LOCK_FAILED (unlock duration too small)
+label(name: func_expect_lock_failed_unlock_duration_too_small)
+print(message: "--- wait for message LOCK_FAILED (unlock duration too small)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_unlock_duration_too_small)
 return()
 
 label(name: func_expect_lock_leaders)
@@ -414,7 +267,9 @@ label(name: func_expect_lock_ready)
 print(message: "--- wait for message LOCK_READY....")
 call(label: func_wait_message)
 call(label: func_verify_lock_ready)
+call(label: func_send_lock_duration_too_small)
 call(label: func_send_lock)
+call(label: func_send_lock_unlock_duration_too_small)
 return()
 
 label(name: func_expect_lock_entering_rc1)
@@ -2873,6 +2728,21 @@ verify_message(
 	})
 return()
 
+// Function: verify LOCK_FAILED (duration too small)
+label(name: func_verify_lock_failed_duration_too_small)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: website,
+	required_parameters: {
+		error: "invalid",
+		key: "${hostname}/8391",
+		object_name: "forwarder",
+		tag: 418
+	})
+return()
+
 // Function: verify LOCK_FAILED (fail early)
 label(name: func_verify_lock_failed_early)
 verify_message(
@@ -2885,6 +2755,21 @@ verify_message(
 		key: "rc2/814",
 		object_name: "fail_early",
 		tag: 1839
+	})
+return()
+
+// Function: verify LOCK_FAILED (unlock duration too small)
+label(name: func_verify_lock_failed_unlock_duration_too_small)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: website,
+	required_parameters: {
+		error: "invalid",
+		key: "${hostname}/8391",
+		object_name: "forwarder",
+		tag: 420
 	})
 return()
 
@@ -3660,6 +3545,25 @@ send_message(
 	})
 return()
 
+// Function: send LOCK (duration too small)
+label(name: func_send_lock_duration_too_small)
+now(variable_name: lock_timeout)
+set_variable(name: lock_timeout, value: ${lock_timeout} + 60) // now + 1 minute
+send_message(
+	command: LOCK,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "forwarder",
+		tag: 418,
+		pid: 8391,
+		duration: 2, // <-- this needs to be 3 or more to be valid
+		timeout: ${lock_timeout}
+	})
+return()
+
 // Function: send LOCK
 label(name: func_send_lock)
 now(variable_name: lock_timeout)
@@ -3675,6 +3579,26 @@ send_message(
 		tag: 419,
 		pid: 8391,
 		duration: 20,
+		timeout: ${lock_timeout}
+	})
+return()
+
+// Function: send LOCK (duration too small)
+label(name: func_send_lock_unlock_duration_too_small)
+now(variable_name: lock_timeout)
+set_variable(name: lock_timeout, value: ${lock_timeout} + 60) // now + 1 minute
+send_message(
+	command: LOCK,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "forwarder",
+		tag: 420,
+		pid: 8391,
+		duration: 45,
+		unlock_duration: 2, // <-- this needs to be 3 or more to be valid
 		timeout: ${lock_timeout}
 	})
 return()
@@ -4796,6 +4720,48 @@ send_message(
 		object_name: "forwarder",
 		pid: 4839,
 		tag: 2019
+	})
+return()
+
+// Function: send ABSOLUTELY (random)
+label(name: func_send_random_absolutely)
+now(variable_name: now)
+send_message(
+	command: ABSOLUTELY,
+	sent_server: ${hostname},
+	sent_service: some_service,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		reply_timestamp: ${now}
+	})
+return()
+
+// Function: send ABSOLUTELY (with unknown serial)
+label(name: func_send_absolutely_with_unknown_serial)
+now(variable_name: now)
+send_message(
+	command: ABSOLUTELY,
+	sent_server: ${hostname},
+	sent_service: some_service,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		serial: "not/a/lock/serial",
+		reply_timestamp: ${now}
+	})
+return()
+
+// Function: send CLUSTER_DOWN
+label(name: func_send_cluster_down)
+send_message(
+	command: CLUSTER_DOWN,
+	sent_server: ${hostname},
+	sent_service: communicatord,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		neighbors_count: 5
 	})
 return()
 
