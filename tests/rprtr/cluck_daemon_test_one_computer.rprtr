@@ -21,8 +21,10 @@ call(label: func_expect_lock_leaders)
 call(label: func_send_unlock_with_bad_pid)
 call(label: func_expect_lock_started)
 call(label: func_expect_lock_ready)
+call(label: func_expect_early_locked)
 call(label: func_expect_cluckd_status_without_tickets)
 call(label: func_expect_lock_failed)
+call(label: func_expect_early_unlocked)
 call(label: func_expect_locked)
 call(label: func_expect_lock_failed_duplicate)
 call(label: func_send_unlock_with_bad_server_name)
@@ -102,6 +104,10 @@ print(message: "--- expect SERVICE_STATUS ---")
 call(label: func_wait_message)
 call(label: func_verify_service_status)
 call(label: func_send_status_of_fluid_settings)
+
+// send a very early lock request that will be cached
+call(label: func_send_lock_early)
+
 return()
 
 // Function: expect FLUID_SETTINGS_LISTEN
@@ -146,7 +152,6 @@ call(label: func_verify_lock_leaders)
 
 // try a lock that already timed out
 set_variable(name: timeout, value: 1000)
-set_variable(name: lock_failed, value: "timedout/lock1")
 call(label: func_send_lock)
 
 return()
@@ -193,6 +198,14 @@ call(label: func_send_lock)
 call(label: func_send_lock) // send it twice, the second time it generates a LOCK_FAILED (duplicate)
 return()
 
+// Function: expect LOCKED early
+label(name: func_expect_early_locked)
+print(message: "--- expect LOCKED (early) ---")
+call(label: func_wait_message)
+call(label: func_verify_locked_early)
+call(label: func_send_early_unlock)
+return()
+
 // Function: expect LOCKED
 label(name: func_expect_locked)
 print(message: "--- expect LOCKED ---")
@@ -210,11 +223,18 @@ call(label: func_verify_lock_failed_duplicate)
 return()
 
 // Function: expect UNLOCKED
+label(name: func_expect_early_unlocked)
+print(message: "--- expect UNLOCKED (early) ---")
+call(label: func_wait_message)
+call(label: func_verify_early_unlocked)
+return()
+
+// Function: expect UNLOCKED
 label(name: func_expect_unlocked)
 print(message: "--- expect UNLOCKED ---")
 call(label: func_wait_message)
 call(label: func_verify_unlocked)
-return() // +draining
+return()
 
 // Function:: expect UNLOCKING
 label(name: func_expect_unlocking)
@@ -238,6 +258,19 @@ verify_message(
 	required_parameters: {
 		service: cluckd,
 		version: 1
+	})
+return()
+
+// Function: verify a LOCKED early reply
+label(name: func_verify_locked_early)
+verify_message(
+	command: LOCKED,
+	server: ${hostname},
+	service: website,
+	required_parameters: {
+		object_name: "early_lock",
+		timeout_date: `^[0-9]+(\\.[0-9]+)?$`,
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`
 	})
 return()
 
@@ -357,8 +390,9 @@ verify_message(
 	service: website,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1:0/32","leader":0,"name":"' + "${hostname}" + '"}'
+			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"}'
 			+ '],'
+			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":1,'
@@ -382,8 +416,9 @@ verify_message(
 		// pipes (|) and those are interpreted by the regex system
 		//
 		status: '{"computers":['
-			+ '{"id":"' + "${leader0}" + '","ip":"127.0.0.1:0/32","leader":0,"name":"' + "${hostname}" + '"}'
+			+ '{"id":"' + "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"}'
 			+ '],'
+			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":1,'
@@ -391,7 +426,7 @@ verify_message(
 			+ '"neighbors_quorum":1,'
 			+ '"tickets":"added_ticket=true'
 				+ '|added_ticket_quorum=true'
-				+ '|entering_key=monster/123'
+				+ '|entering_key=' + "${hostname}" + '/123'
 				+ '|get_max_ticket=true'
 				+ '|lock_duration=10'
 				+ '|lock_failed=none'
@@ -401,7 +436,7 @@ verify_message(
 				+ '|obtention_timeout=' + `[0-9]+(\\.[0-9]+)?`
 				+ '|our_ticket=1'
 				+ '|owner=' + "${hostname}"
-				+ '|serial=1'
+				+ '|serial=2'
 				+ '|server_name=' + "${hostname}"
 				+ '|service_name=website'
 				+ '|tag=505'
@@ -413,8 +448,6 @@ return()
 
 // Function: verify a LOCK FAILED
 label(name: func_verify_lock_failed)
-compare(expression: ${lock_failed} <=> "timedout/lock1")
-if(not_equal: not_timedout_lock1_lock_failed)
 verify_message(
 	command: LOCK_FAILED,
 	server: ${hostname},
@@ -426,8 +459,6 @@ verify_message(
 		tag: 505
 	})
 return()
-label(name: not_timedout_lock1_lock_failed)
-exit(error_message: "unhandled LOCK_FAILED")
 
 // Function: verify a LOCK FAILED
 label(name: func_verify_lock_failed_duplicate)
@@ -440,6 +471,19 @@ verify_message(
 		key: "${hostname}/123",
 		object_name: "lock1",
 		tag: 505
+	})
+return()
+
+// Function: verify a UNLOCKED (early)
+label(name: func_verify_early_unlocked)
+verify_message(
+	command: UNLOCKED,
+	server: ${hostname},
+	service: "website",
+	required_parameters: {
+		object_name: "early_lock",
+		tag: 15045,
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`
 	})
 return()
 
@@ -667,6 +711,39 @@ send_message(
 		pid: -9123,
 		duration: 10,
 		timeout: ${timeout}
+	})
+return()
+
+// Function: send LOCK (early)
+label(name: func_send_lock_early)
+now(variable_name: early_timeout)
+set_variable(name: early_timeout, value: ${early_timeout} + 60) // now + 1 minute
+send_message(
+	command: LOCK,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "early_lock",
+		tag: 15045,
+		pid: 10203,
+		duration: 15,
+		timeout: ${early_timeout}
+	})
+return()
+
+label(name: func_send_early_unlock)
+send_message(
+	command: UNLOCK,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "early_lock",
+		tag: 15045,
+		pid: 10203
 	})
 return()
 

@@ -205,6 +205,7 @@ call(label: func_send_unlock_lk5)
 call(label: func_expect_drop_ticket_lk5_rc1)
 call(label: func_expect_drop_ticket_lk5_rc2)
 call(label: func_expect_unlocked_lk5)
+call(label: func_send_hangup)
 
 
 
@@ -4870,6 +4871,19 @@ send_message(  // lk8
 		duration: 10,
 		unlock_duration: 5,
 		timeout: ${lock_timeout}
+	})
+return()
+
+// Function: send HANGUP
+label(name: func_send_hangup)
+send_message(
+	command: HANGUP,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		server_name: "rc2"
 	})
 return()
 

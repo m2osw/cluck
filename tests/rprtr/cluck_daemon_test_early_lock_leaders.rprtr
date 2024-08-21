@@ -1224,10 +1224,11 @@ verify_message(
 	service: prinbee,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader1}" + '","ip":"127.0.0.1:0/32","leader":1,"name":"monster"},'
-			+ '{"id":"'+ "${leader0}" + '","ip":"10.1.2.3:0/32","leader":0,"name":"rc1"},'
-			+ '{"id":"'+ "${leader2}" + '","ip":"172.16.17.18:0/32","leader":2,"name":"rc2"}'
+			+ '{"id":"'+ "${leader1}" + '","ip":"127.0.0.1","leader":1,"name":"monster"},'
+			+ '{"id":"'+ "${leader0}" + '","ip":"10.1.2.3","leader":0,"name":"rc1"},'
+			+ '{"id":"'+ "${leader2}" + '","ip":"172.16.17.18","leader":2,"name":"rc2"}'
 			+ '],'
+			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader1}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":3,'

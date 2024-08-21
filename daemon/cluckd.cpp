@@ -648,9 +648,9 @@ computer::pointer_t cluckd::get_leader_a() const
 
     switch(f_leaders.size())
     {
-    case 0: // LCOV_EXCL -- because of the debug above, this cannot happen here
+    case 0: // LCOV_EXCL_LINE -- because of the debug above, this cannot happen here
     default:
-        throw cluck::logic_error("cluckd::get_leader_a(): call this function only when leaders were elected."); // LCOV_EXCL
+        throw cluck::logic_error("cluckd::get_leader_a(): call this function only when leaders were elected."); // LCOV_EXCL_LINE
 
     case 1:
         return computer::pointer_t();
@@ -725,6 +725,14 @@ void cluckd::msg_info(ed::message & msg)
     }
 
     {
+        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p,
+            is_daemon_ready()
+                ? "true"
+                : "false"));
+        result->set_member("daemon_ready", value);
+    }
+
+    {
         addr::addr zero;
         as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p,
             f_my_ip_address == zero
@@ -768,7 +776,7 @@ void cluckd::msg_info(ed::message & msg)
             }
 
             {
-                as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, c.second->get_ip_address().to_ipv4or6_string(addr::STRING_IP_ALL)));
+                as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, c.second->get_ip_address().to_ipv4or6_string(addr::STRING_IP_ADDRESS | addr::STRING_IP_BRACKET_ADDRESS)));
                 item->set_member("ip", value);
             }
 

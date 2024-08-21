@@ -48,6 +48,7 @@ call(label: func_expect_unlocking)
 call(label: func_sleep_quietly_25cs)
 call(label: func_send_unlock)
 call(label: func_expect_drop_ticket)
+call(label: func_send_hangup)
 
 
 
@@ -72,250 +73,6 @@ exit()
 label(name: got_unexpected_message)
 show_message()
 exit(error_message: "got message while draining final send()")
-
-
-
-
-// old impl. -- label(name: wait_message)
-// old impl. -- if(variable: allow_timeout, true: timeout_wait)
-// old impl. -- wait(timeout: 12, mode: wait)
-// old impl. -- goto(label: process_message)
-// old impl. -- label(name: timeout_wait)
-// old impl. -- wait(timeout: 3, mode: timeout) // we are allowed to timeout
-// old impl. -- has_message()
-// old impl. -- if(false: received_timeout)
-// old impl. -- 
-// old impl. -- label(name: process_message)
-// old impl. -- has_message()
-// old impl. -- if(false: wait_message)
-// old impl. -- 
-// old impl. -- show_message()
-// old impl. -- 
-// old impl. -- has_message(command: REGISTER)
-// old impl. -- if(false: not_register)
-// old impl. -- call(label: func_verify_register)
-// old impl. -- call(label: func_send_help)
-// old impl. -- call(label: func_send_ready)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_register)
-// old impl. -- has_message(command: LOCKED)
-// old impl. -- if(false: not_locked)
-// old impl. -- call(label: func_verify_locked)
-// old impl. -- set_variable(name: info_mode, value: "debug")
-// old impl. -- call(label: func_send_info)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_locked)
-// old impl. -- has_message(command: COMMANDS)
-// old impl. -- if(false: not_commands)
-// old impl. -- call(label: func_verify_commands)
-// old impl. -- set_variable(name: cluckd_status, value: "up")
-// old impl. -- call(label: func_send_status) // "random" location as if the other cluckd just became available
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_commands)
-// old impl. -- has_message(command: SERVICE_STATUS)
-// old impl. -- if(false: not_service_status)
-// old impl. -- call(label: func_verify_service_status)
-// old impl. -- call(label: func_reply_to_service_status)
-// old impl. -- 
-// old impl. -- // here pretend a client is checking on our status a little too soon
-// old impl. -- // (i.e. we'll get a "NO_LOCK" message)
-// old impl. -- //
-// old impl. -- call(label: func_send_lock_status)
-// old impl. -- 
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_service_status)
-// old impl. -- has_message(command: FLUID_SETTINGS_LISTEN)
-// old impl. -- if(false: not_fluid_settings_listen)
-// old impl. -- call(label: func_verify_fluid_settings_listen)
-// old impl. -- call(label: func_send_fluid_settings_registered)
-// old impl. -- call(label: func_send_fluid_settings_value_updated)
-// old impl. -- call(label: func_send_fluid_settings_ready)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_fluid_settings_listen)
-// old impl. -- has_message(command: NO_LOCK)
-// old impl. -- if(false: not_no_lock)
-// old impl. -- call(label: func_verify_no_lock)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_no_lock)
-// old impl. -- has_message(command: LOCK_READY)
-// old impl. -- if(false: not_lock_ready)
-// old impl. -- call(label: func_verify_lock_ready)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_lock_ready)
-// old impl. -- has_message(command: CLUSTER_STATUS)
-// old impl. -- if(false: not_cluster_status)
-// old impl. -- call(label: func_verify_cluster_status)
-// old impl. -- call(label: func_send_cluster_up)
-// old impl. -- //call(label: func_send_cluster_complete) -- this does not currently happen because the message is tested (at least when we sent a CLUSTER_STATUS message, the broadcast may still send us the message, I think)
-// old impl. -- set_variable(name: info_mode, value: "info")
-// old impl. -- call(label: func_send_info)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_cluster_status)
-// old impl. -- has_message(command: LOCK_LEADERS)
-// old impl. -- if(false: not_lock_leaders)
-// old impl. -- call(label: func_verify_lock_leaders)
-// old impl. -- 
-// old impl. -- // try a lock that already timed out
-// old impl. -- set_variable(name: timeout, value: 1000)
-// old impl. -- set_variable(name: lock_failed, value: "timedout/lock1")
-// old impl. -- call(label: func_send_lock)
-// old impl. -- 
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_lock_leaders)
-// old impl. -- has_message(command: LOCK_STARTED)
-// old impl. -- if(false: not_lock_started)
-// old impl. -- save_parameter_value(parameter_name: election_date, variable_name: election_date)
-// old impl. -- //print(message: "extracted election_date: [" + ${election_date} + "]")
-// old impl. -- compare(expression: ${election_date} <=> "")
-// old impl. -- if(not_equal: lock_started_further_processing)
-// old impl. -- call(label: func_verify_first_lock_started)
-// old impl. -- 
-// old impl. -- // verify error cases
-// old impl. -- //
-// old impl. -- // 1. same hostname as the sender (in case a broadcast comes back to the sender)
-// old impl. -- //    this message is simply ignored
-// old impl. -- set_variable(name: server_name, value: ${hostname})
-// old impl. -- set_variable(name: lock_id, value: "ignored") // in this case, we return before we verify this identifier
-// old impl. -- call(label: func_send_lock_started)
-// old impl. -- 
-// old impl. -- // 2. the lock identifier is invalid (not 5 parts exactly)
-// old impl. -- set_variable(name: server_name, value: "two") // second computer
-// old impl. -- set_variable(name: lock_id, value: "invalid") // error: received a computer id which does not have exactly 5 parts: "invalid".
-// old impl. -- call(label: func_send_lock_started)
-// old impl. -- 
-// old impl. -- // TODO: check all possible invalid IDs? (we already do that in tests/catch_daemon_computer.cpp)
-// old impl. -- 
-// old impl. -- // 3. election should be done now?
-// old impl. -- set_variable(name: server_name, value: "two") // second computer
-// old impl. -- set_variable(name: lock_id, value: "${leader1}")
-// old impl. -- call(label: func_send_lock_started)
-// old impl. -- 
-// old impl. -- goto(label: next_message)
-// old impl. -- label(name: lock_started_further_processing)
-// old impl. -- call(label: func_verify_further_lock_started)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_lock_started)
-// old impl. -- has_message(command: LOCK_FAILED)
-// old impl. -- if(false: not_lock_failed)
-// old impl. -- call(label: func_verify_lock_failed)
-// old impl. -- now(variable_name: timeout)
-// old impl. -- set_variable(name: timeout, value: ${timeout} + 60) // now + 1 minute
-// old impl. -- call(label: func_send_lock)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_lock_failed)
-// old impl. -- has_message(command: UNLOCKED)
-// old impl. -- if(false: not_unlocked)
-// old impl. -- call(label: func_verify_unlocked)
-// old impl. -- set_variable(name: cluckd_status, value: "down")
-// old impl. -- call(label: func_send_status) // "random" location as if the other cluckd just became unavailable
-// old impl. -- call(label: func_send_lock_status) // the status is again NO_LOCK
-// old impl. -- call(label: func_send_stop)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_unlocked)
-// old impl. -- has_message(command: UNLOCKING)
-// old impl. -- if(false: not_unlocking)
-// old impl. -- call(label: func_verify_unlocking)
-// old impl. -- call(label: func_send_quitting)
-// old impl. -- //goto(label: next_message)
-// old impl. -- clear_message()
-// old impl. -- wait(timeout: 5, mode: drain)
-// old impl. -- exit()
-// old impl. -- 
-// old impl. -- label(name: not_unlocking)
-// old impl. -- has_message(command: LOCK_ENTERING)
-// old impl. -- if(false: not_lock_entering)
-// old impl. -- call(label: func_verify_lock_entering)
-// old impl. -- call(label: func_send_lock_entered)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_lock_entering)
-// old impl. -- has_message(command: GET_MAX_TICKET)
-// old impl. -- if(false: not_get_max_ticket)
-// old impl. -- call(label: func_verify_get_max_ticket)
-// old impl. -- call(label: func_send_max_ticket)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_get_max_ticket)
-// old impl. -- has_message(command: ADD_TICKET)
-// old impl. -- if(false: not_add_ticket)
-// old impl. -- call(label: func_verify_add_ticket)
-// old impl. -- call(label: func_send_ticket_added)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_add_ticket)
-// old impl. -- has_message(command: LOCK_EXITING)
-// old impl. -- if(false: not_lock_exiting)
-// old impl. -- call(label: func_verify_lock_exiting)
-// old impl. -- call(label: func_send_ticket_ready)
-// old impl. -- call(label: func_send_activate_lock)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_lock_exiting)
-// old impl. -- has_message(command: TICKET_READY)
-// old impl. -- if(false: not_ticket_ready)
-// old impl. -- call(label: func_verify_ticket_ready)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_ticket_ready)
-// old impl. -- has_message(command: ACTIVATE_LOCK)
-// old impl. -- if(false: not_activate_lock)
-// old impl. -- call(label: func_verify_activate_lock)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_activate_lock)
-// old impl. -- has_message(command: LOCK_ACTIVATED)
-// old impl. -- if(false: not_lock_activated)
-// old impl. -- call(label: func_verify_lock_activated)
-// old impl. -- set_variable(name: allow_timeout, value: 1)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_lock_activated)
-// old impl. -- has_message(command: DROP_TICKET)
-// old impl. -- if(false: not_drop_ticket)
-// old impl. -- call(label: func_verify_drop_ticket)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_drop_ticket)
-// old impl. -- has_message(command: CLUCKD_STATUS)
-// old impl. -- if(false: not_cluckd_status)
-// old impl. -- call(label: func_verify_cluckd_status)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- label(name: not_cluckd_status)
-// old impl. -- has_message(command: UNREGISTER)
-// old impl. -- if(false: not_recognized)
-// old impl. -- call(label: func_verify_unregister)
-// old impl. -- exit()
-// old impl. -- 
-// old impl. -- label(name: not_recognized)
-// old impl. -- exit(error_message: "received an unknown command")
-// old impl. -- 
-// old impl. -- label(name: received_timeout)
-// old impl. -- call(label: func_send_unlock)
-// old impl. -- set_variable(name: allow_timeout, value: 0)
-// old impl. -- goto(label: next_message)
-// old impl. -- 
-// old impl. -- // clear processed message, then check the next one
-// old impl. -- label(name: next_message)
-// old impl. -- clear_message()
-// old impl. -- goto(label: process_message)
-
-
-
-
-
 
 
 
@@ -949,8 +706,9 @@ verify_message(
 	service: website,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1:0/32","name":"' + "${hostname}" + '"}'
+			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"}'
 			+ '],'
+			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":0,'
@@ -970,9 +728,10 @@ verify_message(
 	service: website,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1:0/32","leader":0,"name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.3:0/32","leader":1,"name":"two"}'
+			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
+			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.3","leader":1,"name":"two"}'
 			+ '],'
+			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":2,'
@@ -1275,6 +1034,19 @@ send_message(
 		object_name: "lock1",
 		pid: 123,
 		tag: "505"
+	})
+return()
+
+// Function: send HANGUP
+label(name: func_send_hangup)
+send_message(
+	command: HANGUP,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		server_name: "two"
 	})
 return()
 
