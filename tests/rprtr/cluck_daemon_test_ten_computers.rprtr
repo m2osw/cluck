@@ -95,108 +95,115 @@ call(label: func_send_cluster_up)
 call(label: func_send_info)
 
 call(label: func_expect_lock_started_initial)
+
+// --- start rc1 ---
 set_variable(name: server_name, value: "rc1")
 set_variable(name: lock_id, value: "${leader1}")
 call(label: func_send_lock_started)
 
-call(label: func_send_info)
-
-set_variable(name: server_name, value: "rc2")
-set_variable(name: lock_id, value: "${leader2}")
-call(label: func_send_lock_started)
-
 call(label: func_expect_cluckd_status_one_computer)
-
 call(label: func_send_info)
-
-set_variable(name: server_name, value: "rc3")
-set_variable(name: lock_id, value: "${computer3}")
-call(label: func_send_lock_started)
-
-call(label: func_send_info)
-
-set_variable(name: server_name, value: "rc4")
-set_variable(name: lock_id, value: "${computer4}")
-call(label: func_send_lock_started)
-
-call(label: func_send_info)
-
-set_variable(name: server_name, value: "rc5")
-set_variable(name: lock_id, value: "${computer5}")
-call(label: func_send_lock_started)
-
-call(label: func_send_info)
-
-set_variable(name: server_name, value: "rc6")
-set_variable(name: lock_id, value: "${computer6}")
-call(label: func_send_lock_started)
-
-call(label: func_send_info)
-
-set_variable(name: server_name, value: "rc7")
-set_variable(name: lock_id, value: "${computer7}")
-call(label: func_send_lock_started)
-
-call(label: func_send_info)
-
-set_variable(name: server_name, value: "rc8")
-set_variable(name: lock_id, value: "${computer8}")
-call(label: func_send_lock_started)
-
-call(label: func_send_info)
-
-set_variable(name: server_name, value: "rc9")
-set_variable(name: lock_id, value: "${computer9}")
-call(label: func_send_lock_started)
 
 set_variable(name: server_name, value: "rc1")
 call(label: func_expect_lock_started_early_reply)
 
+// --- start rc2 ---
+set_variable(name: server_name, value: "rc2")
+set_variable(name: lock_id, value: "${leader2}")
+call(label: func_send_lock_started)
+
 call(label: func_expect_cluckd_status_two_computers)
+call(label: func_send_info)
 
 set_variable(name: server_name, value: "rc2")
 call(label: func_expect_lock_started_early_reply)
 
+// --- start rc3 ---
+set_variable(name: server_name, value: "rc3")
+set_variable(name: lock_id, value: "${computer3}")
+call(label: func_send_lock_started)
+
 call(label: func_expect_cluckd_status_three_computers)
+call(label: func_send_info)
 
 set_variable(name: server_name, value: "rc3")
 call(label: func_expect_lock_started_early_reply)
 
+// --- start rc4 ---
+set_variable(name: server_name, value: "rc4")
+set_variable(name: lock_id, value: "${computer4}")
+call(label: func_send_lock_started)
+
 call(label: func_expect_cluckd_status_four_computers)
+call(label: func_send_info)
 
 set_variable(name: server_name, value: "rc4")
 call(label: func_expect_lock_started_early_reply)
 
+// --- start rc5 ---
+set_variable(name: server_name, value: "rc5")
+set_variable(name: lock_id, value: "${computer5}")
+call(label: func_send_lock_started)
+
 call(label: func_expect_cluckd_status_five_computers)
+call(label: func_send_info)
 
+// with rc5 we reach the cluster quorum which means we get leaders
+//
 call(label: func_expect_lock_leaders)
-
 call(label: func_expect_lock_ready)
-
 //call(label: func_expect_lock_failed) -- removed that send for now
 
 set_variable(name: server_name, value: "rc5")
 call(label: func_expect_lock_started_reply)
 
+// --- start rc6 ---
+set_variable(name: server_name, value: "rc6")
+set_variable(name: lock_id, value: "${computer6}")
+call(label: func_send_lock_started)
+
 call(label: func_expect_cluckd_status_six_computers)
+call(label: func_send_info)
 
 set_variable(name: server_name, value: "rc6")
 call(label: func_expect_lock_started_reply)
 
+// --- start rc7 ---
+sleep(seconds: 0.25)
+set_variable(name: server_name, value: "rc7")
+set_variable(name: lock_id, value: "${computer7}")
+set_variable(name: election_date, value: ${election_date} + .02)
+call(label: func_send_lock_started)
+
 call(label: func_expect_cluckd_status_seven_computers)
+call(label: func_send_info)
 
 set_variable(name: server_name, value: "rc7")
 call(label: func_expect_lock_started_reply)
 
+// --- start rc8 ---
+set_variable(name: server_name, value: "rc8")
+set_variable(name: lock_id, value: "${computer8}")
+call(label: func_send_lock_started)
+
 call(label: func_expect_cluckd_status_eight_computers)
+call(label: func_send_info)
 
 set_variable(name: server_name, value: "rc8")
 call(label: func_expect_lock_started_reply)
 
+// --- start rc9 ---
+set_variable(name: server_name, value: "rc9")
+set_variable(name: lock_id, value: "${computer9}")
+call(label: func_send_lock_started)
+
 call(label: func_expect_cluckd_status_nine_computers)
+call(label: func_send_info)
 
 set_variable(name: server_name, value: "rc9")
 call(label: func_expect_lock_started_reply)
+
+call(label: func_expect_cluckd_status_ten_computers)
 
 // WARNING: variable is reused in the verify_lock_started and others
 now(variable_name: lock_timeout)
@@ -210,12 +217,16 @@ set_variable(name: server_name, value: "rc2")
 call(label: func_expect_lock_entering)
 call(label: func_send_lock_entered)
 
+call(label: func_send_info)
+
 set_variable(name: server_name, value: "rc1")
 call(label: func_expect_get_max_ticket)
 call(label: func_send_max_ticket)
 set_variable(name: server_name, value: "rc2")
 call(label: func_expect_get_max_ticket)
 call(label: func_send_max_ticket)
+
+call(label: func_expect_cluckd_status_ten_computers)
 
 set_variable(name: server_name, value: "rc1")
 call(label: func_expect_add_ticket)
@@ -263,7 +274,39 @@ call(label: func_expect_drop_ticket)
 set_variable(name: server_name, value: "rc2")
 call(label: func_expect_drop_ticket)
 
+// test a quite special case where a computer (rc8) disappears and then
+// another gets election results with the computer back in the game
+// then finally that computer (rc8) reconnects to cluckd
+//
+set_variable(name: server_name, value: "rc8")
 call(label: func_send_hangup)
+// --- if we still need the former leader2 ID we'll need to save it here ---
+set_variable(name: leader2, value: "${computer8}") // change the list of leaders a bit
+
+set_variable(name: server_name, value: "rc9")
+set_variable(name: lock_id, value: "${computer9}")
+set_variable(name: election_date, value: ${election_date} + .02)
+call(label: func_send_lock_started)
+set_variable(name: server_name, value: "rc9")
+
+set_variable(name: server_name, value: "rc8")
+set_variable(name: lock_id, value: "${computer8}")
+call(label: func_send_lock_started)
+set_variable(name: server_name, value: "rc8")
+call(label: func_expect_lock_started_reply)
+
+call(label: func_expect_no_lock)
+
+// I'm not too sure why this happens later like this...
+set_variable(name: server_name, value: "rc9")
+call(label: func_expect_lock_started_reply)
+
+call(label: func_expect_lock_ready)
+
+// again, why is this one re-happening and "late"?
+set_variable(name: server_name, value: "rc8")
+call(label: func_expect_lock_started_reply)
+
 
 
 
@@ -482,27 +525,18 @@ call(label: func_wait_message)
 call(label: func_verify_lock_started_reply)
 return()
 
-// Function: expect LOCK_STARTED (reply B)
-label(name: func_expect_lock_started_reply_b)
-// this reply does not yet include the leaders (too early)
-print(message: "--- wait for message LOCK_STARTED (reply_b)....")
-call(label: func_wait_message)
-call(label: func_verify_lock_started_to_rc2_early)
-return()
-
-// Function: expect LOCK_STARTED (reply C)
-label(name: func_expect_lock_started_reply_c)
-// this reply does not yet include the leaders (too early)
-print(message: "--- wait for message LOCK_STARTED (reply_c)....")
-call(label: func_wait_message)
-call(label: func_verify_lock_started_to_rc3_early)
-return()
-
 // Function: expect CLUSTER_STATUS
 label(name: func_expect_cluster_status)
 print(message: "--- wait for message CLUSTER_STATUS....")
 call(label: func_wait_message)
 call(label: func_verify_cluster_status)
+return()
+
+// Function: expect NO_LOCK
+label(name: func_expect_no_lock)
+print(message: "--- wait for message NO_LOCK....")
+call(label: func_wait_message)
+call(label: func_verify_no_lock)
 return()
 
 // Function: expect LOCK_FAILED
@@ -671,6 +705,57 @@ verify_message(
 save_parameter_value(parameter_name: lock_id, variable_name: leader0)
 return()
 
+// Function: verify a LOCK STARTED (before elections)
+label(name: func_verify_lock_started_early_reply)
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: ${server_name},
+	service: cluckd,
+	required_parameters: {
+		lock_id: "${leader0}",
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2
+	})
+return()
+
+// Function: verify a LOCK STARTED (after elections)
+label(name: func_verify_lock_started_reply)
+save_parameter_value(parameter_name: election_date, variable_name: election_date)
+set_variable(name: election_date, value: "${election_date}", type: timestamp)
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: ${server_name},
+	service: cluckd,
+	required_parameters: {
+		election_date: `^[0-9]+(\\.[0-9]+)?$`,
+		leader0: "${leader0}",
+		leader1: "${leader1}",
+		leader2: "${leader2}",
+		lock_id: "${leader0}",
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	})
+return()
+
+// Function: verify a NO_LOCK
+label(name: func_verify_no_lock)
+verify_message(
+	command: NO_LOCK,
+	sent_service: "cluckd",
+	service: ".",
+	required_parameters: {
+		cache: "no"
+	})
+return()
+
 // Function: verify a LOCK READY
 label(name: func_verify_lock_ready)
 verify_message(
@@ -700,68 +785,6 @@ verify_message(
 		leader0: "${leader0}",
 		leader1: "${leader1}",
 		leader2: "${leader2}"
-	})
-return()
-
-// Function: verify a LOCK STARTED (before elections)
-label(name: func_verify_lock_started_early_reply)
-verify_message(
-	command: LOCK_STARTED,
-	sent_service: cluckd,
-	server: ${server_name},
-	service: cluckd,
-	required_parameters: {
-		lock_id: "${leader0}",
-		server_name: ${hostname},
-		start_time: `^[0-9]+(\\.[0-9]+)?$`
-	},
-	forbidden_parameters: {
-		election_date,
-		leader0,
-		leader1,
-		leader2
-	})
-return()
-
-// Function: verify a LOCK STARTED (after elections)
-label(name: func_verify_lock_started_reply)
-verify_message(
-	command: LOCK_STARTED,
-	sent_service: cluckd,
-	server: ${server_name},
-	service: cluckd,
-	required_parameters: {
-		election_date: `^[0-9]+(\\.[0-9]+)?$`,
-		leader0: "${leader0}",
-		leader1: "${leader1}",
-		leader2: "${leader2}",
-		lock_id: "${leader0}",
-		server_name: ${hostname},
-		start_time: `^[0-9]+(\\.[0-9]+)?$`
-	})
-return()
-
-// Function: verify a LOCK STARTED (after elections)
-label(name: func_verify_lock_started_to_rc3_early)
-verify_message(
-	command: LOCK_STARTED,
-	sent_service: cluckd,
-	server: "rc3",
-	service: cluckd,
-	required_parameters: {
-		//election_date: `^[0-9]+(\\.[0-9]+)?$`,
-		//leader0: "${leader0}",
-		//leader1: "${leader1}",
-		//leader2: "${leader2}",
-		lock_id: "${leader0}",
-		server_name: ${hostname},
-		start_time: `^[0-9]+(\\.[0-9]+)?$`
-	},
-	forbidden_parameters: {
-		election_date,
-		leader0,
-		leader1,
-		leader2
 	})
 return()
 
@@ -1437,6 +1460,8 @@ return()
 // Parameters: ${lock_id} -- the identifier used as the lock_id parameter
 label(name: func_send_lock_started)
 now(variable_name: now)
+compare(expression: "${election_date}" <=> "")
+if(not_equal: func_send_lock_started_with_election_date)
 send_message(
 	command: LOCK_STARTED,
 	sent_server: ${server_name},
@@ -1444,6 +1469,23 @@ send_message(
 	server: ${hostname},
 	service: cluckd,
 	parameters: {
+		lock_id: ${lock_id},
+		server_name: ${server_name},
+		start_time: ${now}
+	})
+return()
+label(name: func_send_lock_started_with_election_date)
+send_message(
+	command: LOCK_STARTED,
+	sent_server: ${server_name},
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		election_date: ${election_date},
+		leader0: "${leader0}",
+		leader1: "${leader1}",
+		leader2: "${leader2}",
 		lock_id: ${lock_id},
 		server_name: ${server_name},
 		start_time: ${now}
@@ -1550,7 +1592,7 @@ send_message(
 	server: ${hostname},
 	service: cluckd,
 	parameters: {
-		server_name: "rc1"
+		server_name: ${server_name}
 	})
 return()
 
@@ -1572,32 +1614,5 @@ send_message(
 	sent_service: website,
 	server: ${hostname},
 	service: cluckd)
-return()
-
-// function: send LOCK_LEADERS
-label(name: func_send_lock_leaders_from_rc1)
-// the one cluck sending the LOCK_LEADERS is the one with the smaller IP
-// so in our case here it has to be rc1
-//
-// the computer IDs, as passed through the leader0/1/2 parameters, are
-// defined as:
-//  <priority>|<random>|<IP>|<pid>|<hostname>
-//
-// we define the leaders at the top of the script with some randomness
-// in the data
-//
-now(variable_name: election_date)
-send_message(
-	command: LOCK_LEADERS,
-	sent_server: rc1,
-	sent_service: cluckd,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		election_date: ${election_date},
-		leader0: ${leader0},
-		leader1: ${leader1},
-		leader2: ${leader2}
-	})
 return()
 

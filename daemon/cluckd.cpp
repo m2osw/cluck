@@ -560,7 +560,7 @@ bool cluckd::is_daemon_ready() const
                 << "\"."
                 << SNAP_LOG_SEND;
 
-            // attempt resending a LOCKSTARTED because it could be that it
+            // attempt resending a LOCK_STARTED because it could be that it
             // did not work quite right and the cluck daemons are not
             // going to ever talk with each others otherwise
             //
@@ -574,7 +574,7 @@ bool cluckd::is_daemon_ready() const
                 //
                 f_pace_lockstarted = now + 5;
 
-                // only send it to that specific server cluck daemon
+                // only send it to that specific cluck daemon
                 //
                 ed::message temporary_message;
                 temporary_message.set_sent_from_server(l->get_name());
@@ -1055,12 +1055,12 @@ SNAP_LOG_WARNING
 
 void cluckd::check_lock_status()
 {
-    bool const ready(is_daemon_ready());
-    if(f_lock_status == ready)
+    bool const lock_status(is_daemon_ready());
+    if(f_lock_status == lock_status)
     {
         return;
     }
-    f_lock_status = ready;
+    f_lock_status = lock_status;
 
     ed::message status_message;
     status_message.set_command(f_lock_status
@@ -1070,7 +1070,7 @@ void cluckd::check_lock_status()
     status_message.add_parameter(communicatord::g_name_communicatord_param_cache, communicatord::g_name_communicatord_value_no);
     f_messenger->send_message(status_message);
 
-    if(ready
+    if(lock_status
     && !f_message_cache.empty())
     {
         // we still have a cache of locks that can now be processed
@@ -3759,7 +3759,7 @@ void cluckd::msg_server_gone(ed::message & msg)
     if(server_name.empty()
     || server_name == f_server_name)
     {
-        // we never want to remove ourselves?!
+        // we never want to remove ourselves
         //
         return;
     }
