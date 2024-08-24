@@ -46,6 +46,7 @@ public:
     void                        finish_parsing();
 
     // ed::connection_with_send_message implementation
+    virtual void                ready(ed::message & msg);
     virtual void                stop(bool quitting);
 
     // fluid_settings::fluid_settings_connection() implementation

@@ -225,6 +225,20 @@ void messenger::finish_parsing()
 }
 
 
+/** \brief Messenger received the READY message.
+ *
+ * Whenever we receive the READY message, we also receive our IP address
+ * as the "my_address" parameter. This gets copied in the cluckd object.
+ *
+ * \param[in,out] msg  The READY message.
+ */
+void messenger::ready(ed::message & msg)
+{
+    fluid_settings_connection::ready(msg);
+    f_cluckd->set_my_ip_address(get_my_address());
+}
+
+
 /** \brief Let the server know STOP or QUITTING was sent to us.
  *
  * This STOP and QUITTING messages are currently managed through this

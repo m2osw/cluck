@@ -49,9 +49,8 @@ public:
     cluckd &                    operator = (cluckd const & rhs) = delete;
 
     void                        add_connections();
+    void                        set_my_ip_address(addr::addr const & a);
     void                        run();
-    void                        tool_message(ed::message const & msg);
-    void                        process_connection(int const s);
 
     int                         get_computer_count() const;
     std::string const &         get_server_name() const;

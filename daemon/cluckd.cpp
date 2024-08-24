@@ -403,6 +403,12 @@ void cluckd::add_connections()
 }
 
 
+void cluckd::set_my_ip_address(addr::addr const & a)
+{
+    f_my_ip_address = a;
+}
+
+
 /** \brief Run the cluck daemon.
  *
  * This function is the core function of the daemon. It runs the loop
@@ -2308,9 +2314,17 @@ void cluckd::msg_cluster_up(ed::message & msg)
                                 , computer::PRIORITY_MAX);
     }
 
+#ifdef _DEBUG
+    // the READY message is expected to happen first and setup this parameter
+    //
+    if(f_my_ip_address.is_default())
+    {
+        throw cluck::logic_error("cluckd::msg_cluster_up(): somehow f_my_ip_address is still the default in msg_cluster_up().");
+    }
+#endif
+
     // add ourselves to the list of computers; mark us connected; get our ID
     //
-    f_my_ip_address = f_messenger->get_my_address();
     f_computers[f_server_name] = std::make_shared<computer>(f_server_name, priority, f_my_ip_address);
     f_computers[f_server_name]->set_start_time(f_start_time);
     f_computers[f_server_name]->set_connected(true);
