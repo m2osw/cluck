@@ -870,6 +870,23 @@ std::string cluckd::ticket_list() const
 }
 
 
+/** \brief Check the status of the election.
+ *
+ * This function checks whether the leaders were already elected. If so,
+ * then nothing happens.
+ *
+ * Otherwise, it checks the state of the election:
+ *
+ * * leaders are not already elected
+ * * this cluckd received its own IP address
+ * * we do not yet know how many neighbors there are in our cluster
+ * * the cluster as a sufficient (quorum) number of computers to support
+ *   the lock mechanism properly (2 of the 3 leaders or a cluster quorum
+ *   when the cluster has 4 or more computers)
+ * * we have the lowest IP address (only the cluck daemon with the lowest
+ *   IP can decide which computers are the leaders
+ * * not too many of the cluckd are opt out of leadership
+ */
 void cluckd::election_status()
 {
     // we already have election results?
@@ -965,12 +982,18 @@ void cluckd::election_status()
             auto const it(std::find(f_leaders.begin(), f_leaders.end(), c.second));
             if(it != f_leaders.end())
             {
-                // leaders have a priority of 00
+                // already a leader, keep it at the start
                 //
-                id[0] = '0';
-                id[1] = '0';
+                id = 'A' + id;
+            }
+            else
+            {
+                id = 'B' + id;
             }
 
+            // as a result, the sort uses the random number to sort the
+            // leaders (since all end up with priority "00")
+            //
             sort_by_id[id] = c.second;
         }
         else
@@ -978,6 +1001,11 @@ void cluckd::election_status()
             ++off;
         }
     }
+
+for(auto const & s : sort_by_id)
+{
+SNAP_LOG_WARNING << "--- sort by ID: " << s.first << SNAP_LOG_SEND;
+}
 
     if(f_computers.size() <= 3)
     {
@@ -2830,6 +2858,8 @@ void cluckd::msg_lock(ed::message & msg)
         // client that requested the LOCK, send an ALIVE message to make
         // sure that the client still exists before entering the ticket
         //
+        // TODO: we may want to make this 5s a parameter that we can change
+        //
         ticket->set_alive_timeout(snapdev::now() + cluck::timeout_t(5, 0));
 
         ed::message alive_message;
@@ -2837,7 +2867,7 @@ void cluckd::msg_lock(ed::message & msg)
         alive_message.set_server(server_name);
         alive_message.set_service(service_name);
         alive_message.add_parameter(ed::g_name_ed_param_serial, "relock/" + object_name + '/' + entering_key);
-        alive_message.add_parameter(ed::g_name_ed_param_timestamp, time(nullptr));
+        alive_message.add_parameter(ed::g_name_ed_param_timestamp, snapdev::now());
         f_messenger->send_message(alive_message);
     }
     else
@@ -3778,6 +3808,7 @@ void cluckd::msg_server_gone(ed::message & msg)
     // got it, remove it
     //
     f_computers.erase(it);
+SNAP_LOG_WARNING << "removed \"" << server_name << "\"" << SNAP_LOG_SEND;
 
     // is that computer a leader?
     //
@@ -3787,6 +3818,7 @@ void cluckd::msg_server_gone(ed::message & msg)
             , c));
     if(li != f_leaders.end())
     {
+SNAP_LOG_WARNING << "removed \"" << server_name << "\" is also a leader?!" << SNAP_LOG_SEND;
         f_leaders.erase(li);
 
         // elect another computer in case the one we just erased was a leader

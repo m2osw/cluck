@@ -11,28 +11,76 @@ run()
 listen(address: <127.0.0.1:20002>)
 
 call(label: func_expect_register)
+call(label: func_send_help)
+call(label: func_send_ready)
+
 call(label: func_expect_commands)
+
 call(label: func_expect_service_status)
+call(label: func_send_status_of_fluid_settings)
+
+// send a very early lock request that will be cached
+call(label: func_send_lock_early)
+
 call(label: func_send_unlock)
+
 call(label: func_expect_fluid_settings_listen)
+call(label: func_send_fluid_settings_registered)
+call(label: func_send_fluid_settings_value_updated)
+call(label: func_send_fluid_settings_ready)
+
+// here pretend a client is checking on our status a little too soon
+// (i.e. we'll get a "NO_LOCK" message)
+//
+call(label: func_send_lock_status)
+
 call(label: func_expect_cluster_status)
+call(label: func_send_cluster_up)
+//call(label: func_send_cluster_complete) -- this does not currently happen because the message is tested (at least when we sent a CLUSTER_STATUS message, the broadcast may still send us the message, I think)
+set_variable(name: info_mode, value: "info")
+call(label: func_send_info)
+
 call(label: func_expect_no_lock)
 call(label: func_expect_lock_leaders)
+
+// try a lock that already timed out
+set_variable(name: timeout, value: 1000)
+call(label: func_send_lock)
+
 call(label: func_send_unlock_with_bad_pid)
+
 call(label: func_expect_lock_started)
 call(label: func_expect_lock_ready)
+
 call(label: func_expect_early_locked)
+call(label: func_send_early_unlock)
+
 call(label: func_expect_cluckd_status_without_tickets)
 call(label: func_expect_lock_failed)
+
+now(variable_name: timeout)
+set_variable(name: timeout, value: ${timeout} + 60) // now + 1 minute
+call(label: func_send_lock_with_invalid_pid)
+call(label: func_send_lock)
+call(label: func_send_lock) // send it twice, the second time it generates a LOCK_FAILED (duplicate)
+
 call(label: func_expect_early_unlocked)
 call(label: func_expect_locked)
+
+set_variable(name: info_mode, value: "debug")
+call(label: func_send_info)
+
 call(label: func_expect_lock_failed_duplicate)
+
 call(label: func_send_unlock_with_bad_server_name)
 call(label: func_send_unlock_with_bad_object_name)
+
 call(label: func_expect_cluckd_status_with_ticket)
 call(label: func_expect_unlocking)
 call(label: func_expect_unlocked)	// this one timed out
 
+
+call(label: func_send_quitting)
 
 call(label: func_drain_messages)
 exit(error_message: "unexpectedly reached the end...")
@@ -60,7 +108,6 @@ return()
 // Function: send QUITTING and drain messages
 label(name: func_drain_messages)
 print(message: "--- Sending QUITTING and draining messages...")
-call(label: func_send_quitting)
 clear_message()
 has_message()
 if(true: got_unexpected_message)
@@ -87,8 +134,6 @@ label(name: func_expect_register)
 print(message: "--- expect REGISTER ---")
 call(label: func_wait_message)
 call(label: func_verify_register)
-call(label: func_send_help)
-call(label: func_send_ready)
 return()
 
 // Function: expect COMMANDS
@@ -103,11 +148,6 @@ label(name: func_expect_service_status)
 print(message: "--- expect SERVICE_STATUS ---")
 call(label: func_wait_message)
 call(label: func_verify_service_status)
-call(label: func_send_status_of_fluid_settings)
-
-// send a very early lock request that will be cached
-call(label: func_send_lock_early)
-
 return()
 
 // Function: expect FLUID_SETTINGS_LISTEN
@@ -115,15 +155,6 @@ label(name: func_expect_fluid_settings_listen)
 print(message: "--- expect FLUID_SETTINGS_LISTEN ---")
 call(label: func_wait_message)
 call(label: func_verify_fluid_settings_listen)
-call(label: func_send_fluid_settings_registered)
-call(label: func_send_fluid_settings_value_updated)
-call(label: func_send_fluid_settings_ready)
-
-// here pretend a client is checking on our status a little too soon
-// (i.e. we'll get a "NO_LOCK" message)
-//
-call(label: func_send_lock_status)
-
 return()
 
 // Functoin: expect CLUSTER_STATUS
@@ -131,10 +162,6 @@ label(name: func_expect_cluster_status)
 print(message: "--- expect CLUSTER_STATUS ---")
 call(label: func_wait_message)
 call(label: func_verify_cluster_status)
-call(label: func_send_cluster_up)
-//call(label: func_send_cluster_complete) -- this does not currently happen because the message is tested (at least when we sent a CLUSTER_STATUS message, the broadcast may still send us the message, I think)
-set_variable(name: info_mode, value: "info")
-call(label: func_send_info)
 return()
 
 // Function: expect NO_LOCK
@@ -149,11 +176,6 @@ label(name: func_expect_lock_leaders)
 print(message: "--- wait for message LOCK_LEADERS ---")
 call(label: func_wait_message)
 call(label: func_verify_lock_leaders)
-
-// try a lock that already timed out
-set_variable(name: timeout, value: 1000)
-call(label: func_send_lock)
-
 return()
 
 // Function: expect LOCK_STARTED
@@ -161,7 +183,6 @@ label(name: func_expect_lock_started)
 print(message: "--- wait for message LOCK_STARTED ---")
 call(label: func_wait_message)
 call(label: func_verify_lock_started)
-//call(label: func_send_cluster_up)
 return()
 
 // Function: expect LOCK_READY
@@ -169,7 +190,6 @@ label(name: func_expect_lock_ready)
 print(message: "--- wait for message LOCK_READY ---")
 call(label: func_wait_message)
 call(label: func_verify_lock_ready)
-//call(label: func_send_cluster_up)
 return()
 
 // Function: expect CLUCKD_STATUS (without tickets)
@@ -191,11 +211,6 @@ label(name: func_expect_lock_failed)
 print(message: "--- wait for message LOCK_FAILED ---")
 call(label: func_wait_message)
 call(label: func_verify_lock_failed)
-now(variable_name: timeout)
-set_variable(name: timeout, value: ${timeout} + 60) // now + 1 minute
-call(label: func_send_lock_with_invalid_pid)
-call(label: func_send_lock)
-call(label: func_send_lock) // send it twice, the second time it generates a LOCK_FAILED (duplicate)
 return()
 
 // Function: expect LOCKED early
@@ -203,7 +218,6 @@ label(name: func_expect_early_locked)
 print(message: "--- expect LOCKED (early) ---")
 call(label: func_wait_message)
 call(label: func_verify_locked_early)
-call(label: func_send_early_unlock)
 return()
 
 // Function: expect LOCKED
@@ -211,8 +225,6 @@ label(name: func_expect_locked)
 print(message: "--- expect LOCKED ---")
 call(label: func_wait_message)
 call(label: func_verify_locked)
-set_variable(name: info_mode, value: "debug")
-call(label: func_send_info)
 return()
 
 // Function: expect LOCK_FAILED

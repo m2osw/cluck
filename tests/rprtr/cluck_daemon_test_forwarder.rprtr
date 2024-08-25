@@ -4723,7 +4723,7 @@ send_message(
 	})
 return()
 
-// Function: send ABSOLUTELY (random)
+// Function: send ABSOLUTELY ("random" service)
 label(name: func_send_random_absolutely)
 now(variable_name: now)
 send_message(

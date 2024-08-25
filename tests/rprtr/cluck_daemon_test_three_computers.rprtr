@@ -66,6 +66,14 @@ call(label: func_expect_drop_ticket_rc1)
 call(label: func_expect_drop_ticket_rc2)
 call(label: func_expect_unlocked)
 
+// test a LOCK with a serial number to see whether we get the copies as expected
+//
+call(label: func_send_lock_with_serial)
+call(label: func_expect_alive)
+call(label: func_send_absolutely)
+call(label: func_expect_lock_entering_lks_rc1)
+call(label: func_expect_lock_entering_lks_rc2)
+
 // we tested a first lock and it worked since we reached here
 //
 // now try 6 locks from 4 different services:
@@ -400,6 +408,20 @@ print(message: "--- wait for message LOCK_ENTERING (rc2)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_entering_rc2)
 call(label: func_send_lock_entered_rc2)
+return()
+
+label(name: func_expect_lock_entering_lks_rc1)
+print(message: "--- wait for message LOCK_ENTERING (lks:rc1)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_entering_lks_rc1)
+//call(label: func_send_lock_entered_lk1_rc1)
+return()
+
+label(name: func_expect_lock_entering_lks_rc2)
+print(message: "--- wait for message LOCK_ENTERING (lks:rc2)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_entering_lks_rc2)
+//call(label: func_send_lock_entered_lk1_rc2)
 return()
 
 label(name: func_expect_lock_entering_lk1_rc1)
@@ -1063,6 +1085,12 @@ call(label: func_wait_message)
 call(label: func_verify_locked_lk5)
 return()
 
+label(name: func_expect_alive)
+print(message: "--- wait for message ALIVE....")
+call(label: func_wait_message)
+call(label: func_verify_alive)
+return()
+
 label(name: func_expect_unlocked)
 print(message: "--- wait for message UNLOCKED....")
 call(label: func_wait_message)
@@ -1485,6 +1513,42 @@ verify_message(
 		serial: `^[0-9]+$`,
 		source: "${hostname}/website",
 		tag: 209,
+		timeout: ${lock_timeout}
+	})
+return()
+
+// Function: verify LOCK_ENTERING (lks:rc1)
+label(name: func_verify_lock_entering_lks_rc1)
+verify_message(
+	command: LOCK_ENTERING,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		duration: 10,
+		key: "rc1/738",
+		object_name: "serialized_lock",
+		serial: `^[0-9]+$`,
+		source: "rc1/locker_service",
+		tag: 110,
+		timeout: ${lock_timeout}
+	})
+return()
+
+// Function: verify LOCK_ENTERING (lks:rc2)
+label(name: func_verify_lock_entering_lks_rc2)
+verify_message(
+	command: LOCK_ENTERING,
+	sent_service: cluckd,
+	server: rc2,
+	service: cluckd,
+	required_parameters: {
+		duration: 10,
+		key: "rc1/738",
+		object_name: "serialized_lock",
+		serial: `^[0-9]+$`,
+		source: "rc1/locker_service",
+		tag: 110,
 		timeout: ${lock_timeout}
 	})
 return()
@@ -2933,6 +2997,19 @@ verify_message(
 		timeout_date: `^[0-9]+(\\.[0-9]+)?$`,
 		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`,
 		tag: 301
+	})
+return()
+
+// Function: verify ALIVE
+label(name: func_verify_alive)
+verify_message(
+	command: ALIVE,
+	sent_service: cluckd,
+	server: rc1,
+	service: locker_service,
+	required_parameters: {
+		serial: "relock/serialized_lock/rc1/738",
+		timestamp: `^[0-9]+(\\.[0-9]+)?$`
 	})
 return()
 
@@ -4650,6 +4727,44 @@ send_message(
 		object_name: "book_update",
 		pid: 439,
 		tag: 209
+	})
+return()
+
+// Function: send LOCK with a serial number
+label(name: func_send_lock_with_serial)
+now(variable_name: lock_timeout)
+set_variable(name: lock_timeout, value: ${lock_timeout} + 5) // now + 5 seconds
+send_message(
+	command: LOCK,
+	sent_server: rc1,
+	sent_service: locker_service,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "serialized_lock",
+		pid: 738,
+		tag: 110,
+		serial: 43,
+		duration: 10,
+		timeout: ${lock_timeout}
+	})
+return()
+
+// Function: send LOCK with a serial number
+label(name: func_send_absolutely)
+save_parameter_value(parameter_name: serial, variable_name: serial)
+save_parameter_value(parameter_name: timestamp, variable_name: timestamp)
+now(variable_name: absolutely_reply_timestamp)
+send_message(
+	command: ABSOLUTELY,
+	sent_server: rc1,
+	sent_service: locker_service,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		serial: "${serial}",
+		timestamp: ${timestamp},
+		reply_timestamp: ${absolutely_reply_timestamp}
 	})
 return()
 
