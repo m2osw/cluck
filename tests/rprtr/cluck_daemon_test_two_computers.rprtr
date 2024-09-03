@@ -47,7 +47,10 @@ call(label: func_expect_unlocking)
 call(label: func_sleep_quietly_25cs)
 call(label: func_send_unlock)
 call(label: func_expect_drop_ticket)
-call(label: func_send_hangup)
+
+set_variable(name: cluckd_status, value: "down")
+call(label: func_send_status)
+call(label: func_expect_no_lock)
 
 
 
@@ -1079,19 +1082,6 @@ send_message(
 		object_name: "lock1",
 		pid: 123,
 		tag: "505"
-	})
-return()
-
-// Function: send HANGUP
-label(name: func_send_hangup)
-send_message(
-	command: HANGUP,
-	sent_server: ${hostname},
-	sent_service: website,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		server_name: "two"
 	})
 return()
 

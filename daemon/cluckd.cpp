@@ -3084,6 +3084,7 @@ void cluckd::msg_lock_entering(ed::message & msg)
             lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
             lock_failed_message.reply_to(msg);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
 #ifndef CLUCKD_OPTIMIZATIONS
@@ -3104,7 +3105,7 @@ void cluckd::msg_lock_entering(ed::message & msg)
                 // invalid duration, minimum is 60
                 //
                 SNAP_LOG_ERROR
-                    << duration
+                    << unlock_duration
                     << " is an invalid unlock duration, the minimum accepted is "
                     << cluck::CLUCK_UNLOCK_MINIMUM_TIMEOUT
                     << "."
@@ -3114,6 +3115,7 @@ void cluckd::msg_lock_entering(ed::message & msg)
                 lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
                 lock_failed_message.reply_to(msg);
                 lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+                lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
                 lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
                 lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
 #ifndef CLUCKD_OPTIMIZATIONS
@@ -3142,6 +3144,7 @@ void cluckd::msg_lock_entering(ed::message & msg)
             lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
             lock_failed_message.reply_to(msg);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
 #ifndef CLUCKD_OPTIMIZATIONS
@@ -3829,7 +3832,13 @@ void cluckd::msg_max_ticket(ed::message & msg)
  * cluckd services. If a cluckd was affected, we verify we still have
  * enough leaders.
  *
- * \param[in] msg  The DISCONNECTED or HANGUP message.
+ * \note
+ * The STATUS message does not directly call this function. Instead, it
+ * calls msg_status() which checks that (1) the status is in link with
+ * a communicator service and (2) the new service state is "down" and only
+ * if so, this function gets called.
+ *
+ * \param[in] msg  The DISCONNECTED, HANGUP, or STATUS message.
  */
 void cluckd::msg_server_gone(ed::message & msg)
 {

@@ -13,16 +13,23 @@ listen(address: <127.0.0.1:20002>)
 call(label: func_expect_register)
 call(label: func_expect_commands)
 call(label: func_expect_service_status)
+call(label: func_send_lock_entering_fast) // way to early, just ignore
 call(label: func_expect_fluid_settings_listen)
 call(label: func_expect_cluster_status)
 call(label: func_expect_lock_started_initial)
 call(label: func_expect_lock_leaders)
 call(label: func_expect_lock_ready)
 call(label: func_expect_lock_started_second_instance)
+call(label: func_expect_lock_failed_entering_duration)
+call(label: func_expect_lock_failed_entering_unlock_duration)
+call(label: func_expect_lock_failed_entering_bad_source)
+call(label: func_expect_lock_entered_fast)
+call(label: func_send_get_max_ticket_fast)
 call(label: func_expect_lock_entered_fast)
 call(label: func_expect_lock_entered_slow)
 call(label: func_expect_max_ticket_fast)
 call(label: func_expect_max_ticket_slow)
+call(label: func_send_lock_exiting_fast_with_bad_key) // this just prints a LOG and nothing else
 call(label: func_expect_ticket_added_fast)
 call(label: func_expect_ticket_added_slow)
 // --- after this point, no more "slow" messages, it timed out and "we" let the owner know with a LOCK_FAILED ---
@@ -157,8 +164,34 @@ label(name: func_expect_lock_ready)
 print(message: "--- wait for message LOCK_READY ---")
 call(label: func_wait_message)
 call(label: func_verify_lock_ready)
+call(label: func_send_lock_entering_fast_timedout)		// already timed out, ignore
+call(label: func_send_lock_entering_fast_bad_duration)		// duration must be 3+, LOCK_FAILED expected
+call(label: func_send_lock_entering_fast_bad_unlock_duration)	// unlock duration must be 3+, LOCK_FAILED expected
+call(label: func_send_lock_entering_fast_bad_source)		// source with 3 segments, LOCK_FAILED expected
 call(label: func_send_lock_entering_fast)
+call(label: func_send_lock_entering_fast)			// second time does not re-allocate but it still resend LOCK_ENTERED
 call(label: func_send_lock_entering_slow)
+return()
+
+// Function: expect LOCK_FAILED (duration)
+label(name: func_expect_lock_failed_entering_duration)
+print(message: "--- wait for message LOCK_FAILED (duration)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_entering_duration)
+return()
+
+// Function: expect LOCK_FAILED (unlock duration)
+label(name: func_expect_lock_failed_entering_unlock_duration)
+print(message: "--- wait for message LOCK_FAILED (unlock duration)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_entering_unlock_duration)
+return()
+
+// Function: expect LOCK_FAILED (bad source)
+label(name: func_expect_lock_failed_entering_bad_source)
+print(message: "--- wait for message LOCK_FAILED (bad source)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_entering_bad_source)
 return()
 
 // Function: expect LOCKED
@@ -173,7 +206,6 @@ label(name: func_expect_lock_entered_fast)
 print(message: "--- wait for message LOCK_ENTERED (fast) ---")
 call(label: func_wait_message)
 call(label: func_verify_lock_entered_fast)
-call(label: func_send_get_max_ticket_fast)
 return()
 
 // Function: expect LOCK_ENTERED (slow)
@@ -376,6 +408,60 @@ verify_message(
 	service: ".",
 	required_parameters: {
 		cache: no
+	})
+return()
+
+// Function: verify a LOCK_FAILED
+label(name: func_verify_lock_failed_entering_duration)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		error: "invalid",
+		key: "rc/32005",
+		object_name: "fast_entering",
+		tag: 808
+	},
+	optional_parameters: {
+		description: "LOCK_ENTERING called with a duration which is too small"
+	})
+return()
+
+// Function: verify a LOCK_FAILED
+label(name: func_verify_lock_failed_entering_unlock_duration)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		error: "invalid",
+		key: "rc/32005",
+		object_name: "fast_entering",
+		tag: 808
+	},
+	optional_parameters: {
+		description: "LOCK_ENTERING called with an unlock duration which is too small or set to the default value"
+	})
+return()
+
+// Function: verify a LOCK_FAILED
+label(name: func_verify_lock_failed_entering_bad_source)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		error: "invalid",
+		key: "rc/32005",
+		object_name: "fast_entering",
+		tag: 808
+	},
+	optional_parameters: {
+		description: "LOCK_ENTERING called with an invalid source parameter"
 	})
 return()
 
@@ -653,6 +739,94 @@ send_message(
 	})
 return()
 
+// Function: send LOCK_ENTERING (timed out)
+label(name: func_send_lock_entering_fast_timedout)
+now(variable_name: fast_lock_timeout)
+set_variable(name: fast_lock_timeout, value: ${fast_lock_timeout} - 1) // now - 1 second
+send_message(
+	command: LOCK_ENTERING,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		duration: 10,
+		key: "rc/32005",
+		object_name: "fast_entering",
+		source: "rc/website",
+		serial: 7003,
+		tag: 808,
+		timeout: ${fast_lock_timeout},
+		unlock_duration: 5
+	})
+return()
+
+// Function: send LOCK_ENTERING (duration < 3)
+label(name: func_send_lock_entering_fast_bad_duration)
+now(variable_name: fast_lock_timeout)
+set_variable(name: fast_lock_timeout, value: ${fast_lock_timeout} + 60) // now - 1 minute
+send_message(
+	command: LOCK_ENTERING,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		duration: 1,
+		key: "rc/32005",
+		object_name: "fast_entering",
+		source: "rc/website",
+		serial: 7003,
+		tag: 808,
+		timeout: ${fast_lock_timeout},
+		unlock_duration: 5
+	})
+return()
+
+// Function: send LOCK_ENTERING (unlock duration < 3)
+label(name: func_send_lock_entering_fast_bad_unlock_duration)
+now(variable_name: fast_lock_timeout)
+set_variable(name: fast_lock_timeout, value: ${fast_lock_timeout} + 60) // now + 1 minute
+send_message(
+	command: LOCK_ENTERING,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		duration: 25,
+		key: "rc/32005",
+		object_name: "fast_entering",
+		source: "rc/website",
+		serial: 7003,
+		tag: 808,
+		timeout: ${fast_lock_timeout},
+		unlock_duration: 1
+	})
+return()
+
+// Function: send LOCK_ENTERING (bad source)
+label(name: func_send_lock_entering_fast_bad_source)
+now(variable_name: fast_lock_timeout)
+set_variable(name: fast_lock_timeout, value: ${fast_lock_timeout} + 60) // now + 1 minute
+send_message(
+	command: LOCK_ENTERING,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		duration: 10,
+		key: "rc/32005",
+		object_name: "fast_entering",
+		source: "this/bad/source",
+		serial: 7003,
+		tag: 808,
+		timeout: ${fast_lock_timeout},
+		unlock_duration: 5
+	})
+return()
+
 // Function: send LOCK_ENTERING
 label(name: func_send_lock_entering_slow)
 now(variable_name: slow_lock_timeout)
@@ -836,6 +1010,21 @@ send_message(
 	service: cluckd,
 	parameters: {
 		key: "rc/32005",
+		object_name: "fast_entering",
+		tag: 808
+	})
+return()
+
+// Function: send LOCK_EXITING (fast)
+label(name: func_send_lock_exiting_fast_with_bad_key)
+send_message(
+	command: LOCK_EXITING,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		key: "bad_key",
 		object_name: "fast_entering",
 		tag: 808
 	})
