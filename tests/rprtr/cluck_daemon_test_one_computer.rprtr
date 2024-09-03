@@ -67,10 +67,14 @@ call(label: func_send_lock) // send it twice, the second time it generates a LOC
 call(label: func_expect_early_unlocked)
 call(label: func_expect_locked)
 
+call(label: func_send_duplicate_add_ticket)
+
 set_variable(name: info_mode, value: "debug")
 call(label: func_send_info)
 
 call(label: func_expect_lock_failed_duplicate)
+
+call(label: func_expect_lock_failed_duplicate_add_ticket)
 
 call(label: func_send_unlock_with_bad_server_name)
 call(label: func_send_unlock_with_bad_object_name)
@@ -232,6 +236,13 @@ label(name: func_expect_lock_failed_duplicate)
 print(message: "--- wait for message LOCK_FAILED (duplicate) ---")
 call(label: func_wait_message)
 call(label: func_verify_lock_failed_duplicate)
+return()
+
+// Function: expect LOCK_FAILED
+label(name: func_expect_lock_failed_duplicate_add_ticket)
+print(message: "--- wait for message LOCK_FAILED (duplicate ADD_TICKET) ---")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_duplicate_add_ticket)
 return()
 
 // Function: expect UNLOCKED
@@ -472,7 +483,7 @@ verify_message(
 	})
 return()
 
-// Function: verify a LOCK FAILED
+// Function: verify a LOCK FAILED (duplicate)
 label(name: func_verify_lock_failed_duplicate)
 verify_message(
 	command: LOCK_FAILED,
@@ -483,6 +494,24 @@ verify_message(
 		key: "${hostname}/123",
 		object_name: "lock1",
 		tag: 505
+	})
+return()
+
+// Function: verify a LOCK_FAILED (duplicate ADD_TICKET)
+label(name: func_verify_lock_failed_duplicate_add_ticket)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		error: "duplicate",
+		key: "00000001/${hostname}/123",
+		object_name: "lock1",
+		tag: 505
+	},
+	optional_parameters: {
+		description: "ADD_TICKET called with an existing ticket name and key"
 	})
 return()
 
@@ -773,6 +802,22 @@ send_message(
 		tag: 505,
 		pid: 123,
 		duration: 10,
+		timeout: ${timeout}
+	})
+return()
+
+// Function: send ADD_TICKET (duplicate ticket & spurious since we have just one computer)
+label(name: func_send_duplicate_add_ticket)
+send_message(
+	command: ADD_TICKET,
+	sent_server: rc1,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		key: "00000001/${hostname}/123",
+		tag: 505,
 		timeout: ${timeout}
 	})
 return()

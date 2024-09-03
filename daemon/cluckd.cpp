@@ -32,6 +32,7 @@
 
 // communicatord
 //
+#include    <communicatord/flags.h>
 #include    <communicatord/names.h>
 
 
@@ -1261,7 +1262,7 @@ ticket::pointer_t cluckd::find_first_lock(std::string const & object_name)
                 // that ticket timed out, send an UNLOCKING, UNLOCKED,
                 // or LOCK_FAILED message and get rid of it
                 //
-                key_ticket->second->lock_failed();
+                key_ticket->second->lock_failed("timed out while searching for first lock");
                 if(key_ticket->second->timed_out())
                 {
                     // still timed out, remove it
@@ -1612,6 +1613,9 @@ void cluckd::cleanup()
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_timedout);
+#ifndef CLUCKD_OPTIMIZATIONS
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "cleanup() found a timed out lock");
+#endif
             f_messenger->send_message(lock_failed_message);
 
             c = f_message_cache.erase(c);
@@ -1636,7 +1640,7 @@ void cluckd::cleanup()
             bool move_next(true);
             if(key_ticket->second->timed_out())
             {
-                key_ticket->second->lock_failed();
+                key_ticket->second->lock_failed("ticket: timed out while cleanup");
                 if(key_ticket->second->timed_out())
                 {
                     // still timed out, remove it
@@ -1681,7 +1685,7 @@ void cluckd::cleanup()
         {
             if(key_entering->second->timed_out())
             {
-                key_entering->second->lock_failed();
+                key_entering->second->lock_failed("entering ticket: timed out while cleanup");
                 if(key_entering->second->timed_out())
                 {
                     // still timed out, remove it
@@ -1938,7 +1942,7 @@ bool cluckd::get_parameters(
         }
         else
         {
-            *timeout = snapdev::now() + cluck::CLUCK_UNLOCK_DEFAULT_TIMEOUT;
+            *timeout = snapdev::now() + cluck::get_lock_obtention_timeout();
         }
     }
 
@@ -1974,7 +1978,7 @@ bool cluckd::get_parameters(
 void cluckd::msg_absolutely(ed::message & msg)
 {
     // we may receive the ABSOLUTELY message from anywhere so don't expect
-    // that the serial parameter is going to be defined
+    // the "serial" parameter to be defined
     //
     if(!msg.has_parameter(ed::g_name_ed_param_serial))
     {
@@ -1985,29 +1989,17 @@ void cluckd::msg_absolutely(ed::message & msg)
     std::vector<std::string> segments;
     snapdev::tokenize_string(segments, serial, "/");
 
-    if(segments[0] == "relock")
+    if(segments[0] == "cluckd")
     {
         // check serial as defined in msg_lock()
-        // alive_message.add_parameter("serial", "relock/" + object_name + '/' + entering_key);
         //
         if(segments.size() != 4)
         {
             SNAP_LOG_WARNING
-                << "ABSOLUTELY reply has an invalid relock serial parameters \""
+                << "ABSOLUTELY reply has an invalid cluckd serial parameters \""
                 << serial
                 << "\" was expected to have exactly 4 segments."
                 << SNAP_LOG_SEND;
-
-            // this would not work without an object name & tag
-            // use an INVALID message instead
-            //ed::message lock_failed_message;
-            //lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-            //lock_failed_message.reply_to(msg);
-            //lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, cluck::g_name_cluck_value_unknown);
-            //lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, cluck::g_name_cluck_value_unknown);
-            //lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, serial);
-            //lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
-            //f_messenger->send_message(lock_failed_message);
 
             ed::message invalid;
             invalid.set_command(ed::g_name_ed_cmd_invalid);
@@ -2074,7 +2066,7 @@ void cluckd::msg_activate_lock(ed::message & msg)
     std::string key;
     if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
     std::string first_key("no-key");
@@ -2136,29 +2128,56 @@ void cluckd::msg_add_ticket(ed::message & msg)
     cluck::timeout_t timeout;
     if(!get_parameters(msg, &object_name, &tag, nullptr, &timeout, &key, nullptr))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
-#ifdef _DEBUG
+    // make sure the ticket is unique
+    //
+    auto const obj_ticket(f_tickets.find(object_name));
+    if(obj_ticket != f_tickets.end())
     {
-        auto const obj_ticket(f_tickets.find(object_name));
-        if(obj_ticket != f_tickets.end())
+        auto const key_ticket(obj_ticket->second.find(key));
+        if(key_ticket != obj_ticket->second.end())
         {
-            auto const key_ticket(obj_ticket->second.find(key));
-            if(key_ticket != obj_ticket->second.end())
-            {
-                // this ticket exists on this system
-                //
-                throw cluck::logic_error(
-                      "cluckd::msg_add_ticket(): ticket \""
-                    + object_name
-                    + "\" with key \""
-                    + key
-                    + "\" already exists");
-            }
+            SNAP_LOG_ERROR
+                << "an existing ticket has the same object name \""
+                << object_name
+                << "\" ("
+                << tag
+                << ") and key \""
+                << key
+                << "\"."
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_duplicate);
+#ifndef CLUCKD_OPTIMIZATIONS
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "ADD_TICKET called with an existing ticket name and key");
+#endif
+            f_messenger->send_message(lock_failed_message);
+
+            communicatord::flag::pointer_t flag(COMMUNICATORD_FLAG_UP(
+                          "cluckd"
+                        , "ticket"
+                        , "invalid-algorithm"
+                        , "msg_add_ticket() received a second call to add the"
+                          " same ticket. This either means there is a bug in our"
+                          " algorithm or there is a hacker sending us messages"
+                          " trying to create invalid tickets."
+                    ));
+            flag->set_priority(25);
+            flag->add_tag("bug");
+            flag->set_manual_down(true);
+            flag->save();
+
+            return;
         }
     }
-#endif
 
     // the client_pid parameter is part of the key (3rd segment)
     //
@@ -2178,6 +2197,9 @@ void cluckd::msg_add_ticket(ed::message & msg)
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+#ifndef CLUCKD_OPTIMIZATIONS
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "ADD_TICKET called with an invalid key (expected three segments)");
+#endif
         f_messenger->send_message(lock_failed_message);
 
         return;
@@ -2215,6 +2237,9 @@ void cluckd::msg_add_ticket(ed::message & msg)
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+#ifndef CLUCKD_OPTIMIZATIONS
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "ADD_TICKET called with an invalid key (first segment is not a valid hexadecimal number)");
+#endif
         f_messenger->send_message(lock_failed_message);
 
         return;
@@ -2239,6 +2264,9 @@ void cluckd::msg_add_ticket(ed::message & msg)
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+#ifndef CLUCKD_OPTIMIZATIONS
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "ADD_TICKET could not find an entering ticket with the specified object_name");
+#endif
         f_messenger->send_message(lock_failed_message);
 
         return;
@@ -2264,6 +2292,9 @@ void cluckd::msg_add_ticket(ed::message & msg)
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+#ifndef CLUCKD_OPTIMIZATIONS
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "ADD_TICKET could not find the very entering ticket with the specified key");
+#endif
         f_messenger->send_message(lock_failed_message);
 
         return;
@@ -2347,7 +2378,7 @@ void cluckd::msg_cluster_up(ed::message & msg)
     //
     if(f_my_ip_address.is_default())
     {
-        throw cluck::logic_error("cluckd::msg_cluster_up(): somehow f_my_ip_address is still the default in msg_cluster_up().");
+        throw cluck::logic_error("cluckd::msg_cluster_up(): somehow f_my_ip_address is still the default in msg_cluster_up()."); // LCOV_EXCL_LINE
     }
 #endif
 
@@ -2394,7 +2425,7 @@ void cluckd::msg_drop_ticket(ed::message & msg)
     std::string key;
     if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
     std::vector<std::string> segments;
@@ -2610,6 +2641,9 @@ void cluckd::msg_lock(ed::message & msg)
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_timedout);
+#ifndef CLUCKD_OPTIMIZATIONS
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "LOCK timeout date is already in the past");
+#endif
         f_messenger->send_message(lock_failed_message);
 
         return;
@@ -2634,6 +2668,9 @@ void cluckd::msg_lock(ed::message & msg)
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+#ifndef CLUCKD_OPTIMIZATIONS
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "LOCK called with a duration that is too small");
+#endif
         f_messenger->send_message(lock_failed_message);
 
         return;
@@ -2661,6 +2698,9 @@ void cluckd::msg_lock(ed::message & msg)
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+#ifndef CLUCKD_OPTIMIZATIONS
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "LOCK called with an unlock duration that is too small");
+#endif
             f_messenger->send_message(lock_failed_message);
 
             return;
@@ -2742,6 +2782,36 @@ void cluckd::msg_lock(ed::message & msg)
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_duplicate);
+#ifndef CLUCKD_OPTIMIZATIONS
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "LOCK called with the same entering ticket object_name and entering_key");
+#endif
+            f_messenger->send_message(lock_failed_message);
+
+            return;
+        }
+        if(entering_ticket->second.size() >= cluck::CLUCK_MAXIMUM_ENTERING_LOCKS)
+        {
+            // this is a failure in the algorithm (unfortunately), if you
+            // send LOCK commands without much pause, the number of entering
+            // ticket can grow forever; the following is a way to avoid
+            // that situation by preventing such inconsiderate growth.
+            //
+            SNAP_LOG_ERROR
+                << "too many entering tickets for object name \""
+                << object_name
+                << "\"."
+                << SNAP_LOG_SEND;
+
+            ed::message lock_failed_message;
+            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
+            lock_failed_message.reply_to(msg);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_overflow);
+#ifndef CLUCKD_OPTIMIZATIONS
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "LOCK called too quickly that the number of entering tickets overflowed");
+#endif
             f_messenger->send_message(lock_failed_message);
 
             return;
@@ -2786,30 +2856,9 @@ void cluckd::msg_lock(ed::message & msg)
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_duplicate);
-            f_messenger->send_message(lock_failed_message);
-
-            return;
-        }
-        if(obj_ticket->second.size() >= cluck::CLUCK_MAXIMUM_ENTERING_LOCKS)
-        {
-            // this is a failure in the algorithm (unfortunately), if you
-            // send LOCK commands without much pause, the number of entering
-            // ticket can grow forever; the following is a way to avoid
-            // that situation by preventing such inconsiderate growth.
-            //
-            SNAP_LOG_ERROR
-                << "too many entering tickets for object name \""
-                << object_name
-                << "\"."
-                << SNAP_LOG_SEND;
-
-            ed::message lock_failed_message;
-            lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-            lock_failed_message.reply_to(msg);
-            lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
-            lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
-            lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
-            lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_overflow);
+#ifndef CLUCKD_OPTIMIZATIONS
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "LOCK called with the same ticket object_name and entering_key");
+#endif
             f_messenger->send_message(lock_failed_message);
 
             return;
@@ -2866,7 +2915,7 @@ void cluckd::msg_lock(ed::message & msg)
         alive_message.set_command(ed::g_name_ed_cmd_alive);
         alive_message.set_server(server_name);
         alive_message.set_service(service_name);
-        alive_message.add_parameter(ed::g_name_ed_param_serial, "relock/" + object_name + '/' + entering_key);
+        alive_message.add_parameter(ed::g_name_ed_param_serial, "cluckd/" + object_name + '/' + entering_key);
         alive_message.add_parameter(ed::g_name_ed_param_timestamp, snapdev::now());
         f_messenger->send_message(alive_message);
     }
@@ -3037,6 +3086,9 @@ void cluckd::msg_lock_entering(ed::message & msg)
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+#ifndef CLUCKD_OPTIMIZATIONS
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "LOCK_ENTERING called with a duration which is too small");
+#endif
             f_messenger->send_message(lock_failed_message);
 
             return;
@@ -3064,6 +3116,9 @@ void cluckd::msg_lock_entering(ed::message & msg)
                 lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
                 lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
                 lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+#ifndef CLUCKD_OPTIMIZATIONS
+                lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "LOCK_ENTERING called with an unlock duration which is too small or set to the default value");
+#endif
                 f_messenger->send_message(lock_failed_message);
 
                 return;
@@ -3089,6 +3144,9 @@ void cluckd::msg_lock_entering(ed::message & msg)
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
+#ifndef CLUCKD_OPTIMIZATIONS
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_description, "LOCK_ENTERING called with an invalid source parameter");
+#endif
             f_messenger->send_message(lock_failed_message);
 
             return;

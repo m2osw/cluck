@@ -44,8 +44,10 @@ call(label: func_expect_lock_started_reply_b)
 call(label: func_expect_lock_ready)
 call(label: func_expect_lock_entering_rc1)
 call(label: func_expect_lock_entering_rc2)
+call(label: func_send_absolutely_with_invalid_serial)
 call(label: func_expect_get_max_ticket_rc1)
 call(label: func_expect_get_max_ticket_rc2)
+call(label: func_expect_invalid_reply_to_absolutely)
 call(label: func_expect_add_ticket_rc1)
 call(label: func_send_list_tickets)
 call(label: func_expect_add_ticket_rc2)
@@ -76,7 +78,7 @@ call(label: func_expect_lock_entering_lks_rc2)
 
 // we tested a first lock and it worked since we reached here
 //
-// now try 6 locks from 4 different services:
+// now try 6 locks from 4 different services and two repeats:
 //
 //     send lock "book_update" from remote client 1 / website
 //     send lock "schema_manager" from local client database
@@ -1089,6 +1091,12 @@ label(name: func_expect_alive)
 print(message: "--- wait for message ALIVE....")
 call(label: func_wait_message)
 call(label: func_verify_alive)
+return()
+
+label(name: func_expect_invalid_reply_to_absolutely)
+print(message: "--- wait for message INVALID (absolutely serial)....")
+call(label: func_wait_message)
+call(label: func_verify_invalid_reply_to_absolutely)
 return()
 
 label(name: func_expect_unlocked)
@@ -3008,8 +3016,21 @@ verify_message(
 	server: rc1,
 	service: locker_service,
 	required_parameters: {
-		serial: "relock/serialized_lock/rc1/738",
+		serial: "cluckd/serialized_lock/rc1/738",
 		timestamp: `^[0-9]+(\\.[0-9]+)?$`
+	})
+return()
+
+// Function: verify INVALID
+label(name: func_verify_invalid_reply_to_absolutely)
+verify_message(
+	command: INVALID,
+	sent_service: cluckd,
+	server: rc1,
+	service: locker_service,
+	required_parameters: {
+		command: ABSOLUTELY,
+		message: "invalid number of segments in \"cluckd/invalid/serial\"."
 	})
 return()
 
@@ -4750,7 +4771,7 @@ send_message(
 	})
 return()
 
-// Function: send LOCK with a serial number
+// Function: send ABSOLUTELY with a serial parameter
 label(name: func_send_absolutely)
 save_parameter_value(parameter_name: serial, variable_name: serial)
 save_parameter_value(parameter_name: timestamp, variable_name: timestamp)
@@ -4763,6 +4784,23 @@ send_message(
 	service: cluckd,
 	parameters: {
 		serial: "${serial}",
+		timestamp: ${timestamp},
+		reply_timestamp: ${absolutely_reply_timestamp}
+	})
+return()
+
+// Function: send ABSOLUTELY with an invalid serial parameter
+label(name: func_send_absolutely_with_invalid_serial)
+now(variable_name: absolutely_reply_timestamp)
+set_variable(name: timestamp, value: ${absolutely_reply_timestamp} - 0.03)
+send_message(
+	command: ABSOLUTELY,
+	sent_server: rc1,
+	sent_service: locker_service,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		serial: "cluckd/invalid/serial",
 		timestamp: ${timestamp},
 		reply_timestamp: ${absolutely_reply_timestamp}
 	})

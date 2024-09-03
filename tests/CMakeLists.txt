@@ -40,6 +40,13 @@ if(SnapCatch2_FOUND AND Reporter_FOUND)
         ${CLUCKD_DIR}/timer.cpp
     )
 
+    if(${CLUCKD_OPTIMIZATIONS})
+        target_compile_definitions(${PROJECT_NAME}
+            PUBLIC
+                CLUCKD_OPTIMIZATIONS
+        )
+    endif()
+
     target_include_directories(${PROJECT_NAME}
         PUBLIC
             ${ADVGETOPT_INCLUDE_DIRS}

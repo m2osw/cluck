@@ -56,6 +56,13 @@ call(label: func_sleep_quietly_25cs)
 call(label: func_send_unlock)
 call(label: func_expect_unlock)
 call(label: func_send_cluster_down)
+call(label: func_expect_no_lock)
+
+// make sure we run a synchronization (i.e. a message with a reply)
+// otherwise the test may SEGV
+//
+call(label: func_send_info)
+call(label: func_expect_cluckd_status)
 
 
 
@@ -511,21 +518,6 @@ call(label: func_verify_get_max_ticket_lk8_rc2)
 call(label: func_send_max_ticket_from_lk8_rc2)
 return()
 
-label(name: func_expect_add_ticket_rc1)
-print(message: "--- wait for message ADD_TICKET (rc1)....")
-call(label: func_wait_message)
-call(label: func_verify_add_ticket_rc1)
-call(label: func_send_ticket_added_from_rc1_with_wrong_key) // first try with an invalid key, it should not prevent the next message from working
-call(label: func_send_ticket_added_from_rc1)
-return()
-
-label(name: func_expect_add_ticket_rc2)
-print(message: "--- wait for message ADD_TICKET (rc2)....")
-call(label: func_wait_message)
-call(label: func_verify_add_ticket_rc2)
-call(label: func_send_ticket_added_from_rc2)
-return()
-
 label(name: func_expect_add_ticket_lk1_rc1)
 print(message: "--- wait for message ADD_TICKET (lk1:rc1)....")
 call(label: func_wait_message)
@@ -947,6 +939,13 @@ call(label: func_wait_message)
 call(label: func_verify_locked_lk5)
 return()
 
+// Function: expect CLUCKD_STATUS (without tickets)
+label(name: func_expect_cluckd_status)
+print(message: "--- wait for message CLUCKD_STATUS....")
+call(label: func_wait_message)
+call(label: func_verify_cluckd_status)
+return()
+
 label(name: func_expect_unlock)
 print(message: "--- wait for message UNLOCK....")
 call(label: func_wait_message)
@@ -1192,7 +1191,7 @@ verify_message(
 	sent_service: cluckd,
 	service: "*", // this one was broadcast
 	required_parameters: {
-		// here we do not yet know what the ${leader1} id is going to be
+		// here we do not yet know what the ${other2_computer} id is going to be
 		lock_id: `^15\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
 		server_name: ${hostname},
 		start_time: `^[0-9]+(\\.[0-9]+)?$`
@@ -1972,36 +1971,6 @@ verify_message(
 	})
 return()
 
-// Function: verify ADD_TICKET (rc1)
-label(name: func_verify_add_ticket_rc1)
-verify_message(
-	command: ADD_TICKET,
-	sent_service: cluckd,
-	server: rc1,
-	service: cluckd,
-	required_parameters: {
-		key: "00000001/${hostname}/439",
-		object_name: book_update,
-		tag: 209,
-		timeout: ${lock_timeout}
-	})
-return()
-
-// Function: verify ADD_TICKET (rc2)
-label(name: func_verify_add_ticket_rc2)
-verify_message(
-	command: ADD_TICKET,
-	sent_service: cluckd,
-	server: rc2,
-	service: cluckd,
-	required_parameters: {
-		key: "00000001/${hostname}/439",
-		object_name: book_update,
-		tag: 209,
-		timeout: ${lock_timeout}
-	})
-return()
-
 // Function: verify ADD_TICKET (lk1:rc1)
 label(name: func_verify_add_ticket_lk1_rc1)
 verify_message(
@@ -2740,6 +2709,9 @@ verify_message(
 		key: "${hostname}/8391",
 		object_name: "forwarder",
 		tag: 418
+	},
+	optional_parameters: {
+		description: "LOCK called with a duration that is too small"
 	})
 return()
 
@@ -2926,6 +2898,35 @@ verify_message(
 		timeout_date: `^[0-9]+(\\.[0-9]+)?$`,
 		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`,
 		tag: 301
+	})
+return()
+
+// Function: verify CLUCKD_STATUS
+label(name: func_verify_cluckd_status)
+save_parameter_value(parameter_name: status, variable_name: cluckd_status)
+print(message: "--- verify message CLUCKD_STATUS: ${cluckd_status}")
+verify_message(
+	command: CLUCKD_STATUS,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: website,
+	required_parameters: {
+//set_variable(name: leader0, value: "12|" + ${leader0_random_str} + "|172.1.2.3|" + (${leader0_pid} % ${max_pid} + 1) + "|rc1")
+//set_variable(name: leader1, value: "12|" + ${leader1_random_str} + "|172.16.17.18|" + (${leader1_pid} % ${max_pid} + 1) + "|rc2")
+//set_variable(name: leader2, value: "12|" + ${leader2_random_str} + "|172.20.20.20|" + (${leader2_pid} % ${max_pid} + 1) + "|rc3")
+		status: '{"computers":['
+			+ '{"id":"'+ "${other2_computer}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"},'
+			+ '{"id":"'+ "${leader0}" + '","ip":"172.1.2.3","name":"rc1"},'
+			+ '{"id":"'+ "${leader1}" + '","ip":"172.16.17.18","name":"rc2"},'
+			+ '{"id":"'+ "${leader2}" + '","ip":"172.20.20.20","name":"rc3"},'
+			+ '{"id":"'+ "${other1_computer}" + '","ip":"172.99.0.23","name":"rc4"}'
+			+ '],'
+			+ '"daemon_ready":true,'
+			+ '"id":"' + "${other2_computer}" + '",'
+			+ '"ip":"127.0.0.1",'
+			+ '"leaders_count":0,'
+			+ '"neighbors_count":5,'
+			+ '"neighbors_quorum":3}'
 	})
 return()
 
@@ -4099,51 +4100,6 @@ send_message(
 	})
 return()
 
-// Function: send TICKET_ADDED from rc1 (with invalid key)
-label(name: func_send_ticket_added_from_rc1_with_wrong_key)
-send_message(
-	command: TICKET_ADDED,
-	sent_server: rc1,
-	sent_service: cluckd,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		key: "10000001/${hostname}/439",
-		object_name: "book_update",
-		tag: 209
-	})
-return()
-
-// Function: send TICKET_ADDED from rc1
-label(name: func_send_ticket_added_from_rc1)
-send_message(
-	command: TICKET_ADDED,
-	sent_server: rc1,
-	sent_service: cluckd,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		key: "00000001/${hostname}/439",
-		object_name: "book_update",
-		tag: 209
-	})
-return()
-
-// Function: send TICKET_ADDED
-label(name: func_send_ticket_added_from_rc2)
-send_message(
-	command: TICKET_ADDED,
-	sent_server: rc2,
-	sent_service: cluckd,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		key: "00000001/${hostname}/439",
-		object_name: "book_update",
-		tag: 209
-	})
-return()
-
 // Function: send TICKET_ADDED
 label(name: func_send_ticket_added_from_lk1_rc1)
 send_message(
@@ -4996,6 +4952,18 @@ send_message(
 	service: cluckd)
 return()
 
+// Function: send INFO
+label(name: func_send_info)
+send_message(
+	command: INFO,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		mode: "info"
+	})
+return()
 
 
 

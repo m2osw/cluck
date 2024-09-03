@@ -298,6 +298,17 @@ Note that this is different from draining a computer from client
 accesses.
 
 
+Optimizations
+=============
+
+The daemon uses an optimization flag that can be used to avoid many strings
+being generated, especially on failures.
+
+By default, this flag is turned off. You can turn it on using the following:
+
+    cmake -DCLUCKD_OPTIMIZATIONS:BOOL=on ...
+
+
 Bugs
 ====
 

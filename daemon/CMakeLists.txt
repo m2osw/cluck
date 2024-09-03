@@ -28,6 +28,13 @@ add_executable(${PROJECT_NAME}
     timer.cpp
 )
 
+if(${CLUCKD_OPTIMIZATIONS})
+    target_compile_definitions(${PROJECT_NAME}
+        PUBLIC
+            CLUCKD_OPTIMIZATIONS
+    )
+endif()
+
 target_include_directories(${PROJECT_NAME}
     PUBLIC
         ${ADVGETOPT_INCLUDE_DIRS}

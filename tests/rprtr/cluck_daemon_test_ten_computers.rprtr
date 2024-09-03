@@ -279,8 +279,8 @@ set_variable(name: leader1, value: "${leader2}")
 set_variable(name: leader2, value: "${computer3}")
 call(label: func_expect_lock_leaders)
 save_parameter_value(parameter_name: election_date, variable_name: election_date) // save new election date
+set_variable(name: election_date, value: "${election_date}", type: timestamp)     // as a timestamp value
 
-set_variable(name: election_date, value: "${election_date}", type: timestamp)
 call(label: func_expect_unlocking)
 
 call(label: func_sleep_quietly_25cs)
@@ -313,6 +313,8 @@ set_variable(name: server_name, value: "rc8")
 print(message: "rc8 second started...")
 call(label: func_expect_lock_started_reply) // first reply when rc8 is considered "disconnected" (not directly connected with the ${hostname} cluckd instance)
 
+// TODO: fix this NO_LOCK status because we still have 2 valid computers so
+//       the 3rd being in a weird state should not prevent locks from happening
 call(label: func_expect_no_lock)
 
 // only now do we get a reply for rc9
@@ -324,7 +326,7 @@ call(label: func_expect_lock_ready)
 
 // and finally, we sent an rc8 reply, just a tad bit later than the others
 set_variable(name: server_name, value: "rc8")
-print(message: "rc8 second started... (second)")
+print(message: "rc8 second started... (repeat)")
 call(label: func_expect_lock_started_reply)
 
 
@@ -722,7 +724,7 @@ verify_message(
 		leader1,
 		leader2
 	})
-// get the lock_id to leader0 so we can us it again later
+// get lock_id in leader0 so we can use it again later
 save_parameter_value(parameter_name: lock_id, variable_name: leader0)
 return()
 

@@ -33,6 +33,7 @@ cmd_unlock=UNLOCK
 cmd_unlocked=UNLOCKED
 cmd_unlocking=UNLOCKING
 
+param_description=description
 param_duration=duration
 param_election_date=election_date
 param_error=error

@@ -39,6 +39,8 @@ SnapGetVersion(CLUCK ${CMAKE_CURRENT_SOURCE_DIR})
 
 enable_language(CXX)
 
+option(CLUCKD_OPTIMIZATIONS "Whether to optimize the cluck daemon as much as possible (i.e. avoid additional human descriptions)." OFF)
+
 include_directories(
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}

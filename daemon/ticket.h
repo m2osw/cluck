@@ -77,7 +77,7 @@ public:
     void                        activate_lock();
     void                        lock_activated();
     void                        drop_ticket(); // this is called when we receive the UNLOCK event
-    void                        lock_failed();
+    void                        lock_failed(std::string const & reason);
     void                        lock_tickets();
 
     // object handling

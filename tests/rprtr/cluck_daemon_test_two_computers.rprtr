@@ -32,8 +32,9 @@ call(label: func_expect_lock_leaders)
 call(label: func_expect_lock_ready)
 //call(label: func_expect_lock_started_reply_a) -- no early response here
 call(label: func_expect_lock_started_reply_b)
-call(label: func_expect_lock_failed)
+call(label: func_expect_lock_failed_timedout)
 call(label: func_expect_lock_entering)
+call(label: func_expect_lock_failed_duplicate)
 call(label: func_expect_get_max_ticket)
 call(label: func_expect_add_ticket)
 call(label: func_expect_lock_exiting)
@@ -261,13 +262,22 @@ call(label: func_verify_no_lock)
 return()
 
 // Function: expect LOCK_FAILED
-label(name: func_expect_lock_failed)
-print(message: "--- wait for message LOCK_FAILED....")
+label(name: func_expect_lock_failed_timedout)
+print(message: "--- wait for message LOCK_FAILED (timedout)....")
 call(label: func_wait_message)
-call(label: func_verify_lock_failed)
+call(label: func_verify_lock_failed_timedout)
 now(variable_name: timeout)
 set_variable(name: timeout, value: ${timeout} + 60) // now + 1 minute
 call(label: func_send_lock)
+call(label: func_send_lock) // second attempt fails with a duplicate error, but caught while ticket is in entering state
+call(label: func_send_lock_with_serial) // second attempt fails, but without a reply because of the serial number
+return()
+
+// Function: expect LOCK_FAILED
+label(name: func_expect_lock_failed_duplicate)
+print(message: "--- wait for message LOCK_FAILED (duplicate)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_duplicate)
 return()
 
 // Function: expect LOCK_ENTERING
@@ -377,7 +387,8 @@ verify_message(
 	required_parameters: {
 		object_name: "lock1",
 		timeout_date: `^[0-9]+(\\.[0-9]+)?$`,
-		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`,
+		tag: 505
 	})
 return()
 
@@ -428,7 +439,7 @@ verify_message(
 		leader1,
 		leader2
 	})
-// get the lock_id to leader0 so we can us it again later
+// get lock_id in leader0 so we can use it again later
 save_parameter_value(parameter_name: lock_id, variable_name: leader0)
 return()
 
@@ -535,8 +546,8 @@ verify_message(
 	})
 return()
 
-// Function: verify a LOCK FAILED
-label(name: func_verify_lock_failed)
+// Function: verify a LOCK_FAILED
+label(name: func_verify_lock_failed_timedout)
 verify_message(
 	command: LOCK_FAILED,
 	sent_service: cluckd,
@@ -550,6 +561,21 @@ verify_message(
 	})
 return()
 
+// Function: verify a LOCK_FAILED
+label(name: func_verify_lock_failed_duplicate)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: "${hostname}",
+	service: website,
+	required_parameters: {
+		error: "duplicate",
+		key: "${hostname}/123",
+		object_name: "lock1",
+		tag: 505
+	})
+return()
+
 // Function: verify a UNLOCKED
 label(name: func_verify_unlocked)
 verify_message(
@@ -557,7 +583,9 @@ verify_message(
 	server: "${hostname}",
 	service: "website",
 	required_parameters: {
-		object_name: "lock1"
+		object_name: "lock1",
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`,
+		tag: 505
 	})
 return()
 
@@ -926,6 +954,25 @@ send_message(
 	})
 return()
 
+// Function: send LOCK (duplicate with serial)
+// Parameters: ${timeout} -- when the LOCK request times out
+label(name: func_send_lock_with_serial)
+send_message(
+	command: LOCK,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		tag: 505,
+		pid: 123,
+		duration: 10,
+		serial: 1, // prevent the error
+		timeout: ${timeout}
+	})
+return()
+
 // Function: send LOCK_STARTED
 // Parameters: ${server_name} -- the name of the server sending the message
 // Parameters: ${lock_id} -- the identifier used as the lock_id parameter
@@ -953,9 +1000,9 @@ send_message(
 	server: ${hostname},
 	service: cluckd,
 	parameters: {
-            object_name: "lock1",
-	    tag: "505",
-            key: "${hostname}/123"
+		object_name: "lock1",
+		tag: "505",
+		key: "${hostname}/123"
 	})
 return()
 
@@ -968,10 +1015,10 @@ send_message(
 	server: ${hostname},
 	service: cluckd,
 	parameters: {
-            object_name: "lock1",
-	    tag: "505",
-            key: "${hostname}/123",
-	    ticket_id: 111   // TBD: we could also send NO_TICKET here?
+		object_name: "lock1",
+		tag: "505",
+		key: "${hostname}/123",
+		ticket_id: 111   // TBD: we could also send NO_TICKET here?
 	})
 return()
 
@@ -984,9 +1031,9 @@ send_message(
 	server: ${hostname},
 	service: cluckd,
 	parameters: {
-            object_name: "lock1",
-	    tag: "505",
-            key: "00000070/${hostname}/123"
+		object_name: "lock1",
+		tag: "505",
+		key: "00000070/${hostname}/123"
 	})
 return()
 
@@ -999,9 +1046,9 @@ send_message(
 	server: ${hostname},
 	service: cluckd,
 	parameters: {
-            object_name: "lock1",
-	    tag: "505",
-            key: "00000070/${hostname}/123"
+		object_name: "lock1",
+		tag: "505",
+		key: "00000070/${hostname}/123"
 	})
 return()
 
@@ -1014,9 +1061,9 @@ send_message(
 	server: ${hostname},
 	service: cluckd,
 	parameters: {
-            object_name: "lock1",
-	    tag: "505",
-            key: "00000070/${hostname}/123"
+		object_name: "lock1",
+		tag: "505",
+		key: "00000070/${hostname}/123"
 	})
 return()
 

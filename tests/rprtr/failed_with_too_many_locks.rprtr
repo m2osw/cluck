@@ -1,0 +1,818 @@
+// do valid LOCKs until there are too many
+//
+// this happens if the cluckd receives LOCK messages one after the other
+// without a chance to reduce the list of tickets
+//
+
+hostname(variable_name: hostname)
+run()
+listen(address: <127.0.0.1:20002>)
+
+call(label: func_expect_register)
+call(label: func_send_help)
+call(label: func_send_ready)
+
+call(label: func_expect_commands)
+
+call(label: func_expect_service_status)
+call(label: func_send_status_of_fluid_settings)
+
+call(label: func_expect_fluid_settings_listen)
+call(label: func_send_fluid_settings_registered)
+call(label: func_send_fluid_settings_value_updated)
+call(label: func_send_fluid_settings_ready)
+
+call(label: func_expect_cluster_status)
+call(label: func_send_cluster_up)
+
+call(label: func_expect_lock_started_initial)
+call(label: func_send_lock_started)
+
+call(label: func_expect_lock_leaders)
+
+call(label: func_expect_lock_ready)
+
+call(label: func_expect_lock_started_second_instance)
+
+// send the LOCK message too many times on purpose, we'll receive LOCK_FAILED
+// instead of LOCKED for those
+//
+//now(variable_name: lock_timeout)
+//set_variable(name: lock_timeout, value: ${lock_timeout} + 120) // now + 2 minute
+set_variable(name: lock_number, value: 0)
+label(name: send_more)
+set_variable(name: lock_number, value: ${lock_number} + 1)
+compare(expression: ${lock_number} <=> ${cluck_maximum_entering_locks} + 10)
+if(greater: overflowed_enough)
+call(label: func_send_lock)
+goto(label: send_more)
+label(name: overflowed_enough)
+
+// now we're going to receive a lot of messages so we use the old strategy
+// where we accept any one message in "any order" and reply as required
+//
+set_variable(name: lock_entering_number, value: 0)
+set_variable(name: get_max_ticket_number, value: 0)
+set_variable(name: add_ticket_number, value: 0)
+set_variable(name: ticket_added_number, value: 0)
+set_variable(name: lock_exiting_number, value: 0)
+set_variable(name: ticket_ready_number, value: 0)
+set_variable(name: activate_lock_number, value: 0)
+set_variable(name: locked_number, value: 0)
+set_variable(name: lock_activated_number, value: 0)
+set_variable(name: unlock_number, value: 0)
+set_variable(name: drop_ticket_number, value: 0)
+set_variable(name: unlocked_number, value: 0)
+set_variable(name: lock_failed_number, value: ${cluck_maximum_entering_locks})
+call(label: func_handle_lock_messages)
+
+
+call(label: func_send_quitting)
+clear_message()
+wait(timeout: 5, mode: drain)
+exit()
+
+
+// function: Wait Message
+//
+// if the wait times out, it is an error
+// the function shows the message before returning
+//
+label(name: func_wait_message)
+clear_message()
+has_message() // the previous wait() may have read several messages at once
+if(true: already_got_next_message)
+label(name: wait_for_a_message)
+wait(timeout: 12, mode: wait)
+has_message()
+if(false: wait_for_a_message) // woke up without a message, wait some more
+label(name: already_got_next_message)
+show_message()
+return()
+
+// function: Sleep Quietly
+//
+// wait for 0.25 seconds
+// the function generates an error if it receives a message while waiting
+//
+label(name: func_sleep_quietly_25cs)
+print(message: "--- quick sleep ---")
+clear_message()
+wait(timeout: 0.25, mode: timeout) // we are allowed to timeout
+has_message()
+if(false: exit_sleep_quietly_25cs)
+show_message()
+exit(error_message: "received a message while waiting quietly.")
+label(name: exit_sleep_quietly_25cs)
+return()
+
+
+// Function: handle the 100 replies x number of messages from the LOCK and such messages
+label(name: func_handle_lock_messages)
+print(message: "--- wait for mixed message ---")
+call(label: func_wait_message)
+
+has_message(command: LOCK_ENTERING)
+if(false: not_lock_entering)
+call(label: func_verify_lock_entering)
+call(label: func_send_lock_entered)
+goto(label: func_handle_lock_messages)
+
+label(name: not_lock_entering)
+has_message(command: GET_MAX_TICKET)
+if(false: not_get_max_ticket)
+call(label: func_verify_get_max_ticket)
+call(label: func_send_max_ticket)
+goto(label: func_handle_lock_messages)
+
+label(name: not_get_max_ticket)
+has_message(command: ADD_TICKET)
+if(false: not_add_ticket)
+call(label: func_verify_add_ticket)
+call(label: func_send_ticket_added)
+goto(label: func_handle_lock_messages)
+
+label(name: not_add_ticket)
+has_message(command: LOCK_EXITING)
+if(false: not_lock_exiting)
+call(label: func_verify_lock_exiting)
+call(label: func_send_ticket_ready)
+//compare(expression: ${lock_exiting_number} <=> 1)
+//if(not_equal: func_handle_lock_messages)
+//call(label: func_send_activate_lock)
+goto(label: func_handle_lock_messages)
+
+label(name: not_lock_exiting)
+has_message(command: TICKET_READY)
+if(false: not_ticket_ready)
+call(label: func_verify_ticket_ready)
+goto(label: func_handle_lock_messages)
+
+label(name: not_ticket_ready)
+has_message(command: ACTIVATE_LOCK)
+if(false: not_activate_lock)
+call(label: func_verify_activate_lock)
+//compare(expression: ${activate_lock_number} <=> 2)
+//if(less: func_handle_lock_messages)
+call(label: func_send_activate_lock)
+goto(label: func_handle_lock_messages)
+
+label(name: not_activate_lock)
+has_message(command: LOCKED)
+if(false: not_locked)
+call(label: func_verify_locked)
+goto(label: func_handle_lock_messages)
+
+label(name: not_locked)
+has_message(command: LOCK_ACTIVATED)
+if(false: not_lock_activated)
+call(label: func_verify_lock_activated)
+
+// once activated, messages stop
+call(label: func_sleep_quietly_25cs)
+call(label: func_send_unlock)
+
+goto(label: func_handle_lock_messages)
+
+label(name: not_lock_activated)
+has_message(command: DROP_TICKET)
+if(false: not_drop_ticket)
+call(label: func_verify_drop_ticket)
+goto(label: func_handle_lock_messages)
+
+label(name: not_drop_ticket)
+has_message(command: UNLOCKED)
+if(false: not_unlocked)
+call(label: func_verify_unlocked)
+compare(expression: ${unlocked_number} <=> ${cluck_maximum_entering_locks})
+if(less: func_handle_lock_messages)
+// we found the last message from the lock messages, so return
+return()
+
+label(name: not_unlocked)
+has_message(command: LOCK_FAILED)
+if(false: not_lock_failed)
+call(label: func_verify_lock_failed)
+goto(label: func_handle_lock_messages)
+
+label(name: not_lock_failed)
+exit(error_message: "unknown mixed lock message.")
+
+
+
+
+
+// Function: expect REGISTER
+label(name: func_expect_register)
+call(label: func_wait_message)
+call(label: func_verify_register)
+return()
+
+// Function: expect COMMANDS
+label(name: func_expect_commands)
+call(label: func_wait_message)
+call(label: func_verify_commands)
+return()
+
+// Function: expect SERVICE_STATUS
+label(name: func_expect_service_status)
+print(message: "--- expect SERVICE_STATUS ---")
+call(label: func_wait_message)
+call(label: func_verify_service_status)
+return()
+
+// Function: expect FLUID_SETTINGS_LISTEN
+label(name: func_expect_fluid_settings_listen)
+print(message: "--- expect FLUID_SETTINGS_LISTEN ---")
+call(label: func_wait_message)
+call(label: func_verify_fluid_settings_listen)
+return()
+
+// Function: expect CLUSTER_STATUS
+label(name: func_expect_cluster_status)
+print(message: "--- wait for message CLUSTER_STATUS ---")
+call(label: func_wait_message)
+call(label: func_verify_cluster_status)
+return()
+
+// Function:: expect LOCK_STARTED (initial)
+label(name: func_expect_lock_started_initial)
+print(message: "--- wait for message LOCK_STARTED (initial) ---")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_initial)
+return()
+
+// Function:: expect LOCK_STARTED (second instance)
+label(name: func_expect_lock_started_second_instance)
+print(message: "--- wait for message LOCK_STARTED (second instance) ---")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_second_instance)
+return()
+
+// Function: expect LOCK_LEADERS
+label(name: func_expect_lock_leaders)
+call(label: func_wait_message)
+call(label: func_verify_lock_leaders)
+return()
+
+// Function:: expect LOCK_READY
+label(name: func_expect_lock_ready)
+print(message: "--- wait for message LOCK_READY ---")
+call(label: func_wait_message)
+call(label: func_verify_lock_ready)
+return()
+
+// Function: expect GET_MAX_TICKET
+label(name: func_expect_get_max_ticket)
+print(message: "--- wait for message GET_MAX_TICKET ---")
+call(label: func_wait_message)
+call(label: func_verify_get_max_ticket)
+call(label: func_send_max_ticket)
+return()
+
+
+
+
+
+
+
+
+
+
+// Function: verify REGISTER
+label(name: func_verify_register)
+verify_message(
+	command: REGISTER,
+	required_parameters: {
+		service: cluckd,
+		version: 1
+	})
+return()
+
+// Function: verify COMMANDS
+label(name: func_verify_commands)
+verify_message(
+	command: COMMANDS,
+	sent_service: cluckd,
+	required_parameters: {
+		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_ENTERED,LOCK_ENTERING,LOCK_EXITING,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
+	})
+return()
+
+// Function: verify SERVICE_STATUS
+label(name: func_verify_service_status)
+verify_message(
+	command: SERVICE_STATUS,
+	sent_service: cluckd,
+	required_parameters: {
+		service: 'fluid_settings'
+	})
+return()
+
+// Function: verify FLUID_SETTINGS_LISTEN
+label(name: func_verify_fluid_settings_listen)
+verify_message(
+	command: FLUID_SETTINGS_LISTEN,
+	sent_service: cluckd,
+	service: fluid_settings,
+	required_parameters: {
+		cache: "no;reply",
+		names: "cluckd::server-name"
+	})
+return()
+
+// Function: verify CLUSTER_STATUS
+label(name: func_verify_cluster_status)
+verify_message(
+	command: CLUSTER_STATUS,
+	sent_service: cluckd,
+	service: communicatord)
+return()
+
+// Function: verify LOCK STARTED (initial)
+label(name: func_verify_lock_started_initial)
+print(message: "--- verify message LOCK_STARTED....")
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	service: "*", // this one was broadcast
+	required_parameters: {
+		lock_id: `^10\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2
+	})
+return()
+
+// Function: verify LOCK STARTED (second instance)
+label(name: func_verify_lock_started_second_instance)
+print(message: "--- verify message LOCK_STARTED (second instance)....")
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	service: cluckd,
+	required_parameters: {
+		election_date: ${election_date},
+		leader0: `10\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}`,
+		leader1: `14\\|1315897767\\|172.16.17.18\\|824735\\|rc`,
+		lock_id: `^10\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		leader2
+	})
+// the leader1 parameter needs to be defined from what that leader sends us
+//save_parameter_value(parameter_name: lock_id, variable_name: leader1)
+return()
+
+// Function: verify a LOCK LEADERS
+label(name: func_verify_lock_leaders)
+verify_message(
+	command: LOCK_LEADERS,
+	sent_service: cluckd,
+	service: "*",
+	required_parameters: {
+		election_date: `^[0-9]+(\\.[0-9]+)?$`,
+		leader0: `^10\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		leader1: `^14\\|[0-9]+\\|172.16.17.18\\|[0-9]+\\|rc$`
+	},
+	forbidden_parameters: {
+		leader2,
+		leader3
+	})
+save_parameter_value(parameter_name: election_date, variable_name: election_date)
+save_parameter_value(parameter_name: leader0, variable_name: leader0)
+return()
+
+// Function: verify LOCK READY
+label(name: func_verify_lock_ready)
+print(message: "--- verify message LOCK_READY....")
+verify_message(
+	command: LOCK_READY,
+	sent_service: cluckd,
+	service: ".",
+	required_parameters: {
+		cache: no
+	})
+return()
+
+// Function: verify LOCK_ENTERING
+label(name: func_verify_lock_entering)
+print(message: "--- verify LOCK_ENTERING ---")
+set_variable(name: lock_entering_number, value: ${lock_entering_number} + 1)
+verify_message(
+	command: LOCK_ENTERING,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		duration: 10,
+		key: "${hostname}/" + (${lock_entering_number} + 1000),
+		object_name: "big_lock",
+		serial: ${lock_entering_number},
+		source: "${hostname}/website_${lock_entering_number}",
+		tag: ${lock_entering_number} + 345,
+		timeout: `^[0-9]+(\\.[0-9]+)?$`
+	})
+return()
+
+// Function: verify GET_MAX_TICKET
+label(name: func_verify_get_max_ticket)
+print(message: "--- verify GET_MAX_TICKET ---")
+set_variable(name: get_max_ticket_number, value: ${get_max_ticket_number} + 1)
+verify_message(
+	command: GET_MAX_TICKET,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		key: "${hostname}/" + (${get_max_ticket_number} + 1000),
+		object_name: "big_lock",
+		tag: ${get_max_ticket_number} + 345
+	})
+return()
+
+// Function: verify ADD_TICKET
+label(name: func_verify_add_ticket)
+print(message: "--- verify ADD_TICKET ---")
+set_variable(name: add_ticket_number, value: ${add_ticket_number} + 1)
+hex(variable_name: key_introducer, value: ${add_ticket_number} + 1, width: 8)
+verify_message(
+	command: ADD_TICKET,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		key: ${key_introducer} + "/${hostname}/" + (${add_ticket_number} + 1000),
+		object_name: "big_lock",
+		tag: ${add_ticket_number} + 345
+	})
+return()
+
+// Function: verify a LOCK_EXITING
+label(name: func_verify_lock_exiting)
+set_variable(name: lock_exiting_number, value: ${lock_exiting_number} + 1)
+verify_message(
+	command: LOCK_EXITING,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		key: "${hostname}/" + (${lock_exiting_number} + 1000),
+		object_name: "big_lock",
+		tag: ${lock_exiting_number} + 345
+	})
+return()
+
+// Function: verify a TICKET_READY
+label(name: func_verify_ticket_ready)
+set_variable(name: ticket_ready_number, value: ${ticket_ready_number} + 1)
+hex(variable_name: key_introducer, value: ${ticket_ready_number} + 1, width: 8)
+verify_message(
+	command: TICKET_READY,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		key: "${key_introducer}/${hostname}/" + (${ticket_ready_number} + 1000),
+		object_name: "big_lock",
+		tag: ${ticket_ready_number} + 345
+	})
+return()
+
+// Function: verify a ACTIVATE_LOCK
+label(name: func_verify_activate_lock)
+set_variable(name: activate_lock_number, value: ${activate_lock_number} + 1)
+hex(variable_name: key_introducer, value: ${activate_lock_number} + 1, width: 8)
+verify_message(
+	command: ACTIVATE_LOCK,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		key: "${key_introducer}/${hostname}/" + (${activate_lock_number} + 1000),
+		object_name: "big_lock",
+		tag: ${activate_lock_number} + 345
+	})
+return()
+
+// Function: verify a LOCKED reply
+label(name: func_verify_locked)
+set_variable(name: locked_number, value: ${locked_number} + 1)
+verify_message(
+	command: LOCKED,
+	server: ${hostname},
+	service: "website_${locked_number}",
+	required_parameters: {
+		object_name: "big_lock",
+		tag: ${locked_number} + 345,
+		timeout_date: `^[0-9]+(\\.[0-9]+)?$`,
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`
+	})
+return()
+
+// Function: verify a LOCK_ACTIVATED
+label(name: func_verify_lock_activated)
+set_variable(name: lock_activated_number, value: ${lock_activated_number} + 1)
+hex(variable_name: key_introducer, value: ${lock_activated_number} + 1, width: 8)
+verify_message(
+	command: LOCK_ACTIVATED,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		key: "${key_introducer}/${hostname}/" + (${lock_activated_number} + 1000),
+		other_key: "${key_introducer}/${hostname}/" + (${lock_activated_number} + 1000),
+		object_name: "big_lock",
+		tag: ${lock_activated_number} + 345
+	})
+return()
+
+// Function: verify a DROP_TICKET
+label(name: func_verify_drop_ticket)
+set_variable(name: drop_ticket_number, value: ${drop_ticket_number} + 1)
+hex(variable_name: key_introducer, value: ${drop_ticket_number} + 1, width: 8)
+verify_message(
+	command: DROP_TICKET,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		key: "${key_introducer}/${hostname}/" + (${drop_ticket_number} + 1000),
+		object_name: "big_lock",
+		tag: ${drop_ticket_number} + 345
+	})
+return()
+
+// Function: verify a UNLOCKED
+label(name: func_verify_unlocked)
+set_variable(name: unlocked_number, value: ${unlocked_number} + 1)
+verify_message(
+	command: UNLOCKED,
+	sent_service: cluckd,
+	server: "${hostname}",
+	service: "website_${unlocked_number}",
+	required_parameters: {
+		object_name: "big_lock",
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`,
+		tag: ${unlocked_number} + 345
+	})
+return()
+
+// Function: verify LOCK_FAILED
+label(name: func_verify_lock_failed)
+print(message: "--- verify LOCK_FAILED ---")
+set_variable(name: lock_failed_number, value: ${lock_failed_number} + 1)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: "website_" + ${lock_failed_number},
+	required_parameters: {
+		error: "overflow",
+		key: "${hostname}/" + (${lock_failed_number} + 1000),
+		object_name: "big_lock",
+		tag: ${lock_failed_number} + 345
+	})
+return()
+
+
+
+
+
+
+
+
+// Function: send HELP
+label(name: func_send_help)
+send_message(
+	command: HELP
+	//server: ${hostname}, -- the source is not added in this case
+	//service: communicatord
+	)
+return()
+
+// Function: send READY
+label(name: func_send_ready)
+send_message(
+	command: READY,
+	//server: ${hostname}, -- the source is not added in this case
+	//service: communicatord,
+	parameters: {
+		my_address: "127.0.0.1"
+	})
+return()
+
+// Function: send STATUS/fluid_settings
+label(name: func_send_status_of_fluid_settings)
+//save_parameter_value(parameter_name: service, variable_name: service_name)
+//compare(expression: ${service_name} <=> "fluid_settings")
+//if(not_equal: not_fluid_settings_status)
+now(variable_name: now)
+send_message(
+	command: STATUS,
+	parameters: {
+		service: "fluid_settings",
+		cache: no,
+		server: "${hostname}",
+		status: "up",
+		up_since: ${now}
+	})
+//label(name: not_fluid_settings_status)
+return()
+
+// Function: send FLUID_SETTINGS_REGISTERED
+label(name: func_send_fluid_settings_registered)
+send_message(
+	command: FLUID_SETTINGS_REGISTERED,
+	sent_server: ${hostname},
+	sent_service: fluid_settings,
+	server: ${hostname},
+	service: cluckd)
+return()
+
+// Function: send FLUID_SETTINGS_VALUE_UPDATED
+label(name: func_send_fluid_settings_value_updated)
+send_message(
+	command: FLUID_SETTINGS_VALUE_UPDATED,
+	sent_server: ${hostname},
+	sent_service: fluid_settings,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		name: "cluckd::server-name",
+		value: "this_very_server",
+		message: "current value"
+	})
+return()
+
+// Function: send FLUID_SETTINGS_READY
+label(name: func_send_fluid_settings_ready)
+send_message(
+	command: FLUID_SETTINGS_READY,
+	sent_server: ${hostname},
+	sent_service: fluid_settings,
+	server: ${hostname},
+	service: cluckd)
+return()
+
+// Function: send CLUSTER_UP
+label(name: func_send_cluster_up)
+send_message(
+	command: CLUSTER_UP,
+	//sent_server: ${hostname},
+	//sent_service: communicatord,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		neighbors_count: 2
+	})
+return()
+
+// Function: send LOCK
+label(name: func_send_lock)
+send_message(
+	command: LOCK,
+	sent_server: ${hostname},
+	sent_service: "website_${lock_number}",
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "big_lock",
+		tag: ${lock_number} + 345,
+		pid: ${lock_number} + 1000,
+		duration: 10
+		//timeout: ${lock_timeout} -- now + 120s (default is 5s, but we change that in our test)
+	})
+return()
+
+// Function: send UNLOCK
+label(name: func_send_unlock)
+set_variable(name: unlock_number, value: ${unlock_number} + 1)
+send_message(
+	command: UNLOCK,
+	sent_server: ${hostname},
+	sent_service: "website_${unlock_number}",
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "big_lock",
+		pid: ${unlock_number} + 1000,
+		tag: ${unlock_number} + 345
+	})
+return()
+
+// Function: send LOCK_STARTED from rc
+label(name: func_send_lock_started)
+now(variable_name: now)
+send_message(
+	command: LOCK_STARTED,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		lock_id: "14|1315897767|172.16.17.18|824735|rc",
+		server_name: rc,
+		start_time: ${now}
+	})
+return()
+
+// Function: send LOCK_ENTERED
+label(name: func_send_lock_entered)
+save_parameter_value(parameter_name: tag, variable_name: tag)
+save_parameter_value(parameter_name: key, variable_name: key)
+send_message(
+	command: LOCK_ENTERED,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: "${hostname}",
+	service: cluckd,
+	parameters: {
+		object_name: "big_lock",
+		key: "${key}",
+		tag: ${tag}
+	})
+return()
+
+// Function: send MAX_TICKET
+label(name: func_send_max_ticket)
+send_message(
+	command: MAX_TICKET,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		key: "${hostname}/" + (${get_max_ticket_number} + 1000),
+		object_name: "big_lock",
+		tag: ${get_max_ticket_number} + 345,
+		ticket_id: ${get_max_ticket_number}
+	})
+return()
+
+// Function: send QUITTING
+label(name: func_send_quitting)
+send_message(
+	command: QUITTING,
+	sent_server: ${hostname},
+	sent_service: "ed_signal",
+	server: ${hostname},
+	service: cluckd)
+return()
+
+// Function: send TICKET_ADDED
+label(name: func_send_ticket_added)
+set_variable(name: ticket_added_number, value: ${ticket_added_number} + 1)
+hex(variable_name: key_introducer, value: ${ticket_added_number} + 1, width: 8)
+send_message(
+	command: TICKET_ADDED,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+        	key: "${key_introducer}/${hostname}/" + (${ticket_added_number} + 1000),
+        	object_name: "big_lock",
+		tag: ${ticket_added_number} + 345
+	})
+return()
+
+// Function: send TICKET_READY
+label(name: func_send_ticket_ready)
+hex(variable_name: key_introducer, value: ${lock_exiting_number} + 1, width: 8)
+send_message(
+	command: TICKET_READY,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+        	object_name: "big_lock",
+		tag: ${lock_exiting_number} + 345,
+        	key: "${key_introducer}/${hostname}/" + (${lock_exiting_number} + 1000)
+	})
+return()
+
+// Function: send ACTIVATE_LOCK
+label(name: func_send_activate_lock)
+hex(variable_name: key_introducer, value: ${activate_lock_number} + 1, width: 8)
+send_message(
+	command: ACTIVATE_LOCK,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "big_lock",
+		tag: ${activate_lock_number} + 345,
+        	key: "${key_introducer}/${hostname}/" + (${activate_lock_number} + 1000)
+	})
+return()
+

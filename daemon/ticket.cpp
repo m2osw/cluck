@@ -888,8 +888,10 @@ void ticket::drop_ticket()
  * received the LOCK event in the first place) then this ticket is
  * not marked as being owned by this cluck daemon and as a result this
  * function only marks the ticket as failed.
+ *
+ * \param[in] reason  A reason for the failure (i.e. "timed out")
  */
-void ticket::lock_failed()
+void ticket::lock_failed(std::string const & reason)
 {
     enum send_msg_t
     {
@@ -944,6 +946,8 @@ void ticket::lock_failed()
 
     }
 
+    // we want the f_lock_failed and f_lock_timeout_date set before returning
+    //
     if(f_owner != f_cluckd->get_server_name())
     {
         return;
@@ -1035,6 +1039,10 @@ void ticket::lock_failed()
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, f_tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, f_entering_key);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_failed);
+            lock_failed_message.add_parameter(cluck::g_name_cluck_param_description,
+                    "ticket failed before or after the lock was obtained ("
+                    + reason
+                    + ")");
             f_messenger->send_message(lock_failed_message);
         }
         break;
