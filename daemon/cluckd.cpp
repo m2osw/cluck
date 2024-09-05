@@ -681,9 +681,9 @@ computer::pointer_t cluckd::get_leader_b() const
 
     switch(f_leaders.size())
     {
-    case 0: // LCOV_EXCL -- because of the debug above, this cannot happen here
+    case 0: // LCOV_EXCL_LINE -- because of the debug above, this cannot happen here
     default:
-        throw cluck::unexpected_case("cluckd::get_leader_b(): call this function only when leaders were elected."); // LCOV_EXCL
+        throw cluck::unexpected_case("cluckd::get_leader_b(): call this function only when leaders were elected."); // LCOV_EXCL_LINE
 
     case 1:
     case 2: // we have a leader A but no leader B when we have only 2 leaders
@@ -1008,6 +1008,7 @@ for(auto const & s : sort_by_id)
 SNAP_LOG_WARNING << "--- sort by ID: " << s.first << SNAP_LOG_SEND;
 }
 
+    bool too_many_computers_off(false);
     if(f_computers.size() <= 3)
     {
         if(off != 0
@@ -1019,7 +1020,7 @@ SNAP_LOG_WARNING << "--- sort by ID: " << s.first << SNAP_LOG_SEND;
                    " The elections cannot be completed in these"
                    " conditions."
                 << SNAP_LOG_SEND;
-            return;
+            too_many_computers_off = true;
         }
     }
     else if(f_computers.size() - off < 3
@@ -1036,6 +1037,30 @@ SNAP_LOG_WARNING << "--- sort by ID: " << s.first << SNAP_LOG_SEND;
             << f_computers.size() - 3
             << " that are turned off on this cluster."
             << SNAP_LOG_SEND;
+        too_many_computers_off = true;
+    }
+    if(too_many_computers_off)
+    {
+        // only generate the flag once we reach the CLUSTER_COMPLETE status
+        //
+        if(f_computers.size() >= f_neighbors_count)
+        {
+            // this is something that breaks the entire system so someone
+            // needs to fix it and thus it has a really high priority
+            //
+            communicatord::flag::pointer_t flag(COMMUNICATORD_FLAG_UP(
+                          "cluckd"
+                        , "election"
+                        , "instances-off"
+                        , "the cluck daemon detected that too many of the"
+                          " daemons have their priority set to OFF;"
+                          " you must turn some of these back ON."
+                    ));
+            flag->set_priority(99);
+            flag->add_tag("settings");
+            flag->set_manual_down(true);
+            flag->save();
+        }
         return;
     }
 
@@ -1811,7 +1836,17 @@ ticket::key_map_t const cluckd::get_entering_tickets(std::string const & object_
     auto const it(f_entering_tickets.find(object_name));
     if(it == f_entering_tickets.end())
     {
-        return ticket::key_map_t();
+        // LCOV_EXCL_START
+        //
+        // I could not get this covered and I do not think it can happen,
+        // also the caller function does not verify that the returned map
+        // is valid so it is safer this way
+        //
+        throw std::logic_error(
+              "could not find entering ticket with object name: \""
+            + object_name
+            + "\".");
+        // LCOV_EXCL_STOP
     }
 
     return it->second;
@@ -2195,6 +2230,7 @@ void cluckd::msg_add_ticket(ed::message & msg)
         lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
         lock_failed_message.reply_to(msg);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
+        lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, key);
         lock_failed_message.add_parameter(cluck::g_name_cluck_param_error, cluck::g_name_cluck_value_invalid);
 #ifndef CLUCKD_OPTIMIZATIONS
@@ -2947,7 +2983,7 @@ void cluckd::msg_lock_activated(ed::message & msg)
     std::string key;
     if(!get_parameters(msg, &object_name, &tag, nullptr, nullptr, &key, nullptr))
     {
-        return;
+        return; // LCOV_EXCL_LINE
     }
 
     std::string const & other_key(msg.get_parameter(cluck::g_name_cluck_param_other_key));

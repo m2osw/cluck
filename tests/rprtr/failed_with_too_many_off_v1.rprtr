@@ -1,0 +1,1216 @@
+// say we have 6 computers, 4 of which are off, that's "illegal"
+
+hostname(variable_name: hostname)
+max_pid(variable_name: max_pid)
+
+random(variable_name: leader1_random, negative: 0)
+random(variable_name: leader1_pid, negative: 0)
+random(variable_name: leader2_random, negative: 0)
+random(variable_name: leader2_pid, negative: 0)
+random(variable_name: computer3_random, negative: 0)
+set_variable(name: computer3_random_str, value: "" + ${computer3_random} % 0x100000000)
+random(variable_name: computer3_pid, negative: 0)
+random(variable_name: computer4_random, negative: 0)
+set_variable(name: computer4_random_str, value: "" + ${computer4_random} % 0x100000000)
+random(variable_name: computer4_pid, negative: 0)
+random(variable_name: computer5_random, negative: 0)
+set_variable(name: computer5_random_str, value: "" + ${computer5_random} % 0x100000000)
+random(variable_name: computer5_pid, negative: 0)
+
+set_variable(name: leader0, value: "invalid-id (since elections fails, this is never set?)")
+set_variable(name: leader1, value: "12|" + ${leader1_random} % 0x100000000 + "|172.1.2.2|" + (${leader1_pid} % ${max_pid} + 1) + "|rc1")
+set_variable(name: leader2, value: "15|" + ${leader2_random} % 0x100000000 + "|172.16.17.18|" + (${leader2_pid} % ${max_pid} + 1) + "|rc2")
+
+set_variable(name: computer3, value: "15|" + ${computer3_random_str} + "|172.1.2.3|" + (${computer3_pid} % ${max_pid} + 1) + "|rc3")
+set_variable(name: computer4, value: "15|" + ${computer4_random_str} + "|172.1.2.4|" + (${computer4_pid} % ${max_pid} + 1) + "|rc4")
+set_variable(name: computer5, value: "15|" + ${computer5_random_str} + "|172.1.2.5|" + (${computer5_pid} % ${max_pid} + 1) + "|rc5")
+
+run()
+listen(address: <127.0.0.1:20002>)
+
+// the following are the messages we expect in the order they are expected...
+//
+call(label: func_expect_register)
+call(label: func_send_help)
+call(label: func_send_ready)
+
+call(label: func_expect_commands)
+
+call(label: func_expect_service_status)
+call(label: func_send_status_of_fluid_settings)
+
+//call(label: func_reply_to_service_status)
+
+call(label: func_expect_fluid_settings_listen)
+call(label: func_send_fluid_settings_registered)
+call(label: func_send_fluid_settings_value_updated)
+call(label: func_send_fluid_settings_ready)
+
+call(label: func_expect_cluster_status)
+call(label: func_send_cluster_up)
+
+call(label: func_expect_lock_started_initial)
+
+// election should be done now?
+set_variable(name: server_name, value: "rc1")
+set_variable(name: lock_id, value: "${leader1}")
+call(label: func_send_lock_started)
+
+set_variable(name: server_name, value: "rc2")
+set_variable(name: lock_id, value: "${leader2}")
+call(label: func_send_lock_started)
+
+set_variable(name: server_name, value: "rc3")
+set_variable(name: lock_id, value: "${computer3}")
+call(label: func_send_lock_started)
+
+set_variable(name: server_name, value: "rc4")
+set_variable(name: lock_id, value: "${computer4}")
+call(label: func_send_lock_started)
+
+set_variable(name: server_name, value: "rc5")
+set_variable(name: lock_id, value: "${computer5}")
+call(label: func_send_lock_started)
+
+call(label: func_expect_lock_started_reply_a)
+call(label: func_expect_lock_started_reply_b)
+call(label: func_expect_lock_started_reply_c)
+call(label: func_expect_lock_started_reply_d)
+call(label: func_expect_lock_started_reply_e)
+
+// TODO: add necessary to verify that we receive the expected FATAL errors
+
+// call(label: func_expect_cluckd_status_without_tickets)
+// call(label: func_expect_lock_leaders)
+// call(label: func_expect_lock_ready)
+// call(label: func_expect_lock_failed_timedout)
+// call(label: func_expect_lock_entering)
+// call(label: func_expect_lock_failed_duplicate)
+// call(label: func_expect_get_max_ticket)
+// call(label: func_expect_add_ticket)
+// call(label: func_expect_lock_exiting)
+// call(label: func_expect_ticket_ready)
+// call(label: func_expect_activate_lock)
+// call(label: func_expect_locked)
+// call(label: func_expect_lock_activated)
+// call(label: func_expect_cluckd_status_with_ticket)
+// call(label: func_expect_unlocking)
+// call(label: func_sleep_quietly_25cs)
+// call(label: func_send_unlock)
+// call(label: func_expect_drop_ticket)
+
+// turning off a computer has no effect because we do not have a sufficient
+// number of leaders
+//
+set_variable(name: cluckd_status, value: "down")
+call(label: func_send_status)
+
+// final message with a reply before draining
+//
+call(label: func_send_lock_status)
+call(label: func_expect_no_lock)
+
+
+
+
+// make sure that we are done and exit
+//
+// TODO: at this time, in draining mode, we do not listen to sockets that
+//       are in read mode, only the write interest us to drain our data;
+//       that means we never hear about messages sent to us in that mode
+//       yet that's something we'd like to hear about
+//
+call(label: func_send_stop)
+print(message: "--- draining ---")
+clear_message()
+has_message()
+if(true: got_unexpected_message)
+wait(timeout: 5, mode: drain)
+has_message()
+if(true: got_unexpected_message)
+exit()
+
+label(name: got_unexpected_message)
+show_message()
+exit(error_message: "got message while draining final send()")
+
+
+
+
+
+
+// function: Wait Message
+//
+// if the wait times out, it is an error
+// the function shows the message before returning
+//
+label(name: func_wait_message)
+clear_message()
+has_message() // the previous wait() may have read several messages at once
+if(true: already_got_next_message)
+label(name: wait_for_a_message)
+wait(timeout: 12, mode: wait)
+has_message()
+if(false: wait_for_a_message) // woke up without a message, wait some more
+label(name: already_got_next_message)
+show_message()
+return()
+
+// function: Sleep Quietly
+//
+// wait for 0.25 seconds
+// the function generates an error if it receives a message while waiting
+//
+label(name: func_sleep_quietly_25cs)
+print(message: "--- quick sleep ---")
+clear_message()
+wait(timeout: 0.25, mode: timeout) // we are allowed to timeout
+has_message()
+if(false: exit_sleep_quietly_25cs)
+show_message()
+exit(error_message: "received a message while waiting quietly.")
+label(name: exit_sleep_quietly_25cs)
+return()
+
+
+
+
+
+
+
+
+
+// Function: expect REGISTER
+label(name: func_expect_register)
+print(message: "--- expect REGISTER ---")
+call(label: func_wait_message)
+call(label: func_verify_register)
+return()
+
+// Function: expect COMMANDS
+label(name: func_expect_commands)
+print(message: "--- expect COMMANDS ---")
+call(label: func_wait_message)
+call(label: func_verify_commands)
+return()
+
+// Function: expect SERVICE_STATUS
+label(name: func_expect_service_status)
+print(message: "--- expect SERVICE_STATUS ---")
+call(label: func_wait_message)
+call(label: func_verify_service_status)
+return()
+
+// Function: expect FLUID_SETTINGS_LISTEN
+label(name: func_expect_fluid_settings_listen)
+print(message: "--- expect FLUID_SETTINGS_LISTEN ---")
+call(label: func_wait_message)
+call(label: func_verify_fluid_settings_listen)
+return()
+
+// Function: expect LOCK_STARTED
+label(name: func_expect_lock_started_initial)
+print(message: "--- wait for message LOCK_STARTED (initial)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_broadcast_initial)
+return()
+
+// Function: expect CLUCKD_STATUS (without tickets)
+label(name: func_expect_cluckd_status_without_tickets)
+print(message: "--- wait for message CLUCKD_STATUS (without tickets)....")
+call(label: func_wait_message)
+call(label: func_verify_cluckd_status_without_tickets)
+return()
+
+// Function: expect CLUCKD_STATUS (with ticket)
+label(name: func_expect_cluckd_status_with_ticket)
+print(message: "--- wait for message CLUCKD_STATUS (with ticket)....")
+call(label: func_wait_message)
+call(label: func_verify_cluckd_status_with_ticket)
+return()
+
+label(name: func_expect_lock_leaders)
+call(label: func_wait_message)
+call(label: func_verify_lock_leaders)
+
+// try a lock that already timed out
+set_variable(name: timeout, value: 1000)
+set_variable(name: lock_failed, value: "timedout/lock1")
+call(label: func_send_lock)
+
+return()
+
+// Function:: expect LOCK_READY
+label(name: func_expect_lock_ready)
+print(message: "--- wait for message LOCK_READY....")
+call(label: func_wait_message)
+call(label: func_verify_lock_ready)
+// WARNING: variable is reused in the verify_lock_started and others
+//now(variable_name: lock_timeout)
+//set_variable(name: lock_timeout, value: ${lock_timeout} + 60) // now + 1 minute
+//call(label: func_send_lock)
+return()
+
+// Function: expect LOCK_STARTED (reply A)
+label(name: func_expect_lock_started_reply_a)
+print(message: "--- wait for message LOCK_STARTED (reply A)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_reply_a)
+return()
+
+// Function: expect LOCK_STARTED (reply B)
+label(name: func_expect_lock_started_reply_b)
+print(message: "--- wait for message LOCK_STARTED (reply_b)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_reply_b)
+return()
+
+// Function: expect LOCK_STARTED (reply C)
+label(name: func_expect_lock_started_reply_c)
+print(message: "--- wait for message LOCK_STARTED (reply_c)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_reply_c)
+return()
+
+// Function: expect LOCK_STARTED (reply D)
+label(name: func_expect_lock_started_reply_d)
+print(message: "--- wait for message LOCK_STARTED (reply_d)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_reply_d)
+return()
+
+// Function: expect LOCK_STARTED (reply E)
+label(name: func_expect_lock_started_reply_e)
+print(message: "--- wait for message LOCK_STARTED (reply_e)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_reply_e)
+return()
+
+// Function: expect CLUSTER_STATUS
+label(name: func_expect_cluster_status)
+call(label: func_wait_message)
+call(label: func_verify_cluster_status)
+return()
+
+// Function: expect NO_LOCK
+label(name: func_expect_no_lock)
+print(message: "--- wait for message NO_LOCK....")
+call(label: func_wait_message)
+call(label: func_verify_no_lock)
+return()
+
+// Function: expect LOCK_FAILED
+label(name: func_expect_lock_failed_timedout)
+print(message: "--- wait for message LOCK_FAILED (timedout)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_timedout)
+now(variable_name: timeout)
+set_variable(name: timeout, value: ${timeout} + 60) // now + 1 minute
+call(label: func_send_lock)
+call(label: func_send_lock) // second attempt fails with a duplicate error, but caught while ticket is in entering state
+call(label: func_send_lock_with_serial) // second attempt fails, but without a reply because of the serial number
+return()
+
+// Function: expect LOCK_FAILED
+label(name: func_expect_lock_failed_duplicate)
+print(message: "--- wait for message LOCK_FAILED (duplicate)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_duplicate)
+return()
+
+// Function: expect LOCK_ENTERING
+label(name: func_expect_lock_entering)
+print(message: "--- wait for message LOCK_ENTERING....")
+call(label: func_wait_message)
+call(label: func_verify_lock_entering)
+call(label: func_send_lock_entered)
+return()
+
+// Function: expect GET_MAX_TICKET
+label(name: func_expect_get_max_ticket)
+print(message: "--- wait for message GET_MAX_TICKET....")
+call(label: func_wait_message)
+call(label: func_verify_get_max_ticket)
+call(label: func_send_max_ticket)
+return()
+
+// Function: expect ADD_TICKET
+label(name: func_expect_add_ticket)
+print(message: "--- wait for message ADD_TICKET....")
+call(label: func_wait_message)
+call(label: func_verify_add_ticket)
+call(label: func_send_ticket_added)
+return()
+
+// Function: expect LOCK_EXITING
+label(name: func_expect_lock_exiting)
+print(message: "--- wait for message LOCK_EXITING....")
+call(label: func_wait_message)
+call(label: func_verify_lock_exiting)
+call(label: func_send_ticket_ready)
+call(label: func_send_activate_lock)
+return()
+
+// Function: expect TICKET_READY
+label(name: func_expect_ticket_ready)
+print(message: "--- wait for message TICKET_READY....")
+call(label: func_wait_message)
+call(label: func_verify_ticket_ready)
+return()
+
+// Function: expect ACTIVATE_LOCK
+label(name: func_expect_activate_lock)
+print(message: "--- wait for message ACTIVATE_LOCK....")
+call(label: func_wait_message)
+call(label: func_verify_activate_lock)
+return()
+
+// Function: expect LOCKED
+label(name: func_expect_locked)
+print(message: "--- wait for message LOCKED....")
+call(label: func_wait_message)
+call(label: func_verify_locked)
+set_variable(name: info_mode, value: "debug")
+call(label: func_send_info)
+return()
+
+// Function: expect LOCK_ACTIVATED
+label(name: func_expect_lock_activated)
+print(message: "--- wait for message LOCK_ACTIVATED....")
+call(label: func_wait_message)
+call(label: func_verify_lock_activated)
+set_variable(name: allow_timeout, value: 1)
+return()
+
+// Function: expect UNLOCKING (with ticket)
+label(name: func_expect_unlocking)
+print(message: "--- wait for message UNLOCKING (with ticket)....")
+call(label: func_wait_message)
+call(label: func_verify_unlocking)
+//call(label: func_send_quitting)
+//clear_message()
+//wait(timeout: 5, mode: drain)
+return()
+
+// Function: expect DROP_TOCKET
+label(name: func_expect_drop_ticket)
+print(message: "--- wait for message DROP_TOCKET....")
+call(label: func_wait_message)
+call(label: func_verify_drop_ticket)
+return()
+
+
+
+
+
+
+
+
+// Function: verify REGISTER 
+label(name: func_verify_register)
+verify_message(
+	command: REGISTER,
+	required_parameters: {
+		service: cluckd,
+		version: 1
+	})
+return()
+
+// Function: verify a LOCKED reply
+label(name: func_verify_locked)
+verify_message(
+	command: LOCKED,
+	server: ${hostname},
+	service: website,
+	required_parameters: {
+		object_name: "lock1",
+		timeout_date: `^[0-9]+(\\.[0-9]+)?$`,
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`,
+		tag: 505
+	})
+return()
+
+// Function: verify a COMMANDS reply
+label(name: func_verify_commands)
+verify_message(
+	command: COMMANDS,
+	required_parameters: {
+		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_ENTERED,LOCK_ENTERING,LOCK_EXITING,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
+	})
+return()
+
+// Function: verify a SERVICE_STATUS reply
+label(name: func_verify_service_status)
+verify_message(
+	command: SERVICE_STATUS,
+	required_parameters: {
+		service: 'fluid_settings'
+	})
+return()
+
+// Function: verify a FLUID_SETTINGS_LISTEN
+label(name: func_verify_fluid_settings_listen)
+verify_message(
+	command: FLUID_SETTINGS_LISTEN,
+	required_parameters: {
+		cache: "no;reply",
+		names: "cluckd::server-name"
+	})
+return()
+
+// Function: verify LOCK STARTED (initial)
+label(name: func_verify_lock_started_broadcast_initial)
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	service: "*", // this one was broadcast
+	required_parameters: {
+		// here we do not yet know what the ${leader1} id is going to be
+		lock_id: `^10\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2
+	})
+// get lock_id in leader0 so we can use it again later
+save_parameter_value(parameter_name: lock_id, variable_name: leader0)
+return()
+
+// Function: verify a NO_LOCK
+label(name: func_verify_no_lock)
+verify_message(
+	command: NO_LOCK,
+	server: `${hostname}|`,
+	service: `website|\\.`,
+	required_parameters: {
+		cache: "no"
+	})
+return()
+
+// Function: verify a LOCK READY
+label(name: func_verify_lock_ready)
+verify_message(
+	command: LOCK_READY,
+	sent_service: "cluckd",
+	service: ".",
+	required_parameters: {
+		cache: "no"
+	})
+return()
+
+// Function: verify a CLUSTER_STATUS
+label(name: func_verify_cluster_status)
+verify_message(
+	sent_service: cluckd,
+	command: CLUSTER_STATUS,
+	service: communicatord)
+return()
+
+// Function: verify a LOCK LEADERS
+label(name: func_verify_lock_leaders)
+verify_message(
+	command: LOCK_LEADERS,
+	service: "*",
+	required_parameters: {
+		election_date: `^[0-9]+(\\.[0-9]+)?$`,
+		leader0: "${leader0}", //`^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|(${hostname}|two)$`,
+		leader1: "${leader1}" //`^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|(${hostname}|two)$`
+	},
+	forbidden_parameters: {
+		leader2
+	})
+return()
+
+// Function: verify a LOCK STARTED (to start the elections)
+label(name: func_verify_first_lock_started)
+verify_message(
+	command: LOCK_STARTED,
+	service: "*", // this one was broadcast
+	required_parameters: {
+		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2
+	})
+return()
+
+// Function: verify a LOCK STARTED (reply A)
+label(name: func_verify_lock_started_reply_a)
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		lock_id: "${leader0}", //`^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2
+	})
+return()
+
+// Function: verify a LOCK STARTED (reply B)
+label(name: func_verify_lock_started_reply_b)
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: rc2,
+	service: cluckd,
+	required_parameters: {
+		lock_id: "${leader0}",
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2
+	})
+return()
+
+// Function: verify a LOCK STARTED (reply C)
+label(name: func_verify_lock_started_reply_c)
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: rc3,
+	service: cluckd,
+	required_parameters: {
+		lock_id: "${leader0}",
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2
+	})
+return()
+
+// Function: verify a LOCK STARTED (reply D)
+label(name: func_verify_lock_started_reply_d)
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: rc4,
+	service: cluckd,
+	required_parameters: {
+		lock_id: "${leader0}",
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2
+	})
+return()
+
+// Function: verify a LOCK STARTED (reply E)
+label(name: func_verify_lock_started_reply_e)
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: rc5,
+	service: cluckd,
+	required_parameters: {
+		lock_id: "${leader0}",
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2
+	})
+return()
+
+// Function: verify a LOCK_FAILED
+label(name: func_verify_lock_failed_timedout)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: "${hostname}",
+	service: website,
+	required_parameters: {
+		error: "timedout",
+		key: "${hostname}/123",
+		object_name: "lock1",
+		tag: 505
+	})
+return()
+
+// Function: verify a LOCK_FAILED
+label(name: func_verify_lock_failed_duplicate)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: "${hostname}",
+	service: website,
+	required_parameters: {
+		error: "duplicate",
+		key: "${hostname}/123",
+		object_name: "lock1",
+		tag: 505
+	})
+return()
+
+// Function: verify a UNLOCKED
+label(name: func_verify_unlocked)
+verify_message(
+	command: UNLOCKED,
+	server: "${hostname}",
+	service: "website",
+	required_parameters: {
+		object_name: "lock1",
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`,
+		tag: 505
+	})
+return()
+
+// Function: verify a UNLOCKING
+label(name: func_verify_unlocking)
+verify_message(
+	command: UNLOCKING,
+	server: "${hostname}",
+	service: "website",
+	required_parameters: {
+		error: "timedout",
+		object_name: "lock1",
+		tag: "505"
+	})
+return()
+
+// Function: verify a LOCK_ENTERING
+label(name: func_verify_lock_entering)
+verify_message(
+	command: LOCK_ENTERING,
+	sent_service: "cluckd",
+	server: "two",
+	service: "cluckd",
+	required_parameters: {
+		duration: `^[0-9]+$`,
+		key: "${hostname}/123",
+		object_name: "lock1",
+		serial: `^[0-9]+$`,
+		source: "${hostname}/website",
+		tag: `^[0-9]+$`,
+		timeout: `^[0-9]+(\\.[0-9]+)?$`
+	})
+return()
+
+// Function: verify a GET_MAX_TICKET
+label(name: func_verify_get_max_ticket)
+verify_message(
+	command: GET_MAX_TICKET,
+	sent_service: "cluckd",
+	server: "two",
+	service: "cluckd",
+	required_parameters: {
+		key: "${hostname}/123",
+		object_name: "lock1",
+		tag: "505"
+	})
+return()
+
+// Function: verify a ADD_TICKET
+label(name: func_verify_add_ticket)
+verify_message(
+	command: ADD_TICKET,
+	sent_service: "cluckd",
+	server: "two",
+	service: "cluckd",
+	required_parameters: {
+		// we send MAX_TICKET of 111 and 111 + 1 is 0x70
+		key: "00000070/${hostname}/123",
+		object_name: "lock1",
+		tag: "505",
+		timeout: `^[0-9]+(\\.[0-9]+)$`
+	})
+return()
+
+// Function: verify a LOCK_EXITING
+label(name: func_verify_lock_exiting)
+verify_message(
+	command: LOCK_EXITING,
+	sent_service: "cluckd",
+	server: "two",
+	service: "cluckd",
+	required_parameters: {
+		key: "${hostname}/123",
+		object_name: "lock1",
+		tag: "505"
+	})
+return()
+
+// Function: verify a TICKET_READY
+label(name: func_verify_ticket_ready)
+verify_message(
+	command: TICKET_READY,
+	sent_service: "cluckd",
+	server: "two",
+	service: "cluckd",
+	required_parameters: {
+		key: "00000070/${hostname}/123",
+		object_name: "lock1",
+		tag: "505"
+	})
+return()
+
+// Function: verify a ACTIVATE_LOCK
+label(name: func_verify_activate_lock)
+verify_message(
+	command: ACTIVATE_LOCK,
+	sent_service: "cluckd",
+	server: "two",
+	service: "cluckd",
+	required_parameters: {
+		key: "00000070/${hostname}/123",
+		object_name: "lock1",
+		tag: "505"
+	})
+return()
+
+// Function: verify a ACTIVATE_LOCK
+label(name: func_verify_lock_activated)
+verify_message(
+	command: LOCK_ACTIVATED,
+	sent_service: "cluckd",
+	server: "two",
+	service: "cluckd",
+	required_parameters: {
+		key: "00000070/${hostname}/123",
+		other_key: "00000070/${hostname}/123",
+		object_name: "lock1",
+		tag: "505"
+	})
+return()
+
+// Function: verify a DROP_TICKET
+label(name: func_verify_drop_ticket)
+verify_message(
+	command: DROP_TICKET,
+	sent_service: "cluckd",
+	server: "two",
+	service: "cluckd",
+	required_parameters: {
+		key: "00000070/${hostname}/123",
+		object_name: "lock1",
+		tag: "505"
+	})
+return()
+
+// Function: verify CLUCKD_STATUS (without tickets)
+label(name: func_verify_cluckd_status_without_tickets)
+save_parameter_value(parameter_name: status, variable_name: cluckd_status)
+print(message: "--- verify message CLUCKD_STATUS: ${cluckd_status}")
+verify_message(
+	command: CLUCKD_STATUS,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: website,
+	required_parameters: {
+		status: '{"computers":['
+			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"}'
+			+ '],'
+			+ '"daemon_ready":true,'
+			+ '"id":"' + "${leader0}" + '",'
+			+ '"ip":"127.0.0.1",'
+			+ '"leaders_count":0,'
+			+ '"neighbors_count":2,'
+			+ '"neighbors_quorum":2}'
+	})
+return()
+
+// Function: verify CLUCKD_STATUS (with ticket)
+label(name: func_verify_cluckd_status_with_ticket)
+save_parameter_value(parameter_name: status, variable_name: cluckd_status)
+print(message: "--- verify message CLUCKD_STATUS: ${cluckd_status}")
+verify_message(
+	command: CLUCKD_STATUS,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: website,
+	required_parameters: {
+		status: '{"computers":['
+			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
+			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.3","leader":1,"name":"two"}'
+			+ '],'
+			+ '"daemon_ready":true,'
+			+ '"id":"' + "${leader0}" + '",'
+			+ '"ip":"127.0.0.1",'
+			+ '"leaders_count":2,'
+			+ '"neighbors_count":2,'
+			+ '"neighbors_quorum":2,'
+			+ '"tickets":'
+				+ '"added_ticket=true'
+				+ '|added_ticket_quorum=true'
+				+ '|entering_key=monster/123'
+				+ '|get_max_ticket=true'
+				+ '|lock_duration=10'
+				+ '|lock_failed=none'
+				+ '|lock_timeout_date=' + `[0-9]+(\\.[0-9]+)?`
+				+ '|locked=true'
+				+ '|object_name=lock1'
+				+ '|obtention_timeout=' + `[0-9]+(\\.[0-9]+)?`
+				+ '|our_ticket=112'
+				+ '|owner=monster'
+				+ '|serial=1'
+				+ '|server_name=monster'
+				+ '|service_name=website'
+				+ '|tag=505'
+				+ '|ticket_key=00000070/monster/123'
+				+ '|ticket_ready=true'
+				+ '|unlock_duration=10\\n"}'
+	})
+return()
+
+
+
+
+
+
+
+
+// Function: send HELP
+label(name: func_send_help)
+send_message(
+	command: HELP
+	//server: ${hostname}, -- the source is not added in this case
+	//service: communicatord
+	)
+return()
+
+// Function: send READY
+label(name: func_send_ready)
+send_message(
+	command: READY,
+	//server: ${hostname}, -- the source is not added in this case
+	//service: communicatord,
+	parameters: {
+		my_address: "127.0.0.1"
+	})
+return()
+
+// Function: send STATUS
+// Parameters: ${cluckd_status} -- "up" or "down"
+label(name: func_send_status)
+now(variable_name: now)
+send_message(
+	command: STATUS,
+	//server: ${hostname}, -- the source is not added in this case
+	//service: communicatord,
+	parameters: {
+		server_name: rc1,
+		service: "remote communicator (in)",
+		cache: no,
+		server: rc1,
+		status: ${cluckd_status},
+		up_since: ${now}, // TODO: when the status is "down", we need to use "down_since: ..." instead
+		down_since: ${now} // TODO: when the status is "down", we need to use "down_since: ..." instead
+	})
+return()
+
+// Function: send STATUS/fluid_settings
+label(name: func_send_status_of_fluid_settings)
+now(variable_name: now)
+send_message(
+	command: STATUS,
+	parameters: {
+		service: "fluid_settings",
+		cache: no,
+		server: "${hostname}",
+		status: "up",
+		up_since: ${now}
+	})
+return()
+
+// Function: send STATUS/fluid_settings
+//label(name: func_reply_to_service_status)
+//save_parameter_value(parameter_name: service, variable_name: service_name)
+//print(message: "--- service name in STATUS message is: ${service_name}")
+//compare(expression: ${service_name} <=> "fluid_settings")
+//if(not_equal: not_fluid_settings_status)
+//now(variable_name: now)
+//// IMPORTANT:
+//// this is sent, but we do not get a reply at the moment because the only
+//// registered name would be the --server-name parameter and that's passed
+//// on the command line
+//send_message(
+//	command: STATUS,
+//	parameters: {
+//		service: "fluid_settings",
+//		cache: no,
+//		server: "${hostname}",
+//		status: "up",
+//		up_since: ${now}
+//	})
+//label(name: not_fluid_settings_status)
+//return()
+
+// Function: send FLUID_SETTINGS_REGISTERED
+label(name: func_send_fluid_settings_registered)
+send_message(
+	command: FLUID_SETTINGS_REGISTERED,
+	server: ${hostname},
+	service: cluckd)
+return()
+
+// Function: send FLUID_SETTINGS_VALUE_UPDATED
+label(name: func_send_fluid_settings_value_updated)
+send_message(
+	command: FLUID_SETTINGS_VALUE_UPDATED,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		name: "cluckd::server-name",
+		value: "this_very_server",
+		message: "current value"
+	})
+return()
+
+// Function: send FLUID_SETTINGS_READY
+label(name: func_send_fluid_settings_ready)
+send_message(
+	command: FLUID_SETTINGS_READY,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		errcnt: 31
+	})
+return()
+
+// Function: send LOCK_STATUS
+label(name: func_send_lock_status)
+send_message(
+	command: LOCK_STATUS,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd)
+return()
+
+// Function: send INFO
+// Parameters: ${info_mode} -- "info" or "debug"
+label(name: func_send_info)
+send_message(
+	command: INFO,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		mode: ${info_mode}
+	})
+return()
+
+// Function: send CLUSTER_UP
+label(name: func_send_cluster_up)
+send_message(
+	command: CLUSTER_UP,
+	sent_server: ${hostname},
+	sent_service: communicatord,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		neighbors_count: 6
+	})
+return()
+
+// Function: send CLUSTER_COMPLETE
+label(name: func_send_cluster_complete)
+send_message(
+	command: CLUSTER_COMPLETE,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		neighbors_count: 2
+	})
+return()
+
+// Function: send LOCK
+// Parameters: ${timeout} -- when the LOCK request times out
+label(name: func_send_lock)
+send_message(
+	command: LOCK,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		tag: 505,
+		pid: 123,
+		duration: 10,
+		timeout: ${timeout}
+	})
+return()
+
+// Function: send LOCK (duplicate with serial)
+// Parameters: ${timeout} -- when the LOCK request times out
+label(name: func_send_lock_with_serial)
+send_message(
+	command: LOCK,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		tag: 505,
+		pid: 123,
+		duration: 10,
+		serial: 1, // prevent the error
+		timeout: ${timeout}
+	})
+return()
+
+// Function: send LOCK_STARTED
+// Parameters: ${server_name} -- the name of the server sending the message
+// Parameters: ${lock_id} -- the identifier used as the lock_id parameter
+label(name: func_send_lock_started)
+now(variable_name: now)
+send_message(
+	command: LOCK_STARTED,
+	sent_server: ${server_name},
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		lock_id: ${lock_id},
+		server_name: ${server_name},
+		start_time: ${now}
+	})
+return()
+
+// Function: send LOCK_ENTERED
+label(name: func_send_lock_entered)
+send_message(
+	command: LOCK_ENTERED,
+	sent_server: ${hostname},
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		tag: "505",
+		key: "${hostname}/123"
+	})
+return()
+
+// Function: send MAX_TICKET
+label(name: func_send_max_ticket)
+send_message(
+	command: MAX_TICKET,
+	sent_server: two,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		tag: "505",
+		key: "${hostname}/123",
+		ticket_id: 111   // TBD: we could also send NO_TICKET here?
+	})
+return()
+
+// Function: send TICKET_ADDED
+label(name: func_send_ticket_added)
+send_message(
+	command: TICKET_ADDED,
+	sent_server: two,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		tag: "505",
+		key: "00000070/${hostname}/123"
+	})
+return()
+
+// Function: send TICKET_READY
+label(name: func_send_ticket_ready)
+send_message(
+	command: TICKET_READY,
+	sent_server: two,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		tag: "505",
+		key: "00000070/${hostname}/123"
+	})
+return()
+
+// Function: send ACTIVATE_LOCK
+label(name: func_send_activate_lock)
+send_message(
+	command: ACTIVATE_LOCK,
+	sent_server: two,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		tag: "505",
+		key: "00000070/${hostname}/123"
+	})
+return()
+
+// Function: send UNLOCK
+label(name: func_send_unlock)
+send_message(
+	command: UNLOCK,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "lock1",
+		pid: 123,
+		tag: "505"
+	})
+return()
+
+// Function: send STOP
+label(name: func_send_stop)
+send_message(
+	command: STOP,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd)
+return()
+
+// Function: send QUITTING
+label(name: func_send_quitting)
+send_message(
+	command: QUITTING,
+	sent_server: ${hostname},
+	sent_service: website,
+	server: ${hostname},
+	service: cluckd)
+return()
+

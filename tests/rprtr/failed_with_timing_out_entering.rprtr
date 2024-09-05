@@ -28,7 +28,19 @@ call(label: func_send_get_max_ticket_fast)
 call(label: func_expect_lock_entered_fast)
 call(label: func_expect_lock_entered_slow)
 call(label: func_expect_max_ticket_fast)
+call(label: func_send_add_ticket_with_invalid_key_a)
+call(label: func_send_add_ticket_with_invalid_key_b)
+call(label: func_send_add_ticket_with_invalid_key_c)
+call(label: func_send_add_ticket_with_invalid_object_name)
+call(label: func_send_add_ticket_with_invalid_key_d)
+call(label: func_send_add_ticket_fast)
 call(label: func_expect_max_ticket_slow)
+call(label: func_expect_lock_failed_add_ticket_with_invalid_key_a)
+call(label: func_expect_lock_failed_add_ticket_with_invalid_key_b)
+call(label: func_expect_lock_failed_add_ticket_with_invalid_key_c)
+call(label: func_expect_lock_failed_add_ticket_with_invalid_object_name)
+call(label: func_expect_lock_failed_add_ticket_with_invalid_key_d)
+call(label: func_send_add_ticket_slow)
 call(label: func_send_lock_exiting_fast_with_bad_key) // this just prints a LOG and nothing else
 call(label: func_expect_ticket_added_fast)
 call(label: func_expect_ticket_added_slow)
@@ -194,6 +206,41 @@ call(label: func_wait_message)
 call(label: func_verify_lock_failed_entering_bad_source)
 return()
 
+// Function: expect LOCK_FAILED (bad key A)
+label(name: func_expect_lock_failed_add_ticket_with_invalid_key_a)
+print(message: "--- wait for message LOCK_FAILED (ADD_TICKET invalid key A)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_add_ticket_with_invalid_key_a)
+return()
+
+// Function: expect LOCK_FAILED (bad key B)
+label(name: func_expect_lock_failed_add_ticket_with_invalid_key_b)
+print(message: "--- wait for message LOCK_FAILED (ADD_TICKET invalid key B)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_add_ticket_with_invalid_key_b)
+return()
+
+// Function: expect LOCK_FAILED (bad key C)
+label(name: func_expect_lock_failed_add_ticket_with_invalid_key_c)
+print(message: "--- wait for message LOCK_FAILED (ADD_TICKET invalid key C)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_add_ticket_with_invalid_key_c)
+return()
+
+// Function: expect LOCK_FAILED (bad key C)
+label(name: func_expect_lock_failed_add_ticket_with_invalid_key_d)
+print(message: "--- wait for message LOCK_FAILED (ADD_TICKET invalid key D)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_add_ticket_with_invalid_key_d)
+return()
+
+// Function: expect LOCK_FAILED (bad object name)
+label(name: func_expect_lock_failed_add_ticket_with_invalid_object_name)
+print(message: "--- wait for message LOCK_FAILED (ADD_TICKET invalid object name)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_failed_add_ticket_with_invalid_object_name)
+return()
+
 // Function: expect LOCKED
 label(name: func_expect_locked)
 print(message: "--- wait for message LOCKED ---")
@@ -221,7 +268,6 @@ label(name: func_expect_max_ticket_fast)
 print(message: "--- wait for message MAX_TICKET (fast) ---")
 call(label: func_wait_message)
 call(label: func_verify_max_ticket_fast)
-call(label: func_send_add_ticket_fast)
 return()
 
 // Function: expect MAX_TICKET (slow)
@@ -229,7 +275,6 @@ label(name: func_expect_max_ticket_slow)
 print(message: "--- wait for message MAX_TICKET (slow) ---")
 call(label: func_wait_message)
 call(label: func_verify_max_ticket_slow)
-call(label: func_send_add_ticket_slow)
 return()
 
 // Function: expect TICKET_ADDED (fast)
@@ -462,6 +507,96 @@ verify_message(
 	},
 	optional_parameters: {
 		description: "LOCK_ENTERING called with an invalid source parameter"
+	})
+return()
+
+// Function: verify LOCK_FAILED with invalid key A
+label(name: func_verify_lock_failed_add_ticket_with_invalid_key_a)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		error: "invalid",
+		key: "bad/key",
+		object_name: "fast_entering",
+		tag: 808
+	},
+	optional_parameters: {
+		description: "ADD_TICKET called with an invalid key (expected three segments)"
+	})
+return()
+
+// Function: verify LOCK_FAILED with invalid key B
+label(name: func_verify_lock_failed_add_ticket_with_invalid_key_b)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		error: "invalid",
+		key: "badhexnb/rc/32005",
+		object_name: "fast_entering",
+		tag: 808
+	},
+	optional_parameters: {
+		description: "ADD_TICKET called with an invalid key (first segment is not a valid hexadecimal number)"
+	})
+return()
+
+// Function: verify LOCK_FAILED with invalid key C
+label(name: func_verify_lock_failed_add_ticket_with_invalid_key_c)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		error: "invalid",
+		key: "100000000/rc/32005",
+		object_name: "fast_entering",
+		tag: 808
+	},
+	optional_parameters: {
+		description: "ADD_TICKET called with an invalid key (first segment is not a valid hexadecimal number)"
+	})
+return()
+
+// Function: verify LOCK_FAILED with invalid key D
+label(name: func_verify_lock_failed_add_ticket_with_invalid_key_d)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		error: "invalid",
+		key: "00000001/dc/32005",
+		object_name: "fast_entering",
+		tag: 808
+	},
+	optional_parameters: {
+		description: "ADD_TICKET could not find the very entering ticket with the specified key"
+	})
+return()
+
+// Function: verify LOCK_FAILED with invalid object name
+label(name: func_verify_lock_failed_add_ticket_with_invalid_object_name)
+verify_message(
+	command: LOCK_FAILED,
+	sent_service: cluckd,
+	server: rc,
+	service: cluckd,
+	required_parameters: {
+		error: "invalid",
+		key: "00000001/rc/32005",
+		object_name: "unknown_object",
+		tag: 808
+	},
+	optional_parameters: {
+		description: "ADD_TICKET could not find an entering ticket with the specified object_name"
 	})
 return()
 
@@ -935,6 +1070,86 @@ send_message(
 		key: "rc/32005",
 		object_name: "slow_entering",
 		tag: 404
+	})
+return()
+
+// Function: send ADD_TICKET (invalid key A)
+label(name: func_send_add_ticket_with_invalid_key_a)
+send_message(
+	command: ADD_TICKET,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		key: "bad/key",
+		timeout: ${fast_lock_timeout},
+		object_name: "fast_entering",
+		tag: 808
+	})
+return()
+
+// Function: send ADD_TICKET (invalid key B)
+label(name: func_send_add_ticket_with_invalid_key_b)
+send_message(
+	command: ADD_TICKET,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		key: "badhexnb/rc/32005",
+		timeout: ${fast_lock_timeout},
+		object_name: "fast_entering",
+		tag: 808
+	})
+return()
+
+// Function: send ADD_TICKET (invalid key C)
+label(name: func_send_add_ticket_with_invalid_key_c)
+send_message(
+	command: ADD_TICKET,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		key: "100000000/rc/32005",
+		timeout: ${fast_lock_timeout},
+		object_name: "fast_entering",
+		tag: 808
+	})
+return()
+
+// Function: send ADD_TICKET (invalid key D)
+label(name: func_send_add_ticket_with_invalid_key_d)
+send_message(
+	command: ADD_TICKET,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		key: "00000001/dc/32005",
+		timeout: ${fast_lock_timeout},
+		object_name: "fast_entering",
+		tag: 808
+	})
+return()
+
+// Function: send ADD_TICKET (invalid object name)
+label(name: func_send_add_ticket_with_invalid_object_name)
+send_message(
+	command: ADD_TICKET,
+	sent_server: rc,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		key: "00000001/rc/32005",
+		timeout: ${fast_lock_timeout},
+		object_name: "unknown_object",
+		tag: 808
 	})
 return()
 
