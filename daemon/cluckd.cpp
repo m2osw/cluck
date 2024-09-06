@@ -906,7 +906,7 @@ void cluckd::election_status()
         }
     }
 
-    // we do not yet know our IP address, we cannot support election just yet
+    // we do not yet know our IP address, we cannot support an election just yet
     //
     if(f_my_ip_address.is_default())
     {
