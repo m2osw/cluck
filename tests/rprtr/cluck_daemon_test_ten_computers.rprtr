@@ -212,6 +212,7 @@ call(label: func_expect_lock_started_reply)
 
 call(label: func_expect_cluckd_status_ten_computers)
 
+// ------------------------------------------------------------------- SEND LOCK
 // WARNING: variable is reused in the verify_lock_started and others
 now(variable_name: lock_timeout)
 set_variable(name: lock_timeout, value: ${lock_timeout} + 60) // now + 1 minute
@@ -262,6 +263,7 @@ set_variable(name: server_name, value: "rc2")
 call(label: func_expect_activate_lock)
 
 call(label: func_expect_locked)
+call(label: func_send_info)
 
 set_variable(name: server_name, value: "rc1")
 call(label: func_expect_lock_activated)
@@ -280,6 +282,9 @@ set_variable(name: leader2, value: "${computer3}")
 call(label: func_expect_lock_leaders)
 save_parameter_value(parameter_name: election_date, variable_name: election_date) // save new election date
 set_variable(name: election_date, value: "${election_date}", type: timestamp)     // as a timestamp value
+
+call(label: func_expect_lock_tickets_rc2)
+call(label: func_expect_lock_tickets_rc3)
 
 call(label: func_expect_unlocking)
 
@@ -315,20 +320,48 @@ call(label: func_expect_lock_started_reply) // first reply when rc8 is considere
 
 // TODO: fix this NO_LOCK status because we still have 2 valid computers so
 //       the 3rd being in a weird state should not prevent locks from happening
-call(label: func_expect_no_lock)
+//call(label: func_expect_no_lock)
 
 // only now do we get a reply for rc9
 set_variable(name: server_name, value: "rc9")
 print(message: "rc9 second started...")
 call(label: func_expect_lock_started_reply)
 
-call(label: func_expect_lock_ready)
+// since we do not get the NO_LOCK, we also don't get the LOCK_READY (it was always ready)
+//call(label: func_expect_lock_ready)
 
 // and finally, we sent an rc8 reply, just a tad bit later than the others
 set_variable(name: server_name, value: "rc8")
 print(message: "rc8 second started... (repeat)")
 call(label: func_expect_lock_started_reply)
 
+
+// at this point the leaders are:
+//
+//    . leader 0 -- cluck daemon (the one being tested) (${hostname})
+//    . leader 1 -- leader2 became leader1 (rc2)
+//    . leader 2 -- computer 8 (rc8)
+//
+// let's hang up some of the other computers until we reach a system
+// without a quorum
+//
+set_variable(name: server_name, value: "rc4")
+call(label: func_send_hangup)
+set_variable(name: server_name, value: "rc5")
+call(label: func_send_hangup)
+set_variable(name: server_name, value: "rc6")
+call(label: func_send_hangup)
+set_variable(name: server_name, value: "rc9")
+call(label: func_send_hangup)
+set_variable(name: server_name, value: "rc3")
+call(label: func_send_hangup)
+
+now(variable_name: lock_timeout)
+set_variable(name: lock_timeout, value: ${lock_timeout} + 60) // now + 1 minute
+call(label: func_send_lock)
+
+call(label: func_send_info)
+call(label: func_expect_cluckd_status_lost_quorum)
 
 
 
@@ -512,11 +545,11 @@ call(label: func_wait_message)
 call(label: func_verify_cluckd_status_ten_computers)
 return()
 
-// Function: expect CLUCKD_STATUS (with ticket)
-label(name: func_expect_cluckd_status_with_ticket)
-print(message: "--- wait for message CLUCKD_STATUS (with ticket)....")
+// Function: expect CLUCKD_STATUS (after we lost our quorum)
+label(name: func_expect_cluckd_status_lost_quorum)
+print(message: "--- wait for message CLUCKD_STATUS (lost quorum)....")
 call(label: func_wait_message)
-call(label: func_verify_cluckd_status_with_ticket)
+call(label: func_verify_cluckd_status_lost_quorum)
 return()
 
 // Function: expect LOCK_LEADER initial (leader 0, 1, 2)
@@ -619,7 +652,6 @@ label(name: func_expect_locked)
 print(message: "--- wait for message LOCKED....")
 call(label: func_wait_message)
 call(label: func_verify_locked)
-call(label: func_send_info)
 return()
 
 // Function: expect LOCK_ACTIVATED
@@ -628,6 +660,20 @@ print(message: "--- wait for message LOCK_ACTIVATED....")
 call(label: func_wait_message)
 call(label: func_verify_lock_activated)
 set_variable(name: allow_timeout, value: 1)
+return()
+
+// Function: expect LOCK_TICKETS from rc2
+label(name: func_expect_lock_tickets_rc2)
+print(message: "--- wait for message LOCK_TICKETS (rc2)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_tickets_rc2)
+return()
+
+// Function: expect LOCK_TICKETS from rc3
+label(name: func_expect_lock_tickets_rc3)
+print(message: "--- wait for message LOCK_TICKETS (rc3)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_tickets_rc3)
 return()
 
 // Function: expect UNLOCKING
@@ -968,6 +1014,66 @@ verify_message(
 	})
 return()
 
+// Function: verify LOCK_TICKETS for rc2
+label(name: func_verify_lock_tickets_rc2)
+verify_message(
+	command: LOCK_TICKETS,
+	sent_service: cluckd,
+	server: rc2,
+	service: cluckd,
+	required_parameters: {
+		tickets: 'added_ticket=true'
+			+ '|added_ticket_quorum=true'
+			+ '|entering_key=' + "${hostname}" + '/123'
+			+ '|get_max_ticket=true'
+			+ '|lock_duration=10'
+			+ '|lock_failed=none'
+			+ '|lock_timeout_date=' + `[0-9]+(\\.[0-9]+)?`
+			+ '|locked=true'
+			+ '|object_name=lock1'
+			+ '|obtention_timeout=' + `[0-9]+(\\.[0-9]+)?`
+			+ '|our_ticket=112'
+			+ '|owner=' + "${hostname}"
+			+ '|serial=' + `[0-9]+`
+			+ '|server_name=' + "${hostname}"
+			+ '|service_name=website'
+			+ '|tag=505'
+			+ '|ticket_key=00000070/' + "${hostname}" + '/123'
+			+ '|ticket_ready=true'
+			+ '|unlock_duration=10\n'
+	})
+return()
+
+// Function: verify LOCK_TICKETS for rc3
+label(name: func_verify_lock_tickets_rc3)
+verify_message(
+	command: LOCK_TICKETS,
+	sent_service: cluckd,
+	server: rc3,
+	service: cluckd,
+	required_parameters: {
+		tickets: 'added_ticket=true'
+			+ '|added_ticket_quorum=true'
+			+ '|entering_key=' + "${hostname}" + '/123'
+			+ '|get_max_ticket=true'
+			+ '|lock_duration=10'
+			+ '|lock_failed=none'
+			+ '|lock_timeout_date=' + `[0-9]+(\\.[0-9]+)?`
+			+ '|locked=true'
+			+ '|object_name=lock1'
+			+ '|obtention_timeout=' + `[0-9]+(\\.[0-9]+)?`
+			+ '|our_ticket=112'
+			+ '|owner=' + "${hostname}"
+			+ '|serial=' + `[0-9]+`
+			+ '|server_name=' + "${hostname}"
+			+ '|service_name=website'
+			+ '|tag=505'
+			+ '|ticket_key=00000070/' + "${hostname}" + '/123'
+			+ '|ticket_ready=true'
+			+ '|unlock_duration=10\n'
+	})
+return()
+
 // Function: verify a DROP_TICKET
 label(name: func_verify_drop_ticket)
 verify_message(
@@ -993,8 +1099,7 @@ verify_message(
 	service: stats,
 	required_parameters: {
 		status: '{"computers":[],'
-			+ '"daemon_ready":true,'
-			+ '"id":"<not ready>",'
+			+ '"daemon_ready":false,'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":0,'
 			+ '"neighbors_count":0,'
@@ -1013,9 +1118,9 @@ verify_message(
 	service: stats,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"}'
 			+ '],'
-			+ '"daemon_ready":true,'
+			+ '"daemon_ready":false,'
 			+ '"id":"' + "${leader0}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":0,'
@@ -1035,10 +1140,10 @@ verify_message(
 	service: stats,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.1","name":"rc1"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.1.2.1","name":"rc1"}'
 			+ '],'
-			+ '"daemon_ready":true,'
+			+ '"daemon_ready":false,'
 			+ '"id":"' + "${leader0}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":0,'
@@ -1058,11 +1163,11 @@ verify_message(
 	service: stats,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.1","name":"rc1"},'
-			+ '{"id":"'+ "${leader2}" + '","ip":"172.1.2.2","name":"rc2"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.1.2.1","name":"rc1"},'
+			+ '{"connected":true,"id":"'+ "${leader2}" + '","ip":"172.1.2.2","name":"rc2"}'
 			+ '],'
-			+ '"daemon_ready":true,'
+			+ '"daemon_ready":false,'
 			+ '"id":"' + "${leader0}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":0,'
@@ -1082,12 +1187,12 @@ verify_message(
 	service: stats,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.1","name":"rc1"},'
-			+ '{"id":"'+ "${leader2}" + '","ip":"172.1.2.2","name":"rc2"},'
-			+ '{"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.1.2.1","name":"rc1"},'
+			+ '{"connected":true,"id":"'+ "${leader2}" + '","ip":"172.1.2.2","name":"rc2"},'
+			+ '{"connected":true,"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"}'
 			+ '],'
-			+ '"daemon_ready":true,'
+			+ '"daemon_ready":false,'
 			+ '"id":"' + "${leader0}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":0,'
@@ -1107,13 +1212,13 @@ verify_message(
 	service: stats,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.1","name":"rc1"},'
-			+ '{"id":"'+ "${leader2}" + '","ip":"172.1.2.2","name":"rc2"},'
-			+ '{"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
-			+ '{"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.1.2.1","name":"rc1"},'
+			+ '{"connected":true,"id":"'+ "${leader2}" + '","ip":"172.1.2.2","name":"rc2"},'
+			+ '{"connected":true,"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
+			+ '{"connected":true,"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"}'
 			+ '],'
-			+ '"daemon_ready":true,'
+			+ '"daemon_ready":false,'
 			+ '"id":"' + "${leader0}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":0,'
@@ -1133,12 +1238,12 @@ verify_message(
 	service: stats,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.1","leader":1,"name":"rc1"},'
-			+ '{"id":"'+ "${leader2}" + '","ip":"172.1.2.2","leader":2,"name":"rc2"},'
-			+ '{"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
-			+ '{"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"},'
-			+ '{"id":"'+ "${computer5}" + '","ip":"172.1.2.5","name":"rc5"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.1.2.1","leader":1,"name":"rc1"},'
+			+ '{"connected":true,"id":"'+ "${leader2}" + '","ip":"172.1.2.2","leader":2,"name":"rc2"},'
+			+ '{"connected":true,"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
+			+ '{"connected":true,"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"},'
+			+ '{"connected":true,"id":"'+ "${computer5}" + '","ip":"172.1.2.5","name":"rc5"}'
 			+ '],'
 			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
@@ -1160,13 +1265,13 @@ verify_message(
 	service: stats,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.1","leader":1,"name":"rc1"},'
-			+ '{"id":"'+ "${leader2}" + '","ip":"172.1.2.2","leader":2,"name":"rc2"},'
-			+ '{"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
-			+ '{"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"},'
-			+ '{"id":"'+ "${computer5}" + '","ip":"172.1.2.5","name":"rc5"},'
-			+ '{"id":"'+ "${computer6}" + '","ip":"172.1.2.6","name":"rc6"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.1.2.1","leader":1,"name":"rc1"},'
+			+ '{"connected":true,"id":"'+ "${leader2}" + '","ip":"172.1.2.2","leader":2,"name":"rc2"},'
+			+ '{"connected":true,"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
+			+ '{"connected":true,"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"},'
+			+ '{"connected":true,"id":"'+ "${computer5}" + '","ip":"172.1.2.5","name":"rc5"},'
+			+ '{"connected":true,"id":"'+ "${computer6}" + '","ip":"172.1.2.6","name":"rc6"}'
 			+ '],'
 			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
@@ -1188,14 +1293,14 @@ verify_message(
 	service: stats,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.1","leader":1,"name":"rc1"},'
-			+ '{"id":"'+ "${leader2}" + '","ip":"172.1.2.2","leader":2,"name":"rc2"},'
-			+ '{"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
-			+ '{"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"},'
-			+ '{"id":"'+ "${computer5}" + '","ip":"172.1.2.5","name":"rc5"},'
-			+ '{"id":"'+ "${computer6}" + '","ip":"172.1.2.6","name":"rc6"},'
-			+ '{"id":"'+ "${computer7}" + '","ip":"172.1.2.7","name":"rc7"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.1.2.1","leader":1,"name":"rc1"},'
+			+ '{"connected":true,"id":"'+ "${leader2}" + '","ip":"172.1.2.2","leader":2,"name":"rc2"},'
+			+ '{"connected":true,"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
+			+ '{"connected":true,"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"},'
+			+ '{"connected":true,"id":"'+ "${computer5}" + '","ip":"172.1.2.5","name":"rc5"},'
+			+ '{"connected":true,"id":"'+ "${computer6}" + '","ip":"172.1.2.6","name":"rc6"},'
+			+ '{"connected":true,"id":"'+ "${computer7}" + '","ip":"172.1.2.7","name":"rc7"}'
 			+ '],'
 			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
@@ -1217,15 +1322,15 @@ verify_message(
 	service: stats,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.1","leader":1,"name":"rc1"},'
-			+ '{"id":"'+ "${leader2}" + '","ip":"172.1.2.2","leader":2,"name":"rc2"},'
-			+ '{"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
-			+ '{"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"},'
-			+ '{"id":"'+ "${computer5}" + '","ip":"172.1.2.5","name":"rc5"},'
-			+ '{"id":"'+ "${computer6}" + '","ip":"172.1.2.6","name":"rc6"},'
-			+ '{"id":"'+ "${computer7}" + '","ip":"172.1.2.7","name":"rc7"},'
-			+ '{"id":"'+ "${computer8}" + '","ip":"172.1.2.8","name":"rc8"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.1.2.1","leader":1,"name":"rc1"},'
+			+ '{"connected":true,"id":"'+ "${leader2}" + '","ip":"172.1.2.2","leader":2,"name":"rc2"},'
+			+ '{"connected":true,"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
+			+ '{"connected":true,"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"},'
+			+ '{"connected":true,"id":"'+ "${computer5}" + '","ip":"172.1.2.5","name":"rc5"},'
+			+ '{"connected":true,"id":"'+ "${computer6}" + '","ip":"172.1.2.6","name":"rc6"},'
+			+ '{"connected":true,"id":"'+ "${computer7}" + '","ip":"172.1.2.7","name":"rc7"},'
+			+ '{"connected":true,"id":"'+ "${computer8}" + '","ip":"172.1.2.8","name":"rc8"}'
 			+ '],'
 			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
@@ -1247,16 +1352,16 @@ verify_message(
 	service: stats,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.1","leader":1,"name":"rc1"},'
-			+ '{"id":"'+ "${leader2}" + '","ip":"172.1.2.2","leader":2,"name":"rc2"},'
-			+ '{"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
-			+ '{"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"},'
-			+ '{"id":"'+ "${computer5}" + '","ip":"172.1.2.5","name":"rc5"},'
-			+ '{"id":"'+ "${computer6}" + '","ip":"172.1.2.6","name":"rc6"},'
-			+ '{"id":"'+ "${computer7}" + '","ip":"172.1.2.7","name":"rc7"},'
-			+ '{"id":"'+ "${computer8}" + '","ip":"172.1.2.8","name":"rc8"},'
-			+ '{"id":"'+ "${computer9}" + '","ip":"172.1.2.9","name":"rc9"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.1.2.1","leader":1,"name":"rc1"},'
+			+ '{"connected":true,"id":"'+ "${leader2}" + '","ip":"172.1.2.2","leader":2,"name":"rc2"},'
+			+ '{"connected":true,"id":"'+ "${computer3}" + '","ip":"172.1.2.3","name":"rc3"},'
+			+ '{"connected":true,"id":"'+ "${computer4}" + '","ip":"172.1.2.4","name":"rc4"},'
+			+ '{"connected":true,"id":"'+ "${computer5}" + '","ip":"172.1.2.5","name":"rc5"},'
+			+ '{"connected":true,"id":"'+ "${computer6}" + '","ip":"172.1.2.6","name":"rc6"},'
+			+ '{"connected":true,"id":"'+ "${computer7}" + '","ip":"172.1.2.7","name":"rc7"},'
+			+ '{"connected":true,"id":"'+ "${computer8}" + '","ip":"172.1.2.8","name":"rc8"},'
+			+ '{"connected":true,"id":"'+ "${computer9}" + '","ip":"172.1.2.9","name":"rc9"}'
 			+ '],'
 			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
@@ -1267,46 +1372,29 @@ verify_message(
 	})
 return()
 
-// Function: verify CLUCKD_STATUS (with ticket)
-label(name: func_verify_cluckd_status_with_ticket)
+// Function: verify CLUCKD_STATUS (lost quorum)
+label(name: func_verify_cluckd_status_lost_quorum)
 save_parameter_value(parameter_name: status, variable_name: cluckd_status)
 print(message: "--- verify message CLUCKD_STATUS: ${cluckd_status}")
 verify_message(
 	command: CLUCKD_STATUS,
 	sent_service: cluckd,
-	server: ${hostname},
-	service: website,
+	server: rc11,
+	service: stats,
 	required_parameters: {
-		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.3","leader":1,"name":"rc1"}'
+		status: '{"cache_size":1,'
+			+ '"computers":['
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.1.2.2","leader":1,"name":"rc2"},' // from original ${leader2}
+			+ '{"connected":true,"id":"'+ "${computer7}" + '","ip":"172.1.2.7","name":"rc7"},'
+			+ '{"connected":true,"id":"'+ "${leader2}" + '","ip":"172.1.2.8","leader":2,"name":"rc8"}' // from ${computer8}
 			+ '],'
-			+ '"daemon_ready":true,'
+			+ '"daemon_ready":false,'
 			+ '"id":"' + "${leader0}" + '",'
 			+ '"ip":"127.0.0.1",'
-			+ '"leaders_count":2,'
-			+ '"neighbors_count":2,'
-			+ '"neighbors_quorum":2,'
-			+ '"tickets":'
-				+ '"added_ticket=true'
-				+ '|added_ticket_quorum=true'
-				+ '|entering_key=monster/123'
-				+ '|get_max_ticket=true'
-				+ '|lock_duration=10'
-				+ '|lock_failed=none'
-				+ '|lock_timeout_date=' + `[0-9]+(\\.[0-9]+)?`
-				+ '|locked=true'
-				+ '|object_name=lock1'
-				+ '|obtention_timeout=' + `[0-9]+(\\.[0-9]+)?`
-				+ '|our_ticket=112'
-				+ '|owner=monster'
-				+ '|serial=1'
-				+ '|server_name=monster'
-				+ '|service_name=website'
-				+ '|tag=505'
-				+ '|ticket_key=00000070/monster/123'
-				+ '|ticket_ready=true'
-				+ '|unlock_duration=10\\n"}'
+			+ '"leaders_count":3,'
+			+ '"neighbors_count":10,'
+			+ '"neighbors_quorum":6}'
 	})
 return()
 

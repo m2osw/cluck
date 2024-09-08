@@ -43,10 +43,11 @@ call(label: func_expect_cluster_status)
 call(label: func_send_random_absolutely)
 call(label: func_expect_lock_started_initial)
 call(label: func_expect_lock_started_reply_a)
+call(label: func_expect_lock_leaders_early)
+call(label: func_expect_lock_ready)
 call(label: func_expect_lock_started_reply_b)
 call(label: func_send_absolutely_with_unknown_serial)
 call(label: func_expect_lock_leaders)
-call(label: func_expect_lock_ready)
 call(label: func_expect_lock_started_reply_c)
 call(label: func_expect_lock_started_reply_d)
 call(label: func_expect_lock_failed_duration_too_small)
@@ -229,7 +230,7 @@ return()
 label(name: func_expect_lock_started_reply_b)
 print(message: "--- wait for message LOCK_STARTED (reply_b)....")
 call(label: func_wait_message)
-call(label: func_verify_lock_started_to_rc2_early)
+call(label: func_verify_lock_started_to_rc2)
 return()
 
 label(name: func_expect_lock_started_reply_c)
@@ -264,7 +265,14 @@ call(label: func_wait_message)
 call(label: func_verify_lock_failed_unlock_duration_too_small)
 return()
 
+label(name: func_expect_lock_leaders_early)
+print(message: "--- wait for message LOCK_LEADERS (early)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_leaders_early)
+return()
+
 label(name: func_expect_lock_leaders)
+print(message: "--- wait for message LOCK_LEADERS....")
 call(label: func_wait_message)
 call(label: func_verify_lock_leaders)
 return()
@@ -1228,8 +1236,8 @@ verify_message(
 return()
 
 // Function: verify LOCK STARTED (to rc2)
-label(name: func_verify_lock_started_to_rc2_early)
-print(message: "--- verify message LOCK_STARTED (rc2).... [early]")
+label(name: func_verify_lock_started_to_rc2)
+print(message: "--- verify message LOCK_STARTED (rc2)....")
 verify_message(
 	command: LOCK_STARTED,
 	sent_service: cluckd,
@@ -1238,26 +1246,13 @@ verify_message(
 	required_parameters: {
 		lock_id: ${other2_computer},
 		server_name: ${hostname},
-		start_time: `^[0-9]+(\\.[0-9]+)?$`
+		start_time: `^[0-9]+(\\.[0-9]+)?$`,
+		election_date: ${early_election_date}, // this happens between the first and second LOCK_LEADERS messages
+		leader0: ${leader0},
+		leader1: ${leader1}
 	},
 	forbidden_parameters: {
-		election_date,
-		leader0,
-		leader1,
-		leader2,
-		leader3
-	})
-return()
-
-// Function: verify LOCK READY
-label(name: func_verify_lock_ready)
-print(message: "--- verify message LOCK_READY....")
-verify_message(
-	command: LOCK_READY,
-	sent_service: cluckd,
-	service: ".",
-	required_parameters: {
-		cache: no
+		leader2
 	})
 return()
 
@@ -1302,6 +1297,18 @@ verify_message(
 	},
 	forbidden_parameters: {
 		leader3
+	})
+return()
+
+// Function: verify LOCK READY
+label(name: func_verify_lock_ready)
+print(message: "--- verify message LOCK_READY....")
+verify_message(
+	command: LOCK_READY,
+	sent_service: cluckd,
+	service: ".",
+	required_parameters: {
+		cache: no
 	})
 return()
 
@@ -1397,6 +1404,25 @@ verify_message(
 	})
 return()
 
+// Function: verify a LOCK LEADERS (early)
+label(name: func_verify_lock_leaders_early)
+verify_message(
+	command: LOCK_LEADERS,
+	sent_service: cluckd,
+	service: "*",
+	required_parameters: {
+		election_date: `^[0-9]+(\\.[0-9]+)?$`,
+		leader0: ${leader0},
+		leader1: ${leader1}
+		//leader2: ${leader2}
+	},
+	forbidden_parameters: {
+		leader2,
+		leader3
+	})
+save_parameter_value(parameter_name: election_date, variable_name: early_election_date, type: timestamp)
+return()
+
 // Function: verify a LOCK LEADERS
 label(name: func_verify_lock_leaders)
 verify_message(
@@ -1412,8 +1438,12 @@ verify_message(
 	forbidden_parameters: {
 		leader3
 	})
-save_parameter_value(parameter_name: election_date, variable_name: election_date)
+save_parameter_value(parameter_name: election_date, variable_name: election_date, type: timestamp)
+compare(expression: ${early_election_date} <=> ${election_date})
+if(greater: unexpected_election_date)
 return()
+label(name: unexpected_election_date)
+exit(error_message: "election date in second LOCK_LEADERS (${election_date}) is less than the previous election date (${early_election_date})")
 
 // Function: verify LOCK_ENTERING
 label(name: func_verify_lock_entering_rc1)
@@ -2915,13 +2945,13 @@ verify_message(
 //set_variable(name: leader1, value: "12|" + ${leader1_random_str} + "|172.16.17.18|" + (${leader1_pid} % ${max_pid} + 1) + "|rc2")
 //set_variable(name: leader2, value: "12|" + ${leader2_random_str} + "|172.20.20.20|" + (${leader2_pid} % ${max_pid} + 1) + "|rc3")
 		status: '{"computers":['
-			+ '{"id":"'+ "${other2_computer}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader0}" + '","ip":"172.1.2.3","name":"rc1"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.16.17.18","name":"rc2"},'
-			+ '{"id":"'+ "${leader2}" + '","ip":"172.20.20.20","name":"rc3"},'
-			+ '{"id":"'+ "${other1_computer}" + '","ip":"172.99.0.23","name":"rc4"}'
+			+ '{"connected":true,"id":"'+ "${other2_computer}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"172.1.2.3","name":"rc1"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.16.17.18","name":"rc2"},'
+			+ '{"connected":true,"id":"'+ "${leader2}" + '","ip":"172.20.20.20","name":"rc3"},'
+			+ '{"connected":true,"id":"'+ "${other1_computer}" + '","ip":"172.99.0.23","name":"rc4"}'
 			+ '],'
-			+ '"daemon_ready":true,'
+			+ '"daemon_ready":false,'
 			+ '"id":"' + "${other2_computer}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":0,'
@@ -4718,32 +4748,6 @@ send_message(
 	service: cluckd,
 	parameters: {
 		neighbors_count: 5
-	})
-return()
-
-// Function: send HANGUP with an empty server name
-label(name: func_send_hang_up_with_our_server_name)
-send_message(
-	command: HANGUP,
-	//sent_server: ${hostname},
-	//sent_service: communicatord,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		server_name: "${hostname}"
-	})
-return()
-
-// Function: send HANGUP with an empty server name
-label(name: func_send_hang_up_with_unknown_server_name)
-send_message(
-	command: HANGUP,
-	//sent_server: ${hostname},
-	//sent_service: communicatord,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		server_name: "unknown"
 	})
 return()
 

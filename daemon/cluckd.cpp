@@ -532,7 +532,13 @@ bool cluckd::is_daemon_ready() const
     && f_computers.size() < f_neighbors_count)
     {
         SNAP_LOG_TRACE
-            << "not considered ready: quorum changed, re-election expected soon."
+            << "not considered ready: quorum changed, re-election expected soon (number of neighbors: "
+            << f_neighbors_count
+            << ", neighbors quorum: "
+            << f_neighbors_quorum
+            << ", number of computers: "
+            << f_computers.size()
+            << "."
             << SNAP_LOG_SEND;
         return false;
     }
@@ -551,25 +557,25 @@ bool cluckd::is_daemon_ready() const
 
     // are all leaders connected to us?
     //
+    std::size_t ready(0);
+    computer::pointer_t last_leader;
     for(auto const & l : f_leaders)
     {
-        if(!l->get_connected())
+        if(l->get_connected())
         {
-            SNAP_LOG_TRACE
-                << "not considered ready: no direct connection with leader: \""
-                << l->get_name()
-                << "\"."
-                << SNAP_LOG_SEND;
-
+            ++ready;
+        }
+        else
+        {
             // attempt resending a LOCK_STARTED because it could be that it
             // did not work quite right and the cluck daemons are not
             // going to ever talk with each others otherwise
             //
             // we also make sure we do not send the message too many times,
-            // in five seconds it should be resolved...
+            // it should be resolved in five seconds or less...
             //
             time_t const now(time(nullptr));
-            if(now > f_pace_lockstarted)
+            if(now >= f_pace_lockstarted)
             {
                 // pause for 5 to 6 seconds in case this happens a lot
                 //
@@ -583,13 +589,28 @@ bool cluckd::is_daemon_ready() const
                 const_cast<cluckd *>(this)->send_lock_started(&temporary_message);
             }
 
-            return false;
+            last_leader = l;
         }
     }
 
-    // it looks like we are ready
+    // we only need to have 2 leaders to have a functional system with
+    // 2 or 3 leaders total
     //
-    return true;
+    if(ready >= 2
+    || ready == f_leaders.size())
+    {
+        return true;
+    }
+
+    // we're still not ready
+    //
+    SNAP_LOG_TRACE
+        << "not considered ready: no direct connection with leader: \""
+        << last_leader->get_name()
+        << "\"."
+        << SNAP_LOG_SEND;
+
+    return false;
 }
 
 
@@ -610,12 +631,16 @@ bool cluckd::is_daemon_ready() const
  *
  * \code
  *      computer::pointer_t leader(is_leader());
- *      // ... then use `leader` any number of times ...
+ *      if(leader != nullptr)
+ *      {
+ *          // ... use `leader` any number of times ...
+ *      }
  * \endcode
  *
  * \par
  * This is done that way because the function may return a different result
- * over time (i.e. if a re-election happens).
+ * over time (i.e. if a re-election happens). So you do not want to cache
+ * the results between calls to your function.
  *
  * \param[in] id  The identifier of the leader to search, if empty, default
  *                to f_my_id (i.e. whether this cluckd is a leader).
@@ -644,6 +669,27 @@ computer::pointer_t cluckd::is_leader(std::string id) const
 }
 
 
+/** \brief Get pointer to leader A.
+ *
+ * We have 1 to 3 leaders in each cluck daemon. There is "self", leader A,
+ * and leader B. This function returns leader A or a null pointer if there
+ * is only one leader.
+ *
+ * Leader A is either f_leaders[0] or f_leaders[1]. If "self" is f_leaders[0]
+ * then the function returns f_leaders[1], If "self" is f_leaders[1], then
+ * the function returns f_leaders[0].
+ *
+ * \note
+ * In a setup where you have only 1 computer total, this function always
+ * returns a null pointer.
+ *
+ * \note
+ * If the elections have not yet happened, this function always returns
+ * a null pionter.
+ *
+ * \return A pointer to the leader A computer or nullptr if there is no
+ *         such computer.
+ */
 computer::pointer_t cluckd::get_leader_a() const
 {
 #ifdef _DEBUG
@@ -670,6 +716,27 @@ computer::pointer_t cluckd::get_leader_a() const
 }
 
 
+/** \brief Get pointer to leader B.
+ *
+ * We have 1 to 3 leaders in each cluck daemon. There is "self", leader A,
+ * and leader B. This function returns leader B or a null pointer if there
+ * is only one leader.
+ *
+ * Leader B is either f_leaders[1] or f_leaders[2]. If "self" is f_leaders[1]
+ * then the function returns f_leaders[2], If "self" is f_leaders[2], then
+ * the function returns f_leaders[1].
+ *
+ * \note
+ * In a setup where you have only 1 or 2 computers total, this function
+ * always returns a null pointer.
+ *
+ * \note
+ * If the elections have not yet happened, this function always returns
+ * a null pionter.
+ *
+ * \return A pointer to the leader B computer or nullptr if there is no
+ *         such computer.
+ */
 computer::pointer_t cluckd::get_leader_b() const
 {
 #ifdef _DEBUG
@@ -724,19 +791,14 @@ void cluckd::msg_info(ed::message & msg)
     as2js::json::json_value::pointer_t result(std::make_shared<as2js::json::json_value>(p, obj));
 
     {
-        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p,
-            f_my_id.empty()
-                ? "<not ready>"
-                : f_my_id));
-        result->set_member("id", value);
+        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, is_daemon_ready()));
+        result->set_member("daemon_ready", value);
     }
 
+    if(!f_my_id.empty())
     {
-        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p,
-            is_daemon_ready()
-                ? "true"
-                : "false"));
-        result->set_member("daemon_ready", value);
+        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, f_my_id));
+        result->set_member("id", value);
     }
 
     {
@@ -763,6 +825,12 @@ void cluckd::msg_info(ed::message & msg)
         result->set_member("leaders_count", value);
     }
 
+    if(!f_message_cache.empty())
+    {
+        as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, as2js::integer(f_message_cache.size())));
+        result->set_member("cache_size", value);
+    }
+
     {
         as2js::json::json_value::array_t computers;
         as2js::json::json_value::pointer_t list(std::make_shared<as2js::json::json_value>(p, computers));
@@ -785,6 +853,11 @@ void cluckd::msg_info(ed::message & msg)
             {
                 as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, c.second->get_ip_address().to_ipv4or6_string(addr::STRING_IP_ADDRESS | addr::STRING_IP_BRACKET_ADDRESS)));
                 item->set_member("ip", value);
+            }
+
+            {
+                as2js::json::json_value::pointer_t value(std::make_shared<as2js::json::json_value>(p, c.second->get_connected()));
+                item->set_member("connected", value);
             }
 
             {
@@ -910,7 +983,10 @@ void cluckd::election_status()
     //
     if(f_my_ip_address.is_default())
     {
-        return;
+        // this should not be possible since we expect to receive the
+        // REGISTER's reply before any other message
+        //
+        return; // LCOV_EXCL_LINE
     }
 
     // neighbors count is 0 until we receive a very first CLUSTER_UP
@@ -954,6 +1030,8 @@ void cluckd::election_status()
     // consensus problems, in effect we have one "temporary-leader" that ends
     // up telling us who the final three leaders are)
     //
+    // TODO: verify that this works properly in a non-complete cluster
+    //
     for(auto & c : f_computers)
     {
         // Note: the test fails when we compare to ourselves so we do not
@@ -976,26 +1054,7 @@ void cluckd::election_status()
         //
         if(c.second->get_priority() != computer::PRIORITY_OFF)
         {
-            std::string id(c.second->get_id());
-
-            // is this computer a leader?
-            //
-            auto const it(std::find(f_leaders.begin(), f_leaders.end(), c.second));
-            if(it != f_leaders.end())
-            {
-                // already a leader, keep it at the start
-                //
-                id = 'A' + id;
-            }
-            else
-            {
-                id = 'B' + id;
-            }
-
-            // as a result, the sort uses the random number to sort the
-            // leaders (since all end up with priority "00")
-            //
-            sort_by_id[id] = c.second;
+            sort_by_id[c.second->get_id()] = c.second;
         }
         else
         {
@@ -1042,6 +1101,7 @@ SNAP_LOG_WARNING << "--- sort by ID: " << s.first << SNAP_LOG_SEND;
     if(too_many_computers_off)
     {
         // only generate the flag once we reach the CLUSTER_COMPLETE status
+        // (we cannot be sure that the `off` variable is valid until then)
         //
         if(f_computers.size() >= f_neighbors_count)
         {
@@ -1064,7 +1124,10 @@ SNAP_LOG_WARNING << "--- sort by ID: " << s.first << SNAP_LOG_SEND;
         return;
     }
 
-    if(sort_by_id.size() < 3
+    // an election works as soon as we have at least 2 leaders
+    // or we reached the total number of computers
+    //
+    if(sort_by_id.size() < 2
     && sort_by_id.size() != f_computers.size())
     {
         return;
@@ -1104,6 +1167,12 @@ SNAP_LOG_WARNING
 << " leaders."
 << SNAP_LOG_SEND;
 #endif
+
+    // we need to synchronize from this cluckd daemon if it is one of the
+    // leaders otherwise we won't get the LOCK_STARTED which would also
+    // call that function
+    //
+    synchronize_leaders();
 }
 
 
@@ -1563,6 +1632,14 @@ void cluckd::synchronize_leaders()
  */
 void cluckd::forward_message_to_leader(ed::message & msg)
 {
+    // for safety, we do not call this function if the daemon is not
+    // considered ready meaning it has at least one leader
+    //
+    if(f_leaders.empty())
+    {
+        return; // LCOV_EXCL_LINE
+    }
+
     // we are not a leader, we work as a proxy by forwarding the
     // message to a leader, we add our trail so the LOCKED and
     // other messages can be proxied back
@@ -2393,6 +2470,8 @@ void cluckd::msg_cluster_down(ed::message & msg)
  *
  * Our cluster is finally ready, so we can send the LOCK_STARTED and work
  * on a leader election if still required.
+ *
+ * \param[in] msg  CLUSTER_UP message we are dealing with.
  */
 void cluckd::msg_cluster_up(ed::message & msg)
 {
@@ -3564,6 +3643,18 @@ void cluckd::msg_lock_started(ed::message & msg)
         }
         computer->set_start_time(start_time);
 
+#ifdef _DEBUG
+        // LCOV_EXCL_START
+        if(computer->get_name() != server_name)
+        {
+            throw cluck::logic_error("cluckd::msg_lock_started(): server_name ("
+                + server_name
+                + ") does not match the new computer name ("
+                + computer->get_name()
+                + ").");
+        }
+        // LCOV_EXCL_STOP
+#endif
         f_computers[computer->get_name()] = computer;
     }
     else
@@ -3594,6 +3685,7 @@ void cluckd::msg_lock_started(ed::message & msg)
 
     // keep the newest election results
     //
+    computer::pointer_t old_leader(is_leader());
     if(msg.has_parameter(cluck::g_name_cluck_param_election_date))
     {
         snapdev::timespec_ex const election_date(msg.get_timespec_parameter(cluck::g_name_cluck_param_election_date));
@@ -3604,8 +3696,7 @@ void cluckd::msg_lock_started(ed::message & msg)
         }
     }
 
-    bool const set_my_leaders(f_leaders.empty());
-    if(set_my_leaders)
+    if(f_leaders.empty())
     {
         for(int idx(0); idx < 3; ++idx)
         {
@@ -3645,7 +3736,8 @@ void cluckd::msg_lock_started(ed::message & msg)
     //
     check_lock_status();
 
-    if(new_computer)
+    if(new_computer
+    || old_leader != is_leader())
     {
         // send a reply if that was a new computer
         //
@@ -3694,7 +3786,7 @@ void cluckd::msg_lock_status(ed::message & msg)
  * in that existing object. The extraction is additive so we can do
  * it any number of times.
  *
- * \param[in] msg  The message to reply to.
+ * \param[in] msg  The LOCK_TICKETS message.
  */
 void cluckd::msg_lock_tickets(ed::message & msg)
 {
@@ -3921,7 +4013,6 @@ SNAP_LOG_WARNING << "removed \"" << server_name << "\"" << SNAP_LOG_SEND;
             , c));
     if(li != f_leaders.end())
     {
-SNAP_LOG_WARNING << "removed \"" << server_name << "\" is also a leader?!" << SNAP_LOG_SEND;
         f_leaders.erase(li);
 
         // elect another computer in case the one we just erased was a leader

@@ -66,6 +66,7 @@ call(label: func_send_lock) // send it twice, the second time it generates a LOC
 
 call(label: func_expect_early_unlocked)
 call(label: func_expect_locked)
+call(label: func_send_lock_leaders)
 
 call(label: func_send_duplicate_add_ticket)
 
@@ -389,6 +390,7 @@ verify_message(
 	})
 // the leader0 parameter needs to be defined from what that leader sends us
 save_parameter_value(parameter_name: lock_id, variable_name: leader0)
+save_parameter_value(parameter_name: election_date, variable_name: election_date)
 return()
 
 // Function: verify a LOCK READY
@@ -413,7 +415,7 @@ verify_message(
 	service: website,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"}'
 			+ '],'
 			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
@@ -439,7 +441,7 @@ verify_message(
 		// pipes (|) and those are interpreted by the regex system
 		//
 		status: '{"computers":['
-			+ '{"id":"' + "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"}'
+			+ '{"connected":true,"id":"' + "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"}'
 			+ '],'
 			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
@@ -771,6 +773,20 @@ send_message(
 		pid: 10203,
 		duration: 15,
 		timeout: ${early_timeout}
+	})
+return()
+
+label(name: func_send_lock_leaders)
+print(message: "send LOCK_LEADERS")
+send_message(
+	command: LOCK_LEADERS,
+	sent_server: rc1, // this does not make sense since we are supposed to have a single computer so a single cluckd...
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		election_date: ${election_date},
+		leader0: ${leader0}
 	})
 return()
 

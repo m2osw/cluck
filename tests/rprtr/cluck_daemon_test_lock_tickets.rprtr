@@ -1,221 +1,163 @@
 // test:
 //
-//   * one real cluckd daemon (server: ${hostname} ("rc0"), service: cluckd, IP: 127.0.0.1)
-//   * simulate local communicatord (server: ${hostname}, service: communicatord)
-//   * simulate remote communicatord 1 (server: rc1, service: communicatord, IP: 10.1.2.3)
-//   * simulate remote communicatord 2 (server: rc2, service: communicatord, IP: 172.16.17.18)
-//   * simulate remote cluckd 1 (server: rc1, service: cluckd)
-//   * simulate remote cluckd 2 (server: rc2, service: cluckd)
-//   * simulate one local client (server: ${hostname}, service: website)
-//   * simulate one remote client 1 (server: rc1, service: website)
-//   * simulate one remote client 2 (server: rc2, service: website)
-//   * simulate another local client (server: ${hostname}, service: database)
-//   * simulate another local client (server: ${hostname}, service: manager)
+//   * give cluckd a IP so it's not leader0 that way it will send a
+//     synchronization message (LOCK_TICKETS) when a HUNGUP happens
+//   * setup 4 computers, send a LOCK, wait for LOCKED, and at that time
+//     kill leader2
 //
-
 
 // basic setup
 //
 max_pid(variable_name: max_pid)
+hostname(variable_name: hostname)
+
 random(variable_name: leader0_random, negative: 0)
 random(variable_name: leader0_pid, negative: 0)
 random(variable_name: leader2_random, negative: 0)
 random(variable_name: leader2_pid, negative: 0)
-set_variable(name: leader0, value: "14|" + ${leader0_random} % 0x100000000 + "|10.1.2.3|" + (${leader0_pid} % ${max_pid} + 1) + "|rc1")
+random(variable_name: computer3_random, negative: 0)
+random(variable_name: computer3_pid, negative: 0)
+
+set_variable(name: leader0, value: "01|" + ${leader0_random} % 0x100000000 + "|10.1.2.3|" + (${leader0_pid} % ${max_pid} + 1) + "|rc1")
 set_variable(name: leader1, value: "invalid-id (search on leader1 or save_parameter_value() so see where it gets set)")
-set_variable(name: leader2, value: "14|" + ${leader2_random} % 0x100000000 + "|172.16.17.18|" + (${leader2_pid} % ${max_pid} + 1) + "|rc2")
-hostname(variable_name: hostname)
+set_variable(name: leader2, value: "03|" + ${leader2_random} % 0x100000000 + "|172.16.17.18|" + (${leader2_pid} % ${max_pid} + 1) + "|rc2")
+set_variable(name: computer3, value: "04|" + ${computer3_random} + "|172.1.2.3|" + (${computer3_pid} % ${max_pid} + 1) + "|rc3")
+
 run()
 listen(address: <127.0.0.1:20002>)
 
 // the following are the messages we expect in the order they are expected...
 //
 call(label: func_expect_register)
+call(label: func_send_help)
+call(label: func_send_ready)
+
 call(label: func_expect_commands)
+
 call(label: func_expect_service_status)
+call(label: func_send_status_of_fluid_settings)
+
 call(label: func_expect_fluid_settings_listen)
+call(label: func_send_fluid_settings_registered)
+call(label: func_send_fluid_settings_value_updated)
+call(label: func_send_fluid_settings_ready)
+
 call(label: func_expect_cluster_status)
+call(label: func_send_cluster_up)
+
 call(label: func_expect_lock_started_initial)
-//call(label: func_expect_no_lock)
-call(label: func_expect_lock_started_reply_a)
-//call(label: func_expect_no_lock)
-call(label: func_expect_lock_started_reply_b)
+call(label: func_send_lock_started_from_rc1)
+call(label: func_send_lock_started_from_rc2)
+call(label: func_send_lock_started_from_rc3)
+
+call(label: func_expect_lock_started_reply_rc1_early)
+call(label: func_send_lock_leaders_from_rc1)
+
+call(label: func_expect_lock_started_reply_rc2_early)
+call(label: func_expect_lock_started_reply_rc3_early)
+
 //call(label: func_expect_lock_leaders) -- we send that one in this test
+
 call(label: func_expect_lock_ready)
+
+// WARNING: variable is reused in the verify_lock_started and others
+now(variable_name: lock_timeout)
+set_variable(name: lock_timeout, value: ${lock_timeout} + 60) // now + 1 minute
+call(label: func_send_lock)
+
 call(label: func_expect_lock_entering_rc1)
+call(label: func_send_lock_entered_rc1)
 call(label: func_expect_lock_entering_rc2)
-call(label: func_send_absolutely_with_invalid_serial)
+call(label: func_send_lock_entered_rc2)
+
 call(label: func_expect_get_max_ticket_rc1)
+call(label: func_send_max_ticket_from_rc1)
 call(label: func_expect_get_max_ticket_rc2)
-call(label: func_expect_invalid_reply_to_absolutely)
+call(label: func_send_max_ticket_from_rc2)
+
 call(label: func_expect_add_ticket_rc1)
-call(label: func_send_list_tickets)
+call(label: func_send_ticket_added_from_rc1)
 call(label: func_expect_add_ticket_rc2)
+call(label: func_send_ticket_added_from_rc2)
+
 call(label: func_expect_lock_exiting_rc1)
+call(label: func_send_activate_lock_from_rc1)
 call(label: func_expect_lock_exiting_rc2)
+call(label: func_send_activate_lock_from_rc2)
+
 call(label: func_expect_ticket_ready_rc1)
 call(label: func_expect_ticket_ready_rc2)
+
 call(label: func_expect_activate_lock_rc1)
+call(label: func_send_lock_activated_from_rc1)
 call(label: func_expect_activate_lock_rc2)
-call(label: func_expect_ticket_list)
+call(label: func_send_lock_activated_from_rc2)
+
 call(label: func_expect_locked)
-call(label: func_send_hang_up_with_our_server_name)
+call(label: func_send_hangup) // this is the crux message of this test
+
+now(variable_name: lock_timeout)
+set_variable(name: lock_timeout, value: ${lock_timeout} + 60) // now + 1 minute
+call(label: func_send_lock_again)
+
+call(label: func_send_lock_leaders_from_rc1_after_hangup)
+
 call(label: func_expect_lock_activated_rc1)
 call(label: func_expect_lock_activated_rc2)
-call(label: func_sleep_quietly_3s)
+
+call(label: func_expect_lock_entering_rc1_again)
+call(label: func_send_lock_entered_rc1_again)
+
+call(label: func_expect_lock_tickets_rc1)
+call(label: func_expect_lock_tickets_rc3)
+
+call(label: func_expect_get_max_ticket_rc1_again)
+call(label: func_send_max_ticket_from_rc1_again)
+call(label: func_expect_get_max_ticket_rc3_again)
+call(label: func_send_max_ticket_from_rc3_again)
+
+call(label: func_expect_add_ticket_rc1_again)
+call(label: func_send_ticket_added_from_rc1_again)
+call(label: func_expect_add_ticket_rc3_again)
+call(label: func_send_ticket_added_from_rc3_again)
+
+call(label: func_expect_lock_exiting_rc1_again)
+call(label: func_expect_lock_exiting_rc3_again)
+
+call(label: func_expect_ticket_ready_rc1_again)
+call(label: func_expect_ticket_ready_rc3_again)
+
+//call(label: func_expect_lock_started_reply_rc2)
+
+call(label: func_sleep_quietly_25cs)
 call(label: func_send_unlock)
+
 call(label: func_expect_drop_ticket_rc1)
-call(label: func_expect_drop_ticket_rc2)
+//call(label: func_expect_drop_ticket_rc2)
+call(label: func_expect_drop_ticket_rc3)
+
 call(label: func_expect_unlocked)
 
-// test a LOCK with a serial number to see whether we get the copies as expected
-//
-call(label: func_send_lock_with_serial)
-call(label: func_expect_alive)
-call(label: func_send_absolutely)
-call(label: func_expect_lock_entering_lks_rc1)
-call(label: func_expect_lock_entering_lks_rc2)
+call(label: func_expect_activate_lock_rc1_again)
+call(label: func_send_lock_activated_from_rc1_again)
+call(label: func_expect_activate_lock_rc3_again)
+call(label: func_send_lock_activated_from_rc3_again)
 
-// we tested a first lock and it worked since we reached here
-//
-// now try 6 locks from 4 different services and two repeats:
-//
-//     send lock "book_update" from remote client 1 / website
-//     send lock "schema_manager" from local client database
-//     send lock "book_update" from remote client 2 / website
-//     send lock "settings" from remote client 2 manager
-//     send lock "book_update" from local client / website
-//     send lock "fail_early" from remote client 2 / engine
-//     send lock "failing_bloom" from remote client 4 / bloom_filter
-//     send lock "failing_bloom" from remote client 5 / bloom_filter
-//
-// this checks that locks with different names (and thus keys) can indeed
-// be obtained simultaneously
-call(label: func_send_multilocks)
-call(label: func_expect_lock_entering_lk1_rc1)
-call(label: func_expect_lock_entering_lk1_rc2)
-call(label: func_expect_lock_entering_lk2_rc1)
-call(label: func_expect_lock_entering_lk2_rc2)
-call(label: func_expect_lock_entering_lk3_rc1)
-call(label: func_expect_lock_entering_lk3_rc2)
-call(label: func_expect_lock_entering_lk4_rc1)
-call(label: func_expect_lock_entering_lk4_rc2)
-call(label: func_expect_lock_entering_lk5_rc1)
-call(label: func_expect_lock_entering_lk5_rc2)
-call(label: func_expect_lock_entering_lk6_rc1)
-call(label: func_expect_lock_entering_lk6_rc2)
-call(label: func_expect_lock_entering_lk7_rc1)
-call(label: func_expect_lock_entering_lk7_rc2)
-call(label: func_expect_lock_entering_lk8_rc1)
-call(label: func_expect_lock_entering_lk8_rc2)
-call(label: func_send_list_tickets)
-call(label: func_expect_get_max_ticket_lk1_rc1)
-call(label: func_expect_get_max_ticket_lk1_rc2)
-call(label: func_expect_get_max_ticket_lk2_rc1)
-call(label: func_expect_get_max_ticket_lk2_rc2)
-call(label: func_expect_get_max_ticket_lk3_rc1)
-call(label: func_expect_get_max_ticket_lk3_rc2)
-call(label: func_expect_get_max_ticket_lk4_rc1)
-call(label: func_expect_get_max_ticket_lk4_rc2)
-call(label: func_expect_get_max_ticket_lk5_rc1)
-call(label: func_expect_get_max_ticket_lk5_rc2)
-call(label: func_expect_lock_failed_early)
-call(label: func_expect_get_max_ticket_lk7_rc1)
-call(label: func_expect_get_max_ticket_lk7_rc2)
-call(label: func_expect_get_max_ticket_lk8_rc1)
-call(label: func_expect_get_max_ticket_lk8_rc2)
-call(label: func_expect_empty_ticket_list)
-call(label: func_expect_add_ticket_lk1_rc1)
-call(label: func_expect_add_ticket_lk1_rc2)
-call(label: func_expect_add_ticket_lk2_rc1)
-call(label: func_expect_add_ticket_lk2_rc2)
-call(label: func_send_hang_up_with_unknown_server_name)
-call(label: func_expect_add_ticket_lk3_rc1)
-call(label: func_expect_add_ticket_lk3_rc2)
-call(label: func_expect_add_ticket_lk4_rc1)
-call(label: func_expect_add_ticket_lk4_rc2)
-call(label: func_expect_add_ticket_lk5_rc1)
-call(label: func_expect_add_ticket_lk5_rc2)
-call(label: func_expect_add_ticket_lk7_rc1)
-call(label: func_expect_add_ticket_lk7_rc2)
-call(label: func_expect_add_ticket_lk8_rc1)
-call(label: func_expect_add_ticket_lk8_rc2)
-call(label: func_send_list_tickets)
-call(label: func_expect_lock_exiting_lk1_rc1)
-call(label: func_expect_lock_exiting_lk1_rc2)
-call(label: func_expect_lock_exiting_lk2_rc1)
-call(label: func_expect_lock_exiting_lk2_rc2)
-call(label: func_expect_ticket_ready_lk2_rc1)
-call(label: func_expect_ticket_ready_lk2_rc2)
-call(label: func_expect_activate_lock_lk2_rc1)
-call(label: func_expect_activate_lock_lk2_rc2)
-call(label: func_expect_lock_exiting_lk3_rc1)
-call(label: func_expect_lock_exiting_lk3_rc2)
-call(label: func_expect_lock_exiting_lk4_rc1)
-call(label: func_expect_lock_exiting_lk4_rc2)
-call(label: func_expect_ticket_ready_lk4_rc1)
-call(label: func_expect_ticket_ready_lk4_rc2)
-call(label: func_expect_activate_lock_lk4_rc1)
-call(label: func_expect_activate_lock_lk4_rc2)
-call(label: func_expect_lock_exiting_lk5_rc1)
-call(label: func_expect_lock_exiting_lk5_rc2)
-call(label: func_expect_ticket_ready_lk1_rc1)
-call(label: func_expect_ticket_ready_lk1_rc2)
-call(label: func_expect_ticket_ready_lk3_rc1)
-call(label: func_expect_ticket_ready_lk3_rc2)
-call(label: func_expect_ticket_ready_lk5_rc1)
-call(label: func_expect_ticket_ready_lk5_rc2)
-call(label: func_expect_activate_lock_lk1_rc1) // Note: this happens here because lk1, lk2, and lk3 tickets need to be processed
-call(label: func_expect_activate_lock_lk1_rc2)
-call(label: func_expect_lock_failed_bloom_lk7)
-call(label: func_expect_lock_failed_bloom_lk8)
-call(label: func_expect_long_ticket_list)
-call(label: func_expect_locked_lk1)
-call(label: func_expect_lock_activated_lk1_rc1)
-call(label: func_expect_lock_activated_lk1_rc2)
-call(label: func_expect_locked_lk2)
-call(label: func_expect_lock_activated_lk2_rc1)
-call(label: func_expect_lock_activated_lk2_rc2)
-call(label: func_expect_locked_lk4)
-call(label: func_expect_lock_activated_lk4_rc1)
-call(label: func_expect_lock_activated_lk4_rc2)
-call(label: func_send_list_tickets)
-call(label: func_expect_locked_ticket_list)
+call(label: func_expect_locked_again)
+
 call(label: func_sleep_quietly_25cs)
-call(label: func_send_unlock_lk1)
-call(label: func_expect_drop_ticket_lk1_rc1)
-call(label: func_expect_drop_ticket_lk1_rc2)
-call(label: func_expect_unlocked_lk1)
-call(label: func_expect_activate_lock_lk3_rc1)
-call(label: func_expect_activate_lock_lk3_rc2)
-call(label: func_expect_locked_lk3)
-//call(label: func_expect_lock_activated_lk3_rc1)
-//call(label: func_expect_lock_activated_lk3_rc2)
-call(label: func_sleep_quietly_25cs)
-call(label: func_send_unlock_lk4)
-call(label: func_send_unlock_lk2)
-call(label: func_sleep_quietly_25cs)
-call(label: func_send_unlock_lk3)
-call(label: func_expect_drop_ticket_lk4_rc1)	// TODO: determine why this does not happen before the sleep 0.25s
-call(label: func_expect_drop_ticket_lk4_rc2)
-call(label: func_expect_unlocked_lk4)
-call(label: func_expect_drop_ticket_lk2_rc1)
-call(label: func_expect_drop_ticket_lk2_rc2)
-call(label: func_expect_unlocked_lk2)
-call(label: func_expect_drop_ticket_lk3_rc1)
-call(label: func_expect_drop_ticket_lk3_rc2)
-call(label: func_expect_unlocked_lk3)
-call(label: func_expect_activate_lock_lk5_rc1)
-call(label: func_expect_activate_lock_lk5_rc2)
-call(label: func_expect_locked_lk5)
-//call(label: func_expect_lock_activated_lk5_rc1)
-//call(label: func_expect_lock_activated_lk5_rc2)
-call(label: func_sleep_quietly_25cs)
-call(label: func_send_unlock_lk5)
-call(label: func_expect_drop_ticket_lk5_rc1)
-call(label: func_expect_drop_ticket_lk5_rc2)
-call(label: func_expect_unlocked_lk5)
-call(label: func_send_hangup)
+call(label: func_send_unlock_again)
+
+call(label: func_expect_drop_ticket_rc1_again)
+call(label: func_expect_drop_ticket_rc3_again)
+
+call(label: func_expect_unlocked_again)
+
+set_variable(name: cluckd_status, value: "down")
+call(label: func_send_lock_status)
+call(label: func_expect_lock_ready_from_rc3)
+
+
 
 
 
@@ -316,8 +258,6 @@ label(name: func_expect_register)
 print(message: "--- expect REGISTER ---")
 call(label: func_wait_message)
 call(label: func_verify_register)
-call(label: func_send_help)
-call(label: func_send_ready)
 return()
 
 // Function: expect COMMANDS
@@ -332,7 +272,6 @@ label(name: func_expect_service_status)
 print(message: "--- expect SERVICE_STATUS ---")
 call(label: func_wait_message)
 call(label: func_verify_service_status)
-call(label: func_send_status_of_fluid_settings)
 return()
 
 // Function: expect FLUID_SETTINGS_LISTEN
@@ -340,16 +279,12 @@ label(name: func_expect_fluid_settings_listen)
 print(message: "--- expect FLUID_SETTINGS_LISTEN ---")
 call(label: func_wait_message)
 call(label: func_verify_fluid_settings_listen)
-call(label: func_send_fluid_settings_registered)
-call(label: func_send_fluid_settings_value_updated)
-call(label: func_send_fluid_settings_ready)
 return()
 
 // Function: expect CLUSTER_STATUS
 label(name: func_expect_cluster_status)
 call(label: func_wait_message)
 call(label: func_verify_cluster_status)
-call(label: func_send_cluster_up)
 return()
 
 // Function: expect LOCK_STARTED
@@ -357,8 +292,6 @@ label(name: func_expect_lock_started_initial)
 print(message: "--- wait for message LOCK_STARTED (initial)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_started_broadcast_initial)
-call(label: func_send_lock_started_from_rc1)
-call(label: func_send_lock_started_from_rc2)
 return()
 
 label(name: func_expect_no_lock)
@@ -367,24 +300,33 @@ call(label: func_wait_message)
 call(label: func_verify_no_lock)
 return()
 
-// Function: expect LOCK_STARTED (reply A)
-label(name: func_expect_lock_started_reply_a)
+// Function: expect LOCK_STARTED (rc1 reply/early)
+label(name: func_expect_lock_started_reply_rc1_early)
 // this reply does not yet include the leaders (too early)
-print(message: "--- wait for message LOCK_STARTED (reply_a)....")
+print(message: "--- wait for message LOCK_STARTED (reply rc1/early)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_started_to_rc1_early)
-call(label: func_send_lock_leaders_from_rc1)
 return()
 
-//label(name: func_expect_lock_leaders)
-//call(label: func_wait_message)
-//call(label: func_verify_lock_leaders)
-//return()
-
-label(name: func_expect_lock_started_reply_b)
-print(message: "--- wait for message LOCK_STARTED (reply_b)....")
+// Function: expect LOCK_STARTED (rc2 reply/early)
+label(name: func_expect_lock_started_reply_rc2_early)
+print(message: "--- wait for message LOCK_STARTED (reply rc2/early)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_started_to_rc2_early)
+return()
+
+// Function: expect LOCK_STARTED (rc2 reply)
+label(name: func_expect_lock_started_reply_rc2)
+print(message: "--- wait for message LOCK_STARTED (reply rc2)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_to_rc2)
+return()
+
+// Function: expect LOCK_STARTED (rc3 reply/early)
+label(name: func_expect_lock_started_reply_rc3_early)
+print(message: "--- wait for message LOCK_STARTED (reply rc3/early)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_started_to_rc3_early)
 return()
 
 // Function:: expect LOCK_READY
@@ -392,24 +334,37 @@ label(name: func_expect_lock_ready)
 print(message: "--- wait for message LOCK_READY....")
 call(label: func_wait_message)
 call(label: func_verify_lock_ready)
-// WARNING: variable is reused in the verify_lock_started and others
-now(variable_name: lock_timeout)
-set_variable(name: lock_timeout, value: ${lock_timeout} + 60) // now + 1 minute
-call(label: func_send_lock)
+return()
+
+// Function:: expect LOCK_READY from rc3
+label(name: func_expect_lock_ready_from_rc3)
+print(message: "--- wait for message LOCK_READY (from rc3)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_ready_from_rc3)
 return()
 
 label(name: func_expect_lock_entering_rc1)
 print(message: "--- wait for message LOCK_ENTERING (rc1)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_entering_rc1)
-call(label: func_send_lock_entered_rc1)
+return()
+
+label(name: func_expect_lock_entering_rc1_again)
+print(message: "--- wait for message LOCK_ENTERING (rc1 again)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_entering_rc1_again)
 return()
 
 label(name: func_expect_lock_entering_rc2)
 print(message: "--- wait for message LOCK_ENTERING (rc2)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_entering_rc2)
-call(label: func_send_lock_entered_rc2)
+return()
+
+label(name: func_expect_lock_entering_rc2_again)
+print(message: "--- wait for message LOCK_ENTERING (rc2 again)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_entering_rc2_again)
 return()
 
 label(name: func_expect_lock_entering_lks_rc1)
@@ -543,14 +498,24 @@ label(name: func_expect_get_max_ticket_rc1)
 print(message: "--- wait for message GET_MAX_TICKET (rc1)....")
 call(label: func_wait_message)
 call(label: func_verify_get_max_ticket_rc1)
-call(label: func_send_max_ticket_from_rc1)
+return()
+
+label(name: func_expect_get_max_ticket_rc1_again)
+print(message: "--- wait for message GET_MAX_TICKET (rc1 again)....")
+call(label: func_wait_message)
+call(label: func_verify_get_max_ticket_rc1_again)
 return()
 
 label(name: func_expect_get_max_ticket_rc2)
 print(message: "--- wait for message GET_MAX_TICKET (rc2)....")
 call(label: func_wait_message)
 call(label: func_verify_get_max_ticket_rc2)
-call(label: func_send_max_ticket_from_rc2)
+return()
+
+label(name: func_expect_get_max_ticket_rc3_again)
+print(message: "--- wait for message GET_MAX_TICKET (rc3 \"again\")....")
+call(label: func_wait_message)
+call(label: func_verify_get_max_ticket_rc3_again)
 return()
 
 label(name: func_expect_get_max_ticket_lk1_rc1)
@@ -655,15 +620,24 @@ label(name: func_expect_add_ticket_rc1)
 print(message: "--- wait for message ADD_TICKET (rc1)....")
 call(label: func_wait_message)
 call(label: func_verify_add_ticket_rc1)
-call(label: func_send_ticket_added_from_rc1_with_wrong_key) // first try with an invalid key, it should not prevent the next message from working
-call(label: func_send_ticket_added_from_rc1)
+return()
+
+label(name: func_expect_add_ticket_rc1_again)
+print(message: "--- wait for message ADD_TICKET (rc1 again)....")
+call(label: func_wait_message)
+call(label: func_verify_add_ticket_rc1_again)
 return()
 
 label(name: func_expect_add_ticket_rc2)
 print(message: "--- wait for message ADD_TICKET (rc2)....")
 call(label: func_wait_message)
 call(label: func_verify_add_ticket_rc2)
-call(label: func_send_ticket_added_from_rc2)
+return()
+
+label(name: func_expect_add_ticket_rc3_again)
+print(message: "--- wait for message ADD_TICKET (rc3 \"again\")....")
+call(label: func_wait_message)
+call(label: func_verify_add_ticket_rc3_again)
 return()
 
 label(name: func_expect_add_ticket_lk1_rc1)
@@ -767,14 +741,24 @@ label(name: func_expect_lock_exiting_rc1)
 print(message: "--- wait for message LOCK_EXITING (rc1)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_exiting_rc1)
-call(label: func_send_activate_lock_from_rc1)
+return()
+
+label(name: func_expect_lock_exiting_rc1_again)
+print(message: "--- wait for message LOCK_EXITING (rc1 again)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_exiting_rc1_again)
 return()
 
 label(name: func_expect_lock_exiting_rc2)
 print(message: "--- wait for message LOCK_EXITING (rc2)....")
 call(label: func_wait_message)
 call(label: func_verify_lock_exiting_rc2)
-call(label: func_send_activate_lock_from_rc2)
+return()
+
+label(name: func_expect_lock_exiting_rc3_again)
+print(message: "--- wait for message LOCK_EXITING (rc3 again)....")
+call(label: func_wait_message)
+call(label: func_verify_lock_exiting_rc3_again)
 return()
 
 label(name: func_expect_lock_exiting_lk1_rc1)
@@ -855,14 +839,24 @@ label(name: func_expect_ticket_ready_rc1)
 print(message: "--- wait for message TICKET_READY (rc1)....")
 call(label: func_wait_message)
 call(label: func_verify_ticket_ready_rc1)
-//call(label: func_send_activate_lock_from_rc1)
+return()
+
+label(name: func_expect_ticket_ready_rc1_again)
+print(message: "--- wait for message TICKET_READY (rc1 again)....")
+call(label: func_wait_message)
+call(label: func_verify_ticket_ready_rc1_again)
 return()
 
 label(name: func_expect_ticket_ready_rc2)
 print(message: "--- wait for message TICKET_READY (rc2)....")
 call(label: func_wait_message)
 call(label: func_verify_ticket_ready_rc2)
-//call(label: func_send_activate_lock_from_rc2)
+return()
+
+label(name: func_expect_ticket_ready_rc3_again)
+print(message: "--- wait for message TICKET_READY (rc3 again)....")
+call(label: func_wait_message)
+call(label: func_verify_ticket_ready_rc3_again)
 return()
 
 label(name: func_expect_ticket_ready_lk1_rc1)
@@ -929,14 +923,24 @@ label(name: func_expect_activate_lock_rc1)
 print(message: "--- wait for message ACTIVATE_LOCK (rc1)....")
 call(label: func_wait_message)
 call(label: func_verify_activate_lock_rc1)
-call(label: func_send_lock_activated_from_rc1)
+return()
+
+label(name: func_expect_activate_lock_rc1_again)
+print(message: "--- wait for message ACTIVATE_LOCK (rc1 again)....")
+call(label: func_wait_message)
+call(label: func_verify_activate_lock_rc1_again)
 return()
 
 label(name: func_expect_activate_lock_rc2)
 print(message: "--- wait for message ACTIVATE_LOCK (rc2)....")
 call(label: func_wait_message)
 call(label: func_verify_activate_lock_rc2)
-call(label: func_send_lock_activated_from_rc2)
+return()
+
+label(name: func_expect_activate_lock_rc3_again)
+print(message: "--- wait for message ACTIVATE_LOCK (rc3 again)....")
+call(label: func_wait_message)
+call(label: func_verify_activate_lock_rc3_again)
 return()
 
 label(name: func_expect_activate_lock_lk1_rc1)
@@ -1057,6 +1061,12 @@ call(label: func_wait_message)
 call(label: func_verify_locked)
 return()
 
+label(name: func_expect_locked_again)
+print(message: "--- wait for message LOCKED again....")
+call(label: func_wait_message)
+call(label: func_verify_locked_again)
+return()
+
 label(name: func_expect_locked_lk1)
 print(message: "--- wait for message LOCKED (lk1)....")
 call(label: func_wait_message)
@@ -1105,6 +1115,12 @@ call(label: func_wait_message)
 call(label: func_verify_unlocked)
 return()
 
+label(name: func_expect_unlocked_again)
+print(message: "--- wait for message UNLOCKED (again)....")
+call(label: func_wait_message)
+call(label: func_verify_unlocked_again)
+return()
+
 label(name: func_expect_unlocked_lk1)
 print(message: "--- wait for message UNLOCKED (lk1)....")
 call(label: func_wait_message)
@@ -1133,6 +1149,18 @@ label(name: func_expect_unlocked_lk5)
 print(message: "--- wait for message UNLOCKED (lk5)....")
 call(label: func_wait_message)
 call(label: func_verify_unlocked_lk5)
+return()
+
+label(name: func_expect_lock_tickets_rc1)
+print(message: "--- wait for message LOCK_TICKETS....")
+call(label: func_wait_message)
+call(label: func_verify_lock_tickets_rc1)
+return()
+
+label(name: func_expect_lock_tickets_rc3)
+print(message: "--- wait for message LOCK_TICKETS....")
+call(label: func_wait_message)
+call(label: func_verify_lock_tickets_rc3)
 return()
 
 label(name: func_expect_lock_activated_rc1)
@@ -1213,10 +1241,28 @@ call(label: func_wait_message)
 call(label: func_verify_drop_ticket_rc1)
 return()
 
+label(name: func_expect_drop_ticket_rc1_again)
+print(message: "--- wait for message DROP_TICKET (rc1 again)....")
+call(label: func_wait_message)
+call(label: func_verify_drop_ticket_rc1_again)
+return()
+
 label(name: func_expect_drop_ticket_rc2)
 print(message: "--- wait for message DROP_TICKET (rc2)....")
 call(label: func_wait_message)
 call(label: func_verify_drop_ticket_rc2)
+return()
+
+label(name: func_expect_drop_ticket_rc3)
+print(message: "--- wait for message DROP_TICKET (rc3)....")
+call(label: func_wait_message)
+call(label: func_verify_drop_ticket_rc3)
+return()
+
+label(name: func_expect_drop_ticket_rc3_again)
+print(message: "--- wait for message DROP_TICKET (rc3 again)....")
+call(label: func_wait_message)
+call(label: func_verify_drop_ticket_rc3_again)
 return()
 
 label(name: func_expect_drop_ticket_lk1_rc1)
@@ -1338,14 +1384,13 @@ return()
 
 // Function: verify LOCK STARTED (initial)
 label(name: func_verify_lock_started_broadcast_initial)
-print(message: "--- verify message LOCK_STARTED (initial)....")
 verify_message(
 	command: LOCK_STARTED,
 	sent_service: cluckd,
 	service: "*", // this one was broadcast
 	required_parameters: {
 		// here we do not yet know what the ${leader1} id is going to be
-		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		lock_id: `^02\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
 		server_name: ${hostname},
 		start_time: `^[0-9]+(\\.[0-9]+)?$`
 	},
@@ -1402,18 +1447,6 @@ verify_message(
 	})
 return()
 
-// Function: verify LOCK READY
-label(name: func_verify_lock_ready)
-print(message: "--- verify message LOCK_READY....")
-verify_message(
-	command: LOCK_READY,
-	sent_service: cluckd,
-	service: ".",
-	required_parameters: {
-		cache: no
-	})
-return()
-
 // Function: verify LOCK STARTED (to rc2)
 label(name: func_verify_lock_started_to_rc2)
 print(message: "--- verify message LOCK_STARTED (rc2)....")
@@ -1429,13 +1462,81 @@ verify_message(
 		election_date: `^[0-9]+(\\.[0-9]+)?$`,
 		leader0: ${leader0},
 		leader1: ${leader1},
-		leader2: ${leader2}
+		leader2: ${computer3}
 	},
 	forbidden_parameters: {
 		leader3
 	})
-print(message: "--- message LOCK_STARTED works (rc2)....")
 return()
+
+// Function: verify LOCK STARTED (to rc3)
+label(name: func_verify_lock_started_to_rc3_early)
+print(message: "--- verify message LOCK_STARTED (rc3).... [early]")
+verify_message(
+	command: LOCK_STARTED,
+	sent_service: cluckd,
+	server: rc3,
+	service: cluckd,
+	required_parameters: {
+		lock_id: ${leader1},
+		server_name: ${hostname},
+		start_time: `^[0-9]+(\\.[0-9]+)?$`
+	},
+	forbidden_parameters: {
+		election_date,
+		leader0,
+		leader1,
+		leader2,
+		leader3
+	})
+return()
+
+// Function: verify LOCK READY
+label(name: func_verify_lock_ready)
+print(message: "--- verify message LOCK_READY....")
+verify_message(
+	command: LOCK_READY,
+	sent_service: cluckd,
+	service: ".",
+	required_parameters: {
+		cache: no
+	})
+return()
+
+// Function: verify a LOCK_READY from rc3
+label(name: func_verify_lock_ready_from_rc3)
+verify_message(
+	command: LOCK_READY,
+	sent_service: cluckd,
+	server: rc3,
+	service: process_that_needs_cluck,
+	required_parameters: {
+		cache: no
+	})
+return()
+
+// Function: verify LOCK STARTED (to rc2)
+//label(name: func_verify_lock_started_to_rc2)
+//print(message: "--- verify message LOCK_STARTED (rc2)....")
+//verify_message(
+//	command: LOCK_STARTED,
+//	sent_service: cluckd,
+//	server: rc2,
+//	service: cluckd,
+//	required_parameters: {
+//		lock_id: ${leader1},
+//		server_name: ${hostname},
+//		start_time: `^[0-9]+(\\.[0-9]+)?$`,
+//		election_date: `^[0-9]+(\\.[0-9]+)?$`,
+//		leader0: ${leader0},
+//		leader1: ${leader1},
+//		leader2: ${leader2}
+//	},
+//	forbidden_parameters: {
+//		leader3
+//	})
+//print(message: "--- message LOCK_STARTED works (rc2)....")
+//return()
 
 // Function: verify LOCK STARTED (to rc1, including leaders)
 label(name: func_verify_lock_started_to_rc1)
@@ -1507,6 +1608,24 @@ verify_message(
 	})
 return()
 
+// Function: verify LOCK_ENTERING (again)
+label(name: func_verify_lock_entering_rc1_again)
+verify_message(
+	command: LOCK_ENTERING,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		duration: 10,
+		key: "${hostname}/738",
+		object_name: book_update,
+		serial: `^[0-9]+$`,
+		source: "${hostname}/another_service",
+		tag: 110,
+		timeout: ${lock_timeout}
+	})
+return()
+
 // Function: verify LOCK_ENTERING
 label(name: func_verify_lock_entering_rc2)
 verify_message(
@@ -1521,6 +1640,24 @@ verify_message(
 		serial: `^[0-9]+$`,
 		source: "${hostname}/website",
 		tag: 209,
+		timeout: ${lock_timeout}
+	})
+return()
+
+// Function: verify LOCK_ENTERING (rc2 again)
+label(name: func_verify_lock_entering_rc2_again)
+verify_message(
+	command: LOCK_ENTERING,
+	sent_service: cluckd,
+	server: rc2,
+	service: cluckd,
+	required_parameters: {
+		duration: 10,
+		key: "${hostname}/738",
+		object_name: book_update,
+		serial: `^[0-9]+$`,
+		source: "${hostname}/another_service",
+		tag: 110,
 		timeout: ${lock_timeout}
 	})
 return()
@@ -1871,6 +2008,20 @@ verify_message(
 	})
 return()
 
+// Function: verify GET_MAX_TICKET (rc1 again)
+label(name: func_verify_get_max_ticket_rc1_again)
+verify_message(
+	command: GET_MAX_TICKET,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		key: "${hostname}/738",
+		object_name: "book_update",
+		tag: 110
+	})
+return()
+
 // Function: verify GET_MAX_TICKET (rc2)
 label(name: func_verify_get_max_ticket_rc2)
 verify_message(
@@ -1882,6 +2033,20 @@ verify_message(
 		key: "${hostname}/439",
 		object_name: book_update,
 		tag: 209
+	})
+return()
+
+// Function: verify GET_MAX_TICKET (rc3 again)
+label(name: func_verify_get_max_ticket_rc3_again)
+verify_message(
+	command: GET_MAX_TICKET,
+	sent_service: cluckd,
+	server: rc3,
+	service: cluckd,
+	required_parameters: {
+		key: "${hostname}/738",
+		object_name: book_update,
+		tag: 110
 	})
 return()
 
@@ -2096,6 +2261,21 @@ verify_message(
 	})
 return()
 
+// Function: verify ADD_TICKET (rc1 again)
+label(name: func_verify_add_ticket_rc1_again)
+verify_message(
+	command: ADD_TICKET,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		key: "00000002/${hostname}/738",
+		object_name: book_update,
+		tag: 110,
+		timeout: ${lock_timeout}
+	})
+return()
+
 // Function: verify ADD_TICKET (rc2)
 label(name: func_verify_add_ticket_rc2)
 verify_message(
@@ -2107,6 +2287,21 @@ verify_message(
 		key: "00000001/${hostname}/439",
 		object_name: book_update,
 		tag: 209,
+		timeout: ${lock_timeout}
+	})
+return()
+
+// Function: verify ADD_TICKET (rc2 again)
+label(name: func_verify_add_ticket_rc3_again)
+verify_message(
+	command: ADD_TICKET,
+	sent_service: cluckd,
+	server: rc3,
+	service: cluckd,
+	required_parameters: {
+		key: "00000002/${hostname}/738",
+		object_name: book_update,
+		tag: 110,
 		timeout: ${lock_timeout}
 	})
 return()
@@ -2335,6 +2530,20 @@ verify_message(
 	})
 return()
 
+// Function: verify LOCK_EXITING for rc1 again
+label(name: func_verify_lock_exiting_rc1_again)
+verify_message(
+	command: LOCK_EXITING,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		key: "${hostname}/738",
+		object_name: "book_update",
+		tag: 110
+	})
+return()
+
 // Function: verify LOCK_EXITING for rc2
 label(name: func_verify_lock_exiting_rc2)
 verify_message(
@@ -2346,6 +2555,20 @@ verify_message(
 		key: "${hostname}/439",
 		object_name: book_update,
 		tag: 209
+	})
+return()
+
+// Function: verify LOCK_EXITING for rc3 again
+label(name: func_verify_lock_exiting_rc3_again)
+verify_message(
+	command: LOCK_EXITING,
+	sent_service: cluckd,
+	server: rc3,
+	service: cluckd,
+	required_parameters: {
+		key: "${hostname}/738",
+		object_name: "book_update",
+		tag: 110
 	})
 return()
 
@@ -2503,6 +2726,20 @@ verify_message(
 	})
 return()
 
+// Function: verify TICKET_READY for rc1 again
+label(name: func_verify_ticket_ready_rc1_again)
+verify_message(
+	command: TICKET_READY,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		key: "00000002/${hostname}/738",
+		object_name: book_update,
+		tag: 110
+	})
+return()
+
 // Function: verify TICKET_READY for rc2
 label(name: func_verify_ticket_ready_rc2)
 verify_message(
@@ -2514,6 +2751,20 @@ verify_message(
 		key: "00000001/${hostname}/439",
 		object_name: book_update,
 		tag: 209
+	})
+return()
+
+// Function: verify TICKET_READY for rc3 again
+label(name: func_verify_ticket_ready_rc3_again)
+verify_message(
+	command: TICKET_READY,
+	sent_service: cluckd,
+	server: rc3,
+	service: cluckd,
+	required_parameters: {
+		key: "00000002/${hostname}/738",
+		object_name: book_update,
+		tag: 110
 	})
 return()
 
@@ -2671,6 +2922,20 @@ verify_message(
 	})
 return()
 
+// Function: verify ACTIVATE_LOCK for rc1 again
+label(name: func_verify_activate_lock_rc1_again)
+verify_message(
+	command: ACTIVATE_LOCK,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		key: "00000002/${hostname}/738",
+		object_name: book_update,
+		tag: 110
+	})
+return()
+
 // Function: verify ACTIVATE_LOCK for rc2
 label(name: func_verify_activate_lock_rc2)
 verify_message(
@@ -2682,6 +2947,20 @@ verify_message(
 		key: "00000001/${hostname}/439",
 		object_name: book_update,
 		tag: 209
+	})
+return()
+
+// Function: verify ACTIVATE_LOCK for rc3 again
+label(name: func_verify_activate_lock_rc3_again)
+verify_message(
+	command: ACTIVATE_LOCK,
+	sent_service: cluckd,
+	server: rc3,
+	service: cluckd,
+	required_parameters: {
+		key: "00000002/${hostname}/738",
+		object_name: book_update,
+		tag: 110
 	})
 return()
 
@@ -2933,6 +3212,21 @@ verify_message(
 	})
 return()
 
+// Function: verify LOCKED again
+label(name: func_verify_locked_again)
+verify_message(
+	command: LOCKED,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: another_service,
+	required_parameters: {
+		object_name: "book_update",
+		timeout_date: `^[0-9]+(\\.[0-9]+)?$`,
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`,
+		tag: 110
+	})
+return()
+
 // Function: verify LOCKED (lk1)
 label(name: func_verify_locked_lk1)
 verify_message(
@@ -3048,6 +3342,20 @@ verify_message(
 	})
 return()
 
+// Function: verify UNLOCKED again
+label(name: func_verify_unlocked_again)
+verify_message(
+	command: UNLOCKED,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: another_service,
+	required_parameters: {
+		object_name: "book_update",
+		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`,
+		tag: 110
+	})
+return()
+
 // Function: verify UNLOCKED (lk1)
 label(name: func_verify_unlocked_lk1)
 verify_message(
@@ -3115,6 +3423,66 @@ verify_message(
 		object_name: "book_update",
 		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`,
 		tag: 301
+	})
+return()
+
+// Function: verify LOCK_TICKETS for rc1
+label(name: func_verify_lock_tickets_rc1)
+verify_message(
+	command: LOCK_TICKETS,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		tickets: 'added_ticket=true'
+			+ '|added_ticket_quorum=true'
+			+ '|entering_key=' + "${hostname}" + '/439'
+			+ '|get_max_ticket=true'
+			+ '|lock_duration=10'
+			+ '|lock_failed=none'
+			+ '|lock_timeout_date=' + `[0-9]+(\\.[0-9]+)?`
+			+ '|locked=true'
+			+ '|object_name=book_update'
+			+ '|obtention_timeout=' + `[0-9]+(\\.[0-9]+)?`
+			+ '|our_ticket=1'
+			+ '|owner=' + "${hostname}"
+			+ '|serial=' + `[0-9]+`
+			+ '|server_name=' + "${hostname}"
+			+ '|service_name=website'
+			+ '|tag=209'
+			+ '|ticket_key=00000001/' + "${hostname}" + '/439'
+			+ '|ticket_ready=true'
+			+ '|unlock_duration=10\n'
+	})
+return()
+
+// Function: verify LOCK_TICKETS for rc3
+label(name: func_verify_lock_tickets_rc3)
+verify_message(
+	command: LOCK_TICKETS,
+	sent_service: cluckd,
+	server: rc3,
+	service: cluckd,
+	required_parameters: {
+		tickets: 'added_ticket=true'
+			+ '|added_ticket_quorum=true'
+			+ '|entering_key=' + "${hostname}" + '/439'
+			+ '|get_max_ticket=true'
+			+ '|lock_duration=10'
+			+ '|lock_failed=none'
+			+ '|lock_timeout_date=' + `[0-9]+(\\.[0-9]+)?`
+			+ '|locked=true'
+			+ '|object_name=book_update'
+			+ '|obtention_timeout=' + `[0-9]+(\\.[0-9]+)?`
+			+ '|our_ticket=1'
+			+ '|owner=' + "${hostname}"
+			+ '|serial=' + `[0-9]+`
+			+ '|server_name=' + "${hostname}"
+			+ '|service_name=website'
+			+ '|tag=209'
+			+ '|ticket_key=00000001/' + "${hostname}" + '/439'
+			+ '|ticket_ready=true'
+			+ '|unlock_duration=10\n'
 	})
 return()
 
@@ -3312,6 +3680,20 @@ verify_message(
 	})
 return()
 
+// Function: verify DROP_TICKET for rc1 again
+label(name: func_verify_drop_ticket_rc1_again)
+verify_message(
+	command: DROP_TICKET,
+	sent_service: cluckd,
+	server: rc1,
+	service: cluckd,
+	required_parameters: {
+		key: "00000002/${hostname}/738",
+		object_name: book_update,
+		tag: 110
+	})
+return()
+
 // Function: verify DROP_TICKET for rc2
 label(name: func_verify_drop_ticket_rc2)
 verify_message(
@@ -3323,6 +3705,34 @@ verify_message(
 		key: "00000001/${hostname}/439",
 		object_name: book_update,
 		tag: 209
+	})
+return()
+
+// Function: verify DROP_TICKET for rc3
+label(name: func_verify_drop_ticket_rc3)
+verify_message(
+	command: DROP_TICKET,
+	sent_service: cluckd,
+	server: rc3,
+	service: cluckd,
+	required_parameters: {
+		key: "00000001/${hostname}/439",
+		object_name: book_update,
+		tag: 209
+	})
+return()
+
+// Function: verify DROP_TICKET for rc3 again
+label(name: func_verify_drop_ticket_rc3_again)
+verify_message(
+	command: DROP_TICKET,
+	sent_service: cluckd,
+	server: rc3,
+	service: cluckd,
+	required_parameters: {
+		key: "00000002/${hostname}/738",
+		object_name: book_update,
+		tag: 110
 	})
 return()
 
@@ -3474,6 +3884,10 @@ return()
 
 
 
+
+
+
+
 // Function: send HELP
 label(name: func_send_help)
 send_message(
@@ -3588,6 +4002,22 @@ send_message(
 	})
 return()
 
+// Function: send LOCK_STARTED from rc3 computer
+label(name: func_send_lock_started_from_rc3)
+now(variable_name: now)
+send_message(
+	command: LOCK_STARTED,
+	sent_server: rc3,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		lock_id: ${computer3},
+		server_name: rc3,
+		start_time: ${now}
+	})
+return()
+
 // function: send LOCK_LEADERS
 label(name: func_send_lock_leaders_from_rc1)
 // the one cluck sending the LOCK_LEADERS is the one with the smaller IP
@@ -3614,6 +4044,22 @@ send_message(
 	})
 return()
 
+// function: send LOCK_LEADERS (after hang up)
+label(name: func_send_lock_leaders_from_rc1_after_hangup)
+now(variable_name: election_date)
+send_message(
+	command: LOCK_LEADERS,
+	sent_server: rc1,
+	sent_service: cluckd,
+	service: "*", // broadcast
+	parameters: {
+		election_date: ${election_date},
+		leader0: ${leader0},
+		leader1: ${leader1},
+		leader2: ${computer3}
+	})
+return()
+
 // Function: send LOCK
 label(name: func_send_lock)
 send_message(
@@ -3631,17 +4077,48 @@ send_message(
 	})
 return()
 
+// Function: send LOCK with same name but from a different process
+label(name: func_send_lock_again)
+send_message(
+	command: LOCK,
+	sent_server: ${hostname},
+	sent_service: another_service,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		object_name: "book_update",
+		tag: 110,
+		pid: 738,
+		duration: 10,
+		timeout: ${lock_timeout}
+	})
+return()
+
 // Function: send LOCK_ENTERED on rc1
 label(name: func_send_lock_entered_rc1)
 send_message(
 	command: LOCK_ENTERED,
 	sent_server: rc1,
 	sent_service: cluckd,
-	service: "cluckd",
+	service: cluckd,
 	parameters: {
 		object_name: "book_update",
 		key: "${hostname}/439",
 		tag: 209
+	})
+return()
+
+// Function: send LOCK_ENTERED again on rc1
+label(name: func_send_lock_entered_rc1_again)
+send_message(
+	command: LOCK_ENTERED,
+	sent_server: rc1,
+	sent_service: cluckd,
+	service: cluckd,
+	parameters: {
+		object_name: "book_update",
+		key: "${hostname}/738",
+		tag: 110
 	})
 return()
 
@@ -3887,6 +4364,22 @@ send_message(
 	})
 return()
 
+// Function: send MAX_TICKET (rc1 again)
+label(name: func_send_max_ticket_from_rc1_again)
+send_message(
+	command: MAX_TICKET,
+	sent_server: rc1,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		key: "${hostname}/738",
+		object_name: "book_update",
+		tag: 110,
+		ticket_id: 1
+	})
+return()
+
 // Function: send MAX_TICKET (rc2)
 label(name: func_send_max_ticket_from_rc2)
 send_message(
@@ -3899,6 +4392,22 @@ send_message(
 		key: "${hostname}/439",
 		object_name: "book_update",
 		tag: 209,
+		ticket_id: 0
+	})
+return()
+
+// Function: send MAX_TICKET (rc3 "again")
+label(name: func_send_max_ticket_from_rc3_again)
+send_message(
+	command: MAX_TICKET,
+	sent_server: rc3,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		key: "${hostname}/738",
+		object_name: "book_update",
+		tag: 110,
 		ticket_id: 0
 	})
 return()
@@ -4127,21 +4636,6 @@ send_message(
 	})
 return()
 
-// Function: send TICKET_ADDED from rc1 (with invalid key)
-label(name: func_send_ticket_added_from_rc1_with_wrong_key)
-send_message(
-	command: TICKET_ADDED,
-	sent_server: rc1,
-	sent_service: cluckd,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		key: "10000001/${hostname}/439",
-		object_name: "book_update",
-		tag: 209
-	})
-return()
-
 // Function: send TICKET_ADDED from rc1
 label(name: func_send_ticket_added_from_rc1)
 send_message(
@@ -4157,6 +4651,21 @@ send_message(
 	})
 return()
 
+// Function: send TICKET_ADDED from rc1 again
+label(name: func_send_ticket_added_from_rc1_again)
+send_message(
+	command: TICKET_ADDED,
+	sent_server: rc1,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		key: "00000002/${hostname}/738",
+		object_name: "book_update",
+		tag: 110
+	})
+return()
+
 // Function: send TICKET_ADDED
 label(name: func_send_ticket_added_from_rc2)
 send_message(
@@ -4169,6 +4678,21 @@ send_message(
 		key: "00000001/${hostname}/439",
 		object_name: "book_update",
 		tag: 209
+	})
+return()
+
+// Function: send TICKET_ADDED from rc3 again
+label(name: func_send_ticket_added_from_rc3_again)
+send_message(
+	command: TICKET_ADDED,
+	sent_server: rc3,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		key: "00000002/${hostname}/738",
+		object_name: "book_update",
+		tag: 110
 	})
 return()
 
@@ -4550,6 +5074,22 @@ send_message(
 	})
 return()
 
+// Function: send LOCK_ACTIVATED (rc1 again)
+label(name: func_send_lock_activated_from_rc1_again)
+send_message(
+	command: LOCK_ACTIVATED,
+	sent_server: rc1,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+            key: "00000002/${hostname}/738",
+            other_key: "00000002/${hostname}/738",
+            object_name: book_update,
+	    tag: 110
+	})
+return()
+
 // Function: send LOCK_ACTIVATED (rc2)
 label(name: func_send_lock_activated_from_rc2)
 send_message(
@@ -4563,6 +5103,22 @@ send_message(
             other_key: "00000001/${hostname}/439",
             object_name: book_update,
 	    tag: 209
+	})
+return()
+
+// Function: send LOCK_ACTIVATED (rc3 again)
+label(name: func_send_lock_activated_from_rc3_again)
+send_message(
+	command: LOCK_ACTIVATED,
+	sent_server: rc3,
+	sent_service: cluckd,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+            key: "00000002/${hostname}/738",
+            other_key: "00000002/${hostname}/738",
+            object_name: book_update,
+	    tag: 110
 	})
 return()
 
@@ -4736,6 +5292,17 @@ send_message(
 	service: cluckd)
 return()
 
+// Function: send LOCK_STATUS
+label(name: func_send_lock_status)
+now(variable_name: now)
+send_message(
+	command: LOCK_STATUS,
+	sent_server: rc3,
+	sent_service: process_that_needs_cluck,
+	server: ${hostname},
+	service: cluckd)
+return()
+
 // Function: send UNLOCK
 label(name: func_send_unlock)
 send_message(
@@ -4751,23 +5318,18 @@ send_message(
 	})
 return()
 
-// Function: send LOCK with a serial number
-label(name: func_send_lock_with_serial)
-now(variable_name: lock_timeout)
-set_variable(name: lock_timeout, value: ${lock_timeout} + 5) // now + 5 seconds
+// Function: send UNLOCK
+label(name: func_send_unlock_again)
 send_message(
-	command: LOCK,
-	sent_server: rc1,
-	sent_service: locker_service,
+	command: UNLOCK,
+	sent_server: ${hostname},
+	sent_service: website,
 	server: ${hostname},
 	service: cluckd,
 	parameters: {
-		object_name: "serialized_lock",
+		object_name: "book_update",
 		pid: 738,
-		tag: 110,
-		serial: 43,
-		duration: 10,
-		timeout: ${lock_timeout}
+		tag: 110
 	})
 return()
 
@@ -4786,49 +5348,6 @@ send_message(
 		serial: "${serial}",
 		timestamp: ${timestamp},
 		reply_timestamp: ${absolutely_reply_timestamp}
-	})
-return()
-
-// Function: send ABSOLUTELY with an invalid serial parameter
-label(name: func_send_absolutely_with_invalid_serial)
-now(variable_name: absolutely_reply_timestamp)
-set_variable(name: timestamp, value: ${absolutely_reply_timestamp} - 0.03)
-send_message(
-	command: ABSOLUTELY,
-	sent_server: rc1,
-	sent_service: locker_service,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		serial: "cluckd/invalid/serial",
-		timestamp: ${timestamp},
-		reply_timestamp: ${absolutely_reply_timestamp}
-	})
-return()
-
-// Function: send HANGUP with an empty server name
-label(name: func_send_hang_up_with_our_server_name)
-send_message(
-	command: HANGUP,
-	//sent_server: ${hostname},
-	//sent_service: communicatord,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		server_name: "${hostname}"
-	})
-return()
-
-// Function: send HANGUP with an empty server name
-label(name: func_send_hang_up_with_unknown_server_name)
-send_message(
-	command: HANGUP,
-	//sent_server: ${hostname},
-	//sent_service: communicatord,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		server_name: "unknown"
 	})
 return()
 
@@ -5031,8 +5550,8 @@ return()
 label(name: func_send_hangup)
 send_message(
 	command: HANGUP,
-	sent_server: ${hostname},
-	sent_service: website,
+	//sent_server: ${hostname},
+	//sent_service: communicatord,
 	server: ${hostname},
 	service: cluckd,
 	parameters: {

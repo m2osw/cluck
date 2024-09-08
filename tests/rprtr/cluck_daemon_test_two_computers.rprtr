@@ -735,9 +735,9 @@ verify_message(
 	service: website,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","name":"' + "${hostname}" + '"}'
 			+ '],'
-			+ '"daemon_ready":true,'
+			+ '"daemon_ready":false,'
 			+ '"id":"' + "${leader0}" + '",'
 			+ '"ip":"127.0.0.1",'
 			+ '"leaders_count":0,'
@@ -757,8 +757,8 @@ verify_message(
 	service: website,
 	required_parameters: {
 		status: '{"computers":['
-			+ '{"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
-			+ '{"id":"'+ "${leader1}" + '","ip":"172.1.2.3","leader":1,"name":"two"}'
+			+ '{"connected":true,"id":"'+ "${leader0}" + '","ip":"127.0.0.1","leader":0,"name":"' + "${hostname}" + '"},'
+			+ '{"connected":true,"id":"'+ "${leader1}" + '","ip":"172.1.2.3","leader":1,"name":"two"}'
 			+ '],'
 			+ '"daemon_ready":true,'
 			+ '"id":"' + "${leader0}" + '",'
