@@ -918,7 +918,12 @@ void ticket::lock_failed(std::string const & reason)
             f_lock_timeout_date += f_unlock_duration;
             if(timed_out())
             {
-                send = SEND_MSG_UNLOCKED;
+                // this case is logical here, but I don't think it can
+                // happen because the f_locked is true and thus the only
+                // value we can use is f_lock_timeout_date and we just
+                // increased that value by at least 3 seconds
+                //
+                send = SEND_MSG_UNLOCKED; // LCOV_EXCL_LINE
             }
             else
             {
@@ -1398,14 +1403,22 @@ cluck::timeout_t ticket::get_lock_timeout_date() const
 
 /** \brief Get the current lock timeout date.
  *
- * This function returns the current lock timeout.
+ * This function returns the "current" lock timeout.
  *
- * If the lock is being re-requested (after the loss of a leader) then
- * the ALIVE timeout may be returned for a short period of time.
+ * The "current" timeout is one of:
  *
- * If the lock was not yet obtained, this function returns the obtention
- * timeout timestamp. Once the lock was obtained, the lock timeout gets
- * defined and that one is returned instead.
+ * \li If the lock is being re-requested (after the loss of a leader) then
+ *     the ALIVE timeout may be returned for a short period of time.
+ *
+ * \li If the lock was not yet obtained, this function returns the obtention
+ *     timeout timestamp.
+ *
+ * \li Once the lock was obtained, the lock timeout gets defined and that
+ *     one is returned instead.
+ *
+ * \li When the UNLOCK is received or the timeout happens and cluckd sends
+ *     the UNLOCKING message, the function returns the unlock timeout. In
+ *     this case, the \em f_lock_time_date field is still used.
  *
  * \note
  * This is the date used in the timed_out() function.
@@ -1430,20 +1443,25 @@ cluck::timeout_t ticket::get_current_timeout_date() const
 
 /** \brief Check whether this ticket timed out.
  *
- * This function returns true if the ticket timed out and should be
- * removed from the various lists where it is kept.
+ * This function returns true if the ticket timed out in its current
+ * state and should be moved to its next state.
  *
- * The function select the date to check the timeout depending on
- * the current status of the lock. If the lock was successfully
- * activated, the lock timeout date is used. If the lock was not
- * yet activate, the obtention timeout date is used.
+ * The function calls the get_current_timeout_date() to select the correct
+ * date. This depends on the current state of the ticket (i.e. maybe we
+ * sent the ALIVE message and are using the alive time out value).
  *
- * \return true if the ticket timed out.
+ * There are five timeout dates that can happen:
+ *
+ * 1. Time to obtain a lock
+ * 2. Time to keep the lock alive
+ * 3. Time to wait for a reply after an UNLOCKING message
+ * 4. Time to wait for the UNLOCK message
+ * 5. Time to wait for the ALIVE reply (i.e. the ABSOLUTELY message)
+ *
+ * \return true if the ticket timed out in its current state.
  */
 bool ticket::timed_out() const
 {
-    // Note: as long as f_locked is false, the f_lock_timeout_date value is zero
-    //
     return get_current_timeout_date() <= snapdev::now();
 }
 

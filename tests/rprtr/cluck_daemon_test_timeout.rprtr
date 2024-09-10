@@ -1,4 +1,4 @@
-// simulate the communicator daemon and a plethora of cluck clients
+// send a LOCK and then let it time out 100% (i.e. ignore UNLOCKING)
 
 hostname(variable_name: hostname)
 set_variable(name: leader0, value: "invalid-id (search on leader0 or save_parameter_value() so see where it gets set)")
@@ -15,71 +15,26 @@ call(label: func_expect_commands)
 call(label: func_expect_service_status)
 call(label: func_send_status_of_fluid_settings)
 
-// send a very early lock request that will be cached
 call(label: func_send_lock_early)
-
-call(label: func_send_unlock)
 
 call(label: func_expect_fluid_settings_listen)
 call(label: func_send_fluid_settings_registered)
 call(label: func_send_fluid_settings_value_updated)
 call(label: func_send_fluid_settings_ready)
 
-// here pretend a client is checking on our status a little too soon
-// (i.e. we'll get a "NO_LOCK" message)
-//
-call(label: func_send_lock_status)
-
 call(label: func_expect_cluster_status)
 call(label: func_send_cluster_up)
-//call(label: func_send_cluster_complete) -- this does not currently happen because the message is tested (at least when we sent a CLUSTER_STATUS message, the broadcast may still send us the message, I think)
-set_variable(name: info_mode, value: "info")
-call(label: func_send_info)
 
-call(label: func_expect_no_lock)
 call(label: func_expect_lock_leaders)
-
-// try a lock that already timed out
-set_variable(name: timeout, value: 1000)
-call(label: func_send_lock)
-
-call(label: func_send_unlock_with_bad_pid)
 
 call(label: func_expect_lock_started)
 call(label: func_expect_lock_ready)
 
 call(label: func_expect_early_locked)
-call(label: func_send_early_unlock)
 
-call(label: func_expect_cluckd_status_without_tickets)
-call(label: func_expect_lock_failed)
-
-now(variable_name: timeout)
-set_variable(name: timeout, value: ${timeout} + 60) // now + 1 minute
-call(label: func_send_lock_with_invalid_pid)
-call(label: func_send_lock)
-call(label: func_send_lock) // send it twice, the second time it generates a LOCK_FAILED (duplicate)
+call(label: func_expect_unlocking)
 
 call(label: func_expect_early_unlocked)
-call(label: func_expect_locked)
-call(label: func_send_lock_leaders)
-
-call(label: func_send_duplicate_add_ticket)
-
-set_variable(name: info_mode, value: "debug")
-call(label: func_send_info)
-
-call(label: func_expect_lock_failed_duplicate)
-
-call(label: func_expect_lock_failed_duplicate_add_ticket)
-
-call(label: func_send_unlock_with_bad_server_name)
-call(label: func_send_unlock_with_bad_object_name)
-
-call(label: func_expect_cluckd_status_with_ticket)
-call(label: func_expect_unlocking)
-call(label: func_expect_unlocked)	// this one timed out
-
 
 call(label: func_send_quitting)
 
@@ -165,13 +120,6 @@ call(label: func_wait_message)
 call(label: func_verify_cluster_status)
 return()
 
-// Function: expect NO_LOCK
-label(name: func_expect_no_lock)
-print(message: "--- wait for message NO_LOCK ---")
-call(label: func_wait_message)
-call(label: func_verify_no_lock)
-return()
-
 // Function: expect LOCK_LEADERS
 label(name: func_expect_lock_leaders)
 print(message: "--- wait for message LOCK_LEADERS ---")
@@ -193,27 +141,6 @@ call(label: func_wait_message)
 call(label: func_verify_lock_ready)
 return()
 
-// Function: expect CLUCKD_STATUS (without tickets)
-label(name: func_expect_cluckd_status_without_tickets)
-print(message: "--- wait for message CLUCKD_STATUS (without tickets)....")
-call(label: func_wait_message)
-call(label: func_verify_cluckd_status_without_tickets)
-return()
-
-// Function: expect CLUCKD_STATUS (with ticket)
-label(name: func_expect_cluckd_status_with_ticket)
-print(message: "--- wait for message CLUCKD_STATUS (with ticket)....")
-call(label: func_wait_message)
-call(label: func_verify_cluckd_status_with_ticket)
-return()
-
-// Function: expect LOCK_FAILED
-label(name: func_expect_lock_failed)
-print(message: "--- wait for message LOCK_FAILED ---")
-call(label: func_wait_message)
-call(label: func_verify_lock_failed)
-return()
-
 // Function: expect LOCKED early
 label(name: func_expect_early_locked)
 print(message: "--- expect LOCKED (early) ---")
@@ -228,32 +155,11 @@ call(label: func_wait_message)
 call(label: func_verify_locked)
 return()
 
-// Function: expect LOCK_FAILED
-label(name: func_expect_lock_failed_duplicate)
-print(message: "--- wait for message LOCK_FAILED (duplicate) ---")
-call(label: func_wait_message)
-call(label: func_verify_lock_failed_duplicate)
-return()
-
-// Function: expect LOCK_FAILED
-label(name: func_expect_lock_failed_duplicate_add_ticket)
-print(message: "--- wait for message LOCK_FAILED (duplicate ADD_TICKET) ---")
-call(label: func_wait_message)
-call(label: func_verify_lock_failed_duplicate_add_ticket)
-return()
-
 // Function: expect UNLOCKED
 label(name: func_expect_early_unlocked)
 print(message: "--- expect UNLOCKED (early) ---")
 call(label: func_wait_message)
 call(label: func_verify_early_unlocked)
-return()
-
-// Function: expect UNLOCKED
-label(name: func_expect_unlocked)
-print(message: "--- expect UNLOCKED ---")
-call(label: func_wait_message)
-call(label: func_verify_unlocked)
 return()
 
 // Function:: expect UNLOCKING
@@ -360,7 +266,7 @@ verify_message(
 	service: "*",
 	required_parameters: {
 		election_date: `^[0-9]+(\\.[0-9]+)?$`,
-		leader0: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`
+		leader0: `^10\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`
 	},
 	forbidden_parameters: {
 		leader1,
@@ -375,8 +281,8 @@ verify_message(
 	service: "*",
 	required_parameters: {
 		election_date: `^[0-9]+(\\.[0-9]+)?$`,
-		leader0: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
-		lock_id: `^14\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		leader0: `^10\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
+		lock_id: `^10\\|[0-9]+\\|127.0.0.1\\|[0-9]+\\|${hostname}$`,
 		server_name: ${hostname},
 		start_time: `^[0-9]+(\\.[0-9]+)?$`
 	},
@@ -520,9 +426,12 @@ verify_message(
 	server: ${hostname},
 	service: "website",
 	required_parameters: {
+		error: timedout,
 		object_name: "early_lock",
-		tag: 15045,
-		unlocked_date: `^[0-9]+(\\.[0-9]+)?$`
+		tag: 15045
+	},
+	forbidden_parameters: {
+		unlocked_date
 	})
 return()
 
@@ -547,8 +456,8 @@ verify_message(
 	service: "website",
 	required_parameters: {
 		error: "timedout",
-		object_name: "lock1",
-		tag: 505
+		object_name: "early_lock",
+		tag: 15045
 	})
 return()
 
@@ -609,36 +518,6 @@ send_message(
 	})
 return()
 
-// Function: send UNLOCK with invalid server name
-label(name: func_send_unlock_with_bad_server_name)
-send_message(
-	command: UNLOCK,
-	sent_server: another_server, // not the correct name (on purpose)
-	sent_service: website,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		object_name: "lock1",
-		tag: 11104,
-		pid: 435
-	})
-return()
-
-// Function: send UNLOCK with invalid object name
-label(name: func_send_unlock_with_bad_object_name)
-send_message(
-	command: UNLOCK,
-	sent_server: ${hostname},
-	sent_service: website,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		object_name: "unknown_lock",
-		tag: 11104,
-		pid: 435
-	})
-return()
-
 // Function: send STATUS/fluid_settings
 label(name: func_send_status_of_fluid_settings)
 now(variable_name: now)
@@ -695,20 +574,6 @@ send_message(
 	service: cluckd)
 return()
 
-// Function: send INFO
-// Parameters: ${info_mode} -- "info" or "debug"
-label(name: func_send_info)
-send_message(
-	command: INFO,
-	sent_server: ${hostname},
-	sent_service: website,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		mode: ${info_mode}
-	})
-return()
-
 // Function: send CLUSTER_UP
 label(name: func_send_cluster_up)
 send_message(
@@ -756,7 +621,7 @@ return()
 // Function: send LOCK (early)
 label(name: func_send_lock_early)
 now(variable_name: early_timeout)
-set_variable(name: early_timeout, value: ${early_timeout} + 60) // now + 1 minute
+set_variable(name: early_timeout, value: ${early_timeout} + 3)
 send_message(
 	command: LOCK,
 	sent_server: ${hostname},
@@ -767,36 +632,8 @@ send_message(
 		object_name: "early_lock",
 		tag: 15045,
 		pid: 10203,
-		duration: 15,
+		duration: 3,
 		timeout: ${early_timeout}
-	})
-return()
-
-label(name: func_send_lock_leaders)
-print(message: "send LOCK_LEADERS")
-send_message(
-	command: LOCK_LEADERS,
-	sent_server: rc1, // this does not make sense since we are supposed to have a single computer so a single cluckd...
-	sent_service: cluckd,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		election_date: ${election_date},
-		leader0: ${leader0}
-	})
-return()
-
-label(name: func_send_early_unlock)
-send_message(
-	command: UNLOCK,
-	sent_server: ${hostname},
-	sent_service: website,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		object_name: "early_lock",
-		tag: 15045,
-		pid: 10203
 	})
 return()
 
@@ -814,22 +651,6 @@ send_message(
 		tag: 505,
 		pid: 123,
 		duration: 10,
-		timeout: ${timeout}
-	})
-return()
-
-// Function: send ADD_TICKET (duplicate ticket & spurious since we have just one computer)
-label(name: func_send_duplicate_add_ticket)
-send_message(
-	command: ADD_TICKET,
-	sent_server: rc1,
-	sent_service: cluckd,
-	server: ${hostname},
-	service: cluckd,
-	parameters: {
-		object_name: "lock1",
-		key: "00000001/${hostname}/123",
-		tag: 505,
 		timeout: ${timeout}
 	})
 return()

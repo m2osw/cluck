@@ -1817,6 +1817,7 @@ void cluckd::cleanup()
 
     // got a new timeout?
     //
+SNAP_LOG_WARNING << "ready to setup timeout date to: " << next_timeout << " (now: " << snapdev::now() << ")" << SNAP_LOG_SEND;
     if(next_timeout != snapdev::timespec_ex::max())
     {
         // we add one second to avoid looping like crazy
