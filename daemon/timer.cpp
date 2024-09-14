@@ -36,7 +36,7 @@ namespace cluck_daemon
 
 
 /** \class timer
- * \brief Handle the locks timeout.
+ * \brief Handle the timeouts.
  *
  * This class is used to time out locks. Whenever we receive a new LOCK
  * message or enter a lock the timer is reset with the next lock that is
@@ -51,7 +51,7 @@ namespace cluck_daemon
 /** \brief The timer initialization.
  *
  * The timer is always enabled, however by default there is nothing to
- * timeout. In other words, the timer is keep off.
+ * timeout. In other words, the timer is kept off.
  *
  * \param[in] c  The cluckd server which will handle time outs.
  */

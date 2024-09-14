@@ -1430,6 +1430,13 @@ void cluckd::synchronize_leaders()
     // determine whether we are leader #0 or not, if zero, then we
     // call msg_lock() directly, otherwise we do a f_messenger->send_message()
     //
+    // TODO: review the logic here, I do not think that leader0 has anything
+    //       to do with lock requests and tickets; instead, I think that the
+    //       sharing that needs to happen is between the old and the new
+    //       leaders (i.e. when we lose a leader and assign another computer
+    //       as a new leader to compensate, that new leader needs to get
+    //       all the info which is what the LOCK_TICKETS message is about)
+    //
     bool const leader0(f_leaders[0]->get_id() == f_my_id);
 
     // a vector of messages for which we have to call msg_lock()
@@ -1478,7 +1485,7 @@ void cluckd::synchronize_leaders()
                     // we are leader #0 so directly call msg_lock()
                     //
                     // first we remove the entry otherwise we get a duplicate
-                    // error since we try to readd the same ticket
+                    // error since we try to re-add the same ticket
                     //
                     key_entering = obj_entering->second.erase(key_entering);
                     local_locks.push_back(lock_message);
@@ -1521,7 +1528,7 @@ void cluckd::synchronize_leaders()
             if(key_ticket->second->is_locked())
             {
                 // if ticket was locked by the leader that disappeared, we
-                // transfer ownership to the new leader #0
+                // transfer ownership to leader #0
                 //
                 if(key_leader == f_leaders.end())
                 {
@@ -1706,11 +1713,15 @@ void cluckd::cleanup()
             std::string const server_name(c->f_message.has_parameter("lock_proxy_server_name")
                                         ? c->f_message.get_parameter("lock_proxy_server_name")
                                         : c->f_message.get_sent_from_server());
+            std::string const service_name(c->f_message.has_parameter("lock_proxy_service_name")
+                                         ? c->f_message.get_parameter("lock_proxy_service_name")
+                                         : c->f_message.get_sent_from_service());
             std::string const entering_key(server_name + '/' + std::to_string(client_pid));
 
             ed::message lock_failed_message;
             lock_failed_message.set_command(cluck::g_name_cluck_cmd_lock_failed);
-            lock_failed_message.reply_to(c->f_message);
+            lock_failed_message.set_service(service_name);
+            lock_failed_message.set_server(server_name);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_object_name, object_name);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
             lock_failed_message.add_parameter(cluck::g_name_cluck_param_key, entering_key);
@@ -1742,7 +1753,7 @@ void cluckd::cleanup()
             bool move_next(true);
             if(key_ticket->second->timed_out())
             {
-                key_ticket->second->lock_failed("ticket: timed out while cleanup");
+                key_ticket->second->lock_failed("ticket: timed out while cleaning up");
                 if(key_ticket->second->timed_out())
                 {
                     // still timed out, remove it
@@ -1817,7 +1828,6 @@ void cluckd::cleanup()
 
     // got a new timeout?
     //
-SNAP_LOG_WARNING << "ready to setup timeout date to: " << next_timeout << " (now: " << snapdev::now() << ")" << SNAP_LOG_SEND;
     if(next_timeout != snapdev::timespec_ex::max())
     {
         // we add one second to avoid looping like crazy
@@ -3796,6 +3806,7 @@ void cluckd::msg_lock_tickets(ed::message & msg)
     // we have one ticket per line, so we first split per line and then
     // work on lines one at a time
     //
+    bool added_tickets(false);
     std::list<std::string> lines;
     snapdev::tokenize_string(lines, tickets, "\n", true);
     for(auto const & l : lines)
@@ -3876,6 +3887,7 @@ void cluckd::msg_lock_tickets(ed::message & msg)
                 }
 
                 t->unserialize(l);
+                added_tickets = true;
 
                 // do a couple of additional sanity tests to
                 // make sure that we want to keep new tickets
@@ -3904,6 +3916,14 @@ void cluckd::msg_lock_tickets(ed::message & msg)
                 }
             }
         }
+    }
+
+    // if we updated some tickets, we need to make sure our timer is setup
+    // appropriately
+    //
+    if(added_tickets)
+    {
+        cleanup();
     }
 }
 

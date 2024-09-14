@@ -365,6 +365,99 @@ CATCH_TEST_CASE("cluck_daemon_three_computers", "[cluckd][daemon]")
 }
 
 
+CATCH_TEST_CASE("cluck_daemon_four_computers", "[cluckd][daemon]")
+{
+    CATCH_START_SECTION("cluck_daemon_four_computers: verify cluckd")
+    {
+        addr::addr a(get_address());
+
+        std::vector<std::string> const args = {
+            "cluckd", // name of command
+            "--communicatord-listen",
+            "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
+            "--path-to-message-definitions",
+
+            // WARNING: the order matters, we want to test with our source
+            //          (i.e. original) files first
+            //
+            SNAP_CATCH2_NAMESPACE::g_source_dir() + "/daemon/message-definitions:"
+                + SNAP_CATCH2_NAMESPACE::g_dist_dir() + "/share/eventdispatcher/messages",
+        };
+
+        // convert arguments
+        //
+        std::vector<char const *> args_strings;
+        args_strings.reserve(args.size() + 1);
+        for(auto const & arg : args)
+        {
+            args_strings.push_back(arg.c_str());
+        }
+        args_strings.push_back(nullptr); // NULL terminated
+
+        cluck_daemon::cluckd::pointer_t lock(std::make_shared<cluck_daemon::cluckd>(args.size(), const_cast<char **>(args_strings.data())));
+        lock->add_connections();
+
+        // no elections happened, 'lock' is not a leader
+        //
+        CATCH_REQUIRE(lock->is_leader() == nullptr);
+        CATCH_REQUIRE_THROWS_MATCHES(
+              lock->get_leader_a()
+            , cluck::logic_error
+            , Catch::Matchers::ExceptionMessage("logic_error: cluckd::get_leader_a(): only a leader can call this function."));
+        CATCH_REQUIRE_THROWS_MATCHES(
+              lock->get_leader_b()
+            , cluck::logic_error
+            , Catch::Matchers::ExceptionMessage("logic_error: cluckd::get_leader_b(): only a leader can call this function."));
+
+        // messenger is not yet connected, it's not ready
+        //
+        CATCH_REQUIRE_FALSE(lock->is_daemon_ready());
+
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/cluck_daemon_test_four_computers.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        e->set_thread_done_callback([lock]()
+            {
+                lock->stop(true);
+            });
+
+        try
+        {
+            lock->run();
+        }
+        catch(std::exception const & ex)
+        {
+            SNAP_LOG_FATAL
+                << "an exception occurred while running cluckd (4 cluckd): "
+                << ex
+                << SNAP_LOG_SEND;
+
+            libexcept::exception_base_t const * b(dynamic_cast<libexcept::exception_base_t const *>(&ex));
+            if(b != nullptr) for(auto const & line : b->get_stack_trace())
+            {
+                SNAP_LOG_FATAL
+                    << "    "
+                    << line
+                    << SNAP_LOG_SEND;
+            }
+
+            throw;
+        }
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+    }
+    CATCH_END_SECTION()
+}
+
+
 CATCH_TEST_CASE("cluck_daemon_ten_computers", "[cluckd][daemon]")
 {
     CATCH_START_SECTION("cluck_daemon_ten_computers: verify cluckd")
@@ -736,6 +829,95 @@ CATCH_TEST_CASE("cluck_daemon_specialized_tests", "[cluckd][daemon]")
         CATCH_REQUIRE(s->get_exit_code() == 0);
     }
     CATCH_END_SECTION()
+
+    CATCH_START_SECTION("cluck_daemon_specialized_tests: try an interrupt to stop the cluck daemon")
+    {
+        addr::addr a(get_address());
+
+        std::vector<std::string> const args = {
+            "cluckd", // name of command
+            "--communicatord-listen",
+            "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
+            "--path-to-message-definitions",
+
+            // WARNING: the order matters, we want to test with our source
+            //          (i.e. original) files first
+            //
+            SNAP_CATCH2_NAMESPACE::g_source_dir() + "/daemon/message-definitions:"
+                + SNAP_CATCH2_NAMESPACE::g_dist_dir() + "/share/eventdispatcher/messages",
+        };
+
+        // convert arguments
+        //
+        std::vector<char const *> args_strings;
+        args_strings.reserve(args.size() + 1);
+        for(auto const & arg : args)
+        {
+            args_strings.push_back(arg.c_str());
+        }
+        args_strings.push_back(nullptr); // NULL terminated
+
+        cluck_daemon::cluckd::pointer_t lock(std::make_shared<cluck_daemon::cluckd>(args.size(), const_cast<char **>(args_strings.data())));
+        lock->add_connections();
+
+        // no elections happened, 'lock' is not a leader
+        //
+        CATCH_REQUIRE(lock->is_leader() == nullptr);
+        CATCH_REQUIRE_THROWS_MATCHES(
+              lock->get_leader_a()
+            , cluck::logic_error
+            , Catch::Matchers::ExceptionMessage("logic_error: cluckd::get_leader_a(): only a leader can call this function."));
+        CATCH_REQUIRE_THROWS_MATCHES(
+              lock->get_leader_b()
+            , cluck::logic_error
+            , Catch::Matchers::ExceptionMessage("logic_error: cluckd::get_leader_b(): only a leader can call this function."));
+
+        // messenger is not yet connected, it's not ready
+        //
+        CATCH_REQUIRE_FALSE(lock->is_daemon_ready());
+
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/cluck_daemon_test_interrupt_signal.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        e->set_thread_done_callback([lock]()
+            {
+                lock->stop(true);
+            });
+
+        try
+        {
+            lock->run();
+        }
+        catch(std::exception const & ex)
+        {
+            SNAP_LOG_FATAL
+                << "an exception occurred while running cluckd (interrupt signal): "
+                << ex
+                << SNAP_LOG_SEND;
+
+            libexcept::exception_base_t const * b(dynamic_cast<libexcept::exception_base_t const *>(&ex));
+            if(b != nullptr) for(auto const & line : b->get_stack_trace())
+            {
+                SNAP_LOG_FATAL
+                    << "    "
+                    << line
+                    << SNAP_LOG_SEND;
+            }
+
+            throw;
+        }
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+    }
+    CATCH_END_SECTION()
 }
 
 
@@ -773,6 +955,79 @@ CATCH_TEST_CASE("cluck_daemon_failures", "[cluckd][daemon][fail]")
 
         std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
         std::string const filename(source_dir + "/tests/rprtr/failed_with_timing_out_entering.rprtr");
+        SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
+        CATCH_REQUIRE(l != nullptr);
+        SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());
+        SNAP_CATCH2_NAMESPACE::reporter::parser::pointer_t p(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::parser>(l, s));
+        p->parse_program();
+
+        SNAP_CATCH2_NAMESPACE::reporter::executor::pointer_t e(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::executor>(s));
+        e->start();
+
+        e->set_thread_done_callback([lock]()
+            {
+                lock->stop(true);
+            });
+
+        try
+        {
+            lock->run();
+        }
+        catch(std::exception const & ex)
+        {
+            SNAP_LOG_FATAL
+                << "an exception occurred while running cluckd (entering timing out): "
+                << ex
+                << SNAP_LOG_SEND;
+
+            libexcept::exception_base_t const * b(dynamic_cast<libexcept::exception_base_t const *>(&ex));
+            if(b != nullptr) for(auto const & line : b->get_stack_trace())
+            {
+                SNAP_LOG_FATAL
+                    << "    "
+                    << line
+                    << SNAP_LOG_SEND;
+            }
+
+            throw;
+        }
+
+        CATCH_REQUIRE(s->get_exit_code() == 0);
+    }
+    CATCH_END_SECTION()
+
+    CATCH_START_SECTION("cluck_daemon_failures: cache timeout")
+    {
+        addr::addr a(get_address());
+
+        std::vector<std::string> const args = {
+            "cluckd", // name of command
+            "--communicatord-listen",
+            "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
+            "--path-to-message-definitions",
+
+            // WARNING: the order matters, we want to test with our source
+            //          (i.e. original) files first
+            //
+            SNAP_CATCH2_NAMESPACE::g_source_dir() + "/daemon/message-definitions:"
+                + SNAP_CATCH2_NAMESPACE::g_dist_dir() + "/share/eventdispatcher/messages",
+        };
+
+        // convert arguments
+        //
+        std::vector<char const *> args_strings;
+        args_strings.reserve(args.size() + 1);
+        for(auto const & arg : args)
+        {
+            args_strings.push_back(arg.c_str());
+        }
+        args_strings.push_back(nullptr); // NULL terminated
+
+        cluck_daemon::cluckd::pointer_t lock(std::make_shared<cluck_daemon::cluckd>(args.size(), const_cast<char **>(args_strings.data())));
+        lock->add_connections();
+
+        std::string const source_dir(SNAP_CATCH2_NAMESPACE::g_source_dir());
+        std::string const filename(source_dir + "/tests/rprtr/cluck_daemon_test_cache_timeout.rprtr");
         SNAP_CATCH2_NAMESPACE::reporter::lexer::pointer_t l(SNAP_CATCH2_NAMESPACE::reporter::create_lexer(filename));
         CATCH_REQUIRE(l != nullptr);
         SNAP_CATCH2_NAMESPACE::reporter::state::pointer_t s(std::make_shared<SNAP_CATCH2_NAMESPACE::reporter::state>());

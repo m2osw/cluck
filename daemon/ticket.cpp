@@ -378,6 +378,8 @@ ticket::ticket(
 {
     set_unlock_duration(f_lock_duration);
 
+    // TODO: see how to not say "attempting a lock" when we are deserializing
+    //       an existing lock.
     SNAP_LOG_TRACE
         << "Attempting to lock \""
         << f_object_name
@@ -1114,9 +1116,9 @@ pid_t ticket::get_client_pid() const
     if(snapdev::tokenize_string(segments, f_entering_key, "/") != 2)
     {
         throw cluck::invalid_parameter(
-                  "ticket::get_client_pid() split f_entering_key "
+                  "ticket::get_client_pid() split f_entering_key \""
                 + f_entering_key
-                + " and did not get exactly two segments.");
+                + "\" and did not get exactly two segments.");
     }
     std::int64_t value;
     advgetopt::validator_integer::convert_string(segments[1], value);
@@ -1242,17 +1244,14 @@ void ticket::set_ready()
  */
 void ticket::set_ticket_number(ticket_id_t const number)
 {
-    if(f_our_ticket != NO_TICKET)
+    if(f_our_ticket != NO_TICKET
+    || f_added_ticket)
     {
         throw cluck::logic_error("ticket::set_ticket_number() called with "
                 + std::to_string(number)
                 + " when f_our_ticket is already set to "
                 + std::to_string(f_our_ticket)
                 + ".");
-    }
-    if(f_added_ticket)
-    {
-        throw cluck::logic_error("ticket::set_ticket_number() called when f_added_ticket is already true.");
     }
     f_added_ticket = true;
 

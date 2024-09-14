@@ -1,4 +1,4 @@
-// simulate the communicator daemon and a plethora of cluck clients
+// start up to "lock ready" status and then send the interrupt signal
 
 hostname(variable_name: hostname)
 set_variable(name: leader0, value: "invalid-id (search on leader0 or save_parameter_value() so see where it gets set)")
@@ -15,73 +15,20 @@ call(label: func_expect_commands)
 call(label: func_expect_service_status)
 call(label: func_send_status_of_fluid_settings)
 
-// send a very early lock request that will be cached
-call(label: func_send_lock_early)
-
-call(label: func_send_unlock)
-
 call(label: func_expect_fluid_settings_listen)
 call(label: func_send_fluid_settings_registered)
 call(label: func_send_fluid_settings_value_updated)
 call(label: func_send_fluid_settings_ready)
 
-// here pretend a client is checking on our status a little too soon
-// (i.e. we'll get a "NO_LOCK" message)
-//
-call(label: func_send_lock_status)
-
 call(label: func_expect_cluster_status)
 call(label: func_send_cluster_up)
-//call(label: func_send_cluster_complete) -- this does not currently happen because the message is tested (at least when we sent a CLUSTER_STATUS message, the broadcast may still send us the message, I think)
-set_variable(name: info_mode, value: "info")
-call(label: func_send_info)
 
-call(label: func_expect_no_lock)
 call(label: func_expect_lock_leaders)
-
-// try a lock that already timed out
-set_variable(name: timeout, value: 1000)
-call(label: func_send_lock)
-
-call(label: func_send_unlock_with_bad_pid)
 
 call(label: func_expect_lock_started)
 call(label: func_expect_lock_ready)
 
-call(label: func_expect_early_locked)
-call(label: func_send_early_unlock)
-
-call(label: func_expect_cluckd_status_without_tickets)
-call(label: func_expect_lock_failed)
-
-now(variable_name: timeout)
-set_variable(name: timeout, value: ${timeout} + 60) // now + 1 minute
-call(label: func_send_lock_with_invalid_pid)
-call(label: func_send_lock)
-call(label: func_send_lock) // send it twice, the second time it generates a LOCK_FAILED (duplicate)
-
-call(label: func_expect_early_unlocked)
-call(label: func_expect_locked)
-call(label: func_send_lock_leaders)
-
-call(label: func_send_duplicate_add_ticket)
-
-set_variable(name: info_mode, value: "debug")
-call(label: func_send_info)
-
-call(label: func_expect_lock_failed_duplicate)
-
-call(label: func_expect_lock_failed_duplicate_add_ticket)
-
-call(label: func_send_unlock_with_bad_server_name)
-call(label: func_send_unlock_with_bad_object_name)
-
-call(label: func_expect_cluckd_status_with_ticket)
-call(label: func_expect_unlocking)
-call(label: func_expect_unlocked)	// this one timed out
-
-
-call(label: func_send_quitting)
+call(label: func_emit_interrupt_signal)
 
 call(label: func_drain_messages)
 exit(error_message: "unexpectedly reached the end...")
@@ -108,7 +55,6 @@ return()
 
 // Function: send QUITTING and drain messages
 label(name: func_drain_messages)
-print(message: "--- Sending QUITTING and draining messages...")
 clear_message()
 has_message()
 if(true: got_unexpected_message)
@@ -834,13 +780,9 @@ send_message(
 	})
 return()
 
-// Function: send QUITTING
-label(name: func_send_quitting)
-send_message(
-	command: QUITTING,
-	sent_server: ${hostname},
-	sent_service: website,
-	server: ${hostname},
-	service: cluckd)
+// Function: send Ctrl-C
+label(name: func_emit_interrupt_signal)
+print(message: "--- Send Ctrl-C to cluck daemon...")
+kill(signal: INT)
 return()
 

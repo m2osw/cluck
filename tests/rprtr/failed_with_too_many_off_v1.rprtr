@@ -1037,8 +1037,8 @@ return()
 label(name: func_send_cluster_up)
 send_message(
 	command: CLUSTER_UP,
-	sent_server: ${hostname},
-	sent_service: communicatord,
+	//sent_server: ${hostname},
+	//sent_service: communicatord,
 	server: ${hostname},
 	service: cluckd,
 	parameters: {
