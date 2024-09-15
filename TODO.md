@@ -4,7 +4,30 @@
   of the service given to communicatord is cluckd. I'm wondering whether we
   should have two packages: cluck & cluckd. In particular, with just cluck
   we would be able to create a lock and messages would automatically be sent
-  to a cluckd running on another computer.
+  to a cluckd running on another computer. i.e. we'd eliminate the need to
+  run a cluckd on every single machine.
+
+  **IMPORTANT NOTE:** The current implementation uses the `CLUSTER_UP`
+                      number of neighbors to decide what the quorum and
+		      some other numbers are. Making it possible to not
+		      have the cluckd service on all computers complicates
+		      that part of the existing implementation.
+
+* The election algorithm is not 100% safe unless we wait for `CLUSTER_COMPLETE`.
+  With just a `CLUSTER_UP` plus a quorum, we could end up with two lists of
+  cluck daemons that look as follow:
+
+      A B   B   B B B   B B B
+
+          A   B B B   B B B   B B
+
+  Here the result is that two different computers (marked `A`) think that
+  they have the lowest IP address and they send a `LOCK_LEADERS` message
+  as a result.
+
+  We need to make sure that will work as expected. The broadcasting means
+  that the communicatord system will send the message to all cluckd even
+  though both `A` computers do not yet know about each other.
 
 * The `TRANSMISSION_REPORT` message from the communicator does not include
   any serial number or tag to recognize the cluck that sent the message.
@@ -15,17 +38,11 @@
   locks on such failures (which is how it's done at the moment).
 
 * Implement support for semaphores (i.e. "read-only" lock that multiple
-  instances can obtain in parallel).
+  instances can obtain simultaneously).
 
 * Implement a "lock status" message one can listen to in order to know
   things such as how much longer it will take for a lock to succeed
   giving applications a way to decide whether to continue to wait or not.
-
-* Look into properly handling the case where the other two leaders go out
-  and we are currently waiting on replies that will never make it. For example,
-  the ticket::entered() sends a `GET_MAX_TICKET` event. If we never receive
-  a reply that lock will linger forever (i.e. no timeout exists for that
-  and most of the other inter-leader messages).
 
 * Convert the Paxos conversation to use UDP, albeit probably not in
   broadcast mode because VPNs do not always allow it and for only
@@ -33,5 +50,8 @@
   broadcasting to 100 computers in the cluster.
 
 * When we lose the cluster (see `CLUSTER_DOWN` message handling), we void
-  the existing locks, but I do think that this is not required.
+  the existing locks, but I do think that this is not required. i.e. new
+  locks cannot safely be obtained, but old existing locks when our leaders
+  did not go down are still safe (unless they came from one of the computers
+  that just went down).
 
