@@ -75,6 +75,7 @@
 // C++
 //
 #include    <iostream>
+#include    <random>
 
 
 // C
@@ -1758,13 +1759,15 @@ void test_multi_snaplocks::run()
 
     // randomize the start procedure
     //
-    //std::random_shuffle(f_start.begin(), f_start.end()); -- this has problems with copy/move
+    std::random_device rd;
+    std::mt19937 g(rd());
+    //std::shuffle(f_start.begin(), f_start.end(), g); -- this has problems with copy/move
     f_start_indexes.clear();
     for(size_t idx(0); idx < f_start.size(); ++idx)
     {
         f_start_indexes.push_back(idx);
     }
-    std::random_shuffle(f_start_indexes.begin(), f_start_indexes.end());
+    std::shuffle(f_start_indexes.begin(), f_start_indexes.end(), g);
 
     // get the start timer
     //
