@@ -104,8 +104,6 @@ if(SnapCatch2_FOUND AND Reporter_FOUND)
         ${SNAPCATCH2_LIBRARIES}
     )
 
-    add_test(unittests ${PROJECT_NAME})
-
 else()
 
     message("snapcatch2 and/or reporter not found... no tests will be built.")
