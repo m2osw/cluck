@@ -1548,7 +1548,7 @@ std::string const & ticket::get_entering_key() const
  * ticket key is only defined at a later time when the ticket has
  * properly entered the bakery. It includes three parameters:
  *
- * \li Ticket number as an hexadecimal number of 8 digits,
+ * \li Ticket number as a hexadecimal number of 8 digits,
  * \li Server name of the server asking for the lock,
  * \li Process Identifier (PID) of the service daemon asking for the lock.
  *
