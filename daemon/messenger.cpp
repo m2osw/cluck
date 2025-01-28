@@ -53,7 +53,7 @@ namespace cluck_daemon
  * \brief Handle messages from the communicatord.
  *
  * This class is an implementation of the TCP client message connection
- * so we can handle incoming messages. We actually use the fuild-settings
+ * so we can handle incoming messages. We actually use the fluid-settings
  * which itself uses the communicatord connection. All of the basic
  * communication messages used by the communicatord and fluid settings
  * are handled automatically.

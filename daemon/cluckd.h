@@ -31,6 +31,13 @@
 #include    <eventdispatcher/message.h>
 
 
+/** \file
+ * \brief Daemon handling inter-computer locking.
+ *
+ * This file defines the main class running the cluck daemon. This is used
+ * to send and receive messages to LOCK and UNLOCK computers.
+ */
+
 
 namespace cluck_daemon
 {
@@ -113,21 +120,14 @@ private:
     void                        synchronize_leaders();
     void                        forward_message_to_leader(ed::message & message);
 
-    //static ed::dispatcher<cluckd>::dispatcher_match::vector_t const    g_snaplock_service_messages;
-
     advgetopt::getopt                   f_opts;
-    //snap::snap_config                   f_config;
 
     cluck::timeout_t                    f_start_time = cluck::timeout_t();
     std::string                         f_server_name = std::string();
     ed::communicator::pointer_t         f_communicator = ed::communicator::pointer_t();
-//    std::string                         f_host_list = std::string("localhost");
     messenger::pointer_t                f_messenger = messenger::pointer_t();
     interrupt::pointer_t                f_interrupt = interrupt::pointer_t();
     timer::pointer_t                    f_timer = timer::pointer_t();
-//    bool                                f_stop_received = false;
-//    bool                                f_debug = false;
-//    bool                                f_debug_lock_messages = false;
     std::size_t                         f_neighbors_count = 0;
     std::size_t                         f_neighbors_quorum = 0;
     std::string                         f_my_id = std::string();
