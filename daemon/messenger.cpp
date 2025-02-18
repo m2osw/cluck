@@ -277,7 +277,7 @@ void messenger::fluid_settings_changed(
         // now we're ready to start with cluckd
         //
         ed::message clusterstatus_message;
-        clusterstatus_message.set_command(cluck::g_name_cluck_cmd_cluster_status);
+        clusterstatus_message.set_command(communicatord::g_name_communicatord_cmd_cluster_status);
         clusterstatus_message.set_service(communicatord::g_name_communicatord_service_communicatord);
         send_message(clusterstatus_message);
     }
