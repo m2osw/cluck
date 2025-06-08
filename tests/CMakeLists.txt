@@ -1,4 +1,4 @@
-# Copyright (c) 2016-2024  Made to Order Software Corp.  All Rights Reserved
+# Copyright (c) 2016-2025  Made to Order Software Corp.  All Rights Reserved
 #
 # https://snapwebsites.org/project/cluck
 # contact@m2osw.com
@@ -87,9 +87,10 @@ if(SnapCatch2_FOUND AND Reporter_FOUND)
             #${PROJECT_SOURCE_DIR}
 
             ${ADVGETOPT_INCLUDE_DIRS}
+            ${EVENTDISPATCHER_INCLUDE_DIRS}
             ${LIBADDR_INCLUDE_DIRS}
             ${LIBEXCEPT_INCLUDE_DIRS}
-            ${REPORTER_SOURCE_DIR}
+            ${REPORTER_INCLUDE_DIRS}
             ${SNAPCATCH2_INCLUDE_DIRS}
             ${SNAPDEV_INCLUDE_DIRS}
     )
