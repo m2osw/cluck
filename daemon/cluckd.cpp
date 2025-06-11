@@ -1062,10 +1062,10 @@ void cluckd::election_status()
         }
     }
 
-for(auto const & s : sort_by_id)
-{
-SNAP_LOG_WARNING << "--- sort by ID: " << s.first << SNAP_LOG_SEND;
-}
+//for(auto const & s : sort_by_id)
+//{
+//SNAP_LOG_WARNING << "--- sort by ID: " << s.first << SNAP_LOG_SEND;
+//}
 
     bool too_many_computers_off(false);
     if(f_computers.size() <= 3)
