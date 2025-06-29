@@ -1,7 +1,4 @@
 /*
- * Text:
- *      snaplock/tests/test_snap_lock.cpp
- *
  * Description:
  *      Test the snap_lock class to make sure that the lock works
  *      as expected when running this test on any number of computers.
@@ -79,21 +76,21 @@
  *      SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-// snapwebsites lib
+// snapwebsites
 //
 #include <snapwebsites/snap_lock.h>
 #include <snapwebsites/snapwebsites.h>
 
-// CassValue lib
+// CassValue
 //
 #include <cassvalue/encoder.h>
 
-// CassWrapper lib
+// CassWrapper
 //
 #include <casswrapper/query.h>
 #include <casswrapper/session.h>
 
-// C++ lib
+// C++
 //
 #include <iostream>
 

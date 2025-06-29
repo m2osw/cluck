@@ -20,17 +20,17 @@
 #include "lock.h"
 
 
-// snapmanager lib
+// snapmanager
 //
 #include <snapmanager/form.h>
 
 
-// snaplogger lib
+// snaplogger
 //
 #include <snaplogger/message.h>
 
 
-// snapdev lib
+// snapdev
 //
 #include <snapdev/not_reached.h>
 #include <snapdev/not_used.h>

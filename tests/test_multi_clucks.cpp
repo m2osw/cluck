@@ -67,7 +67,7 @@
 #include    <advgetopt/exception.h>
 
 
-// Qt lib
+// Qt
 //
 #include    <QFile>
 
