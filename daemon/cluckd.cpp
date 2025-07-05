@@ -2751,7 +2751,7 @@ void cluckd::msg_lock(ed::message & msg)
     if(timeout <= snapdev::now())
     {
         SNAP_LOG_WARNING
-            << "Lock on \""
+            << "lock on \""
             << object_name
             << "\" ("
             << tag
@@ -4036,19 +4036,22 @@ SNAP_LOG_WARNING << "removed \"" << server_name << "\"" << SNAP_LOG_SEND;
     {
         f_leaders.erase(li);
 
-        // elect another computer in case the one we just erased was a leader
-        //
-        // (of course, no elections occur unless we are the computer with the
-        // smallest IP address)
-        //
-        election_status();
+        if(f_messenger != nullptr)
+        {
+            // elect another computer in case the one we just erased was a leader
+            //
+            // (of course, no elections occur unless we are the computer with the
+            // smallest IP address)
+            //
+            election_status();
 
-        // if too many leaders were dropped, we may go back to the NO_LOCK status
-        //
-        // we only send a NO_LOCK if the election could not re-assign another
-        // computer to replace the missing leader(s)
-        //
-        check_lock_status();
+            // if too many leaders were dropped, we may go back to the NO_LOCK status
+            //
+            // we only send a NO_LOCK if the election could not re-assign another
+            // computer to replace the missing leader(s)
+            //
+            check_lock_status();
+        }
     }
 }
 
