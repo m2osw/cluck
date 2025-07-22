@@ -1,4 +1,4 @@
-cluck (1.0.0.0~jammy) jammy; urgency=high
+cluck (1.0.0.0~noble) noble; urgency=high
 
   * First version of cluck as its own project (was snaplock).
     - Includes the snap_lock class (renamed cluck) in a library.
