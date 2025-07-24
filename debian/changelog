@@ -1,3 +1,9 @@
+cluck (1.0.0.1~jammy) jammy; urgency=high
+
+  * Bumped build version to rebuild on Launchpad.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Wed, 23 Jul 2025 19:21:39 -0700
+
 cluck (1.0.0.0~noble) noble; urgency=high
 
   * First version of cluck as its own project (was snaplock).
