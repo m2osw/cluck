@@ -345,8 +345,9 @@ namespace cluck_daemon
  * \param[in] c  A pointer to the cluckd object.
  * \param[in] messenger  A pointer to the messenger.
  * \param[in] object_name  The name of the object getting locked.
- * \param[in] entering_key  The key (ticket) used to entery the bakery.
- * \param[in] obtension_timeout  The time when the attempt to get the lock
+ * \param[in] tag  The tag from the message to distinct different attempts.
+ * \param[in] entering_key  The key (ticket) used to enter the bakery.
+ * \param[in] obtention_timeout  The time when the attempt to get the lock
  *                               times out in seconds.
  * \param[in] lock_duration  The amount of time the lock lasts once obtained.
  * \param[in] server_name  The name of the server generating the locked.

@@ -1995,7 +1995,7 @@ std::string cluckd::serialized_tickets()
  * If specified in the message, there is no minimum or maximum
  * (i.e. it may already have timed out).
  *
- * \param[in] message  The message from which we get parameters.
+ * \param[in] msg  The message from which we get parameters.
  * \param[out] object_name  A pointer to an std::string that receives the object name.
  * \param[out] tag  A pointer to a tag_t that receives the tag number.
  * \param[out] client_pid  A pointer to a pid_t that receives the client pid.
@@ -2633,9 +2633,6 @@ void cluckd::msg_drop_ticket(ed::message & msg)
  * The function replies with the MAX_TICKET message.
  *
  * \param[in] msg  The message just received.
- *
- * \return The largest ticket number that currently exist in the list
- *         of tickets.
  */
 void cluckd::msg_get_max_ticket(ed::message & msg)
 {
@@ -2716,8 +2713,6 @@ void cluckd::msg_list_tickets(ed::message & msg)
  * failures may result in a lock that never ends.
  *
  * \param[in] msg  The lock message.
- *
- * \return true if the lock was successful, false otherwise.
  *
  * \sa unlock()
  */
@@ -3621,7 +3616,7 @@ void cluckd::msg_lock_leaders(ed::message & msg)
  * The message is expected to include the computer name. At this time
  * we cannot handle having more than one instance one the same computer.
  *
- * \param[in] message  The LOCK_STARTED message.
+ * \param[in] msg  The LOCK_STARTED message.
  */
 void cluckd::msg_lock_started(ed::message & msg)
 {

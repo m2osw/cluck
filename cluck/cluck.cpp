@@ -379,7 +379,7 @@ void set_unlock_timeout(timeout_t timeout)
  * \endmsc
  *
  * \param[in] object_name  The name of the lock.
- * \param[in] connection  The connection used to send messages.
+ * \param[in] messenger  The connection used to send messages.
  * \param[in] dispatcher  The dispatcher used to receive messages.
  * \param[in] mode  Defines the usage of the lock.
  */
