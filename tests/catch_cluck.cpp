@@ -846,7 +846,7 @@ CATCH_TEST_CASE("cluck_client", "[cluck][client]")
                 if(msg.get_command() != cluck::g_name_cluck_cmd_lock_ready
                 && msg.get_command() != cluck::g_name_cluck_cmd_no_lock)
                 {
-                    throw std::runtime_error("listen to cluck status receive an unexpected mesage.");
+                    throw std::runtime_error("listen to cluck status received an unexpected message.");
                 }
                 if(cluck::is_lock_ready())
                 {
@@ -1845,7 +1845,7 @@ CATCH_TEST_CASE("cluck_client_error", "[cluck][client][error]")
                 if(msg.get_command() != cluck::g_name_cluck_cmd_lock_ready
                 && msg.get_command() != cluck::g_name_cluck_cmd_no_lock)
                 {
-                    throw std::runtime_error("listen to cluck status receive an unexpected mesage.");
+                    throw std::runtime_error("listen to cluck status received an unexpected message.");
                 }
                 if(!cluck::is_lock_ready())
                 {
