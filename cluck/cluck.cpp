@@ -1259,13 +1259,25 @@ void cluck::process_timeout()
  * are free to override it, although, in most likelihood, you'll want to
  * set a lock obtained callback instead.
  *
- * If you override the function, you are responsible to call it if you
- * want the lock obtained callbacks to be called.
+ * If you override this function, you are responsible to call this base
+ * class version if you want the "lock obtained" callbacks to be called.
  *
  * Further, the default function checks the cluck lock mode, if SIMPLE,
  * it sends the UNLOCK immediately before returning. In other words,
  * you probably will want to call this instance of the function after
  * you did the work you intended to do while the lock is active.
+ *
+ * \code
+ *     void my_class::lock_obtained()
+ *     {
+ *         // ... do work with lock active ...
+ *
+ *         // call base class function (calls the callbacks)
+ *         cluck::lock_obtained();
+ *
+ *         // ... do additional work after lock was released ...
+ *     }
+ * \endcode
  *
  * \sa add_lock_obtained_callback()
  */

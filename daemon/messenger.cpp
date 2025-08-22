@@ -92,6 +92,10 @@ messenger::messenger(cluckd * c, advgetopt::getopt & opts)
         // communicatord commands
         //
         ed::define_match(
+              ed::Expression(communicatord::g_name_communicatord_cmd_clock_stable)
+            , ed::Callback(std::bind(&cluckd::msg_clock_stable, c, std::placeholders::_1))
+        ),
+        ed::define_match(
               ed::Expression(communicatord::g_name_communicatord_cmd_cluster_down)
             , ed::Callback(std::bind(&cluckd::msg_cluster_down, c, std::placeholders::_1))
         ),
@@ -230,12 +234,29 @@ void messenger::finish_parsing()
  * Whenever we receive the READY message, we also receive our IP address
  * as the "my_address" parameter. This gets copied in the cluckd object.
  *
+ * The function tells the fluid settings connection that the daemon
+ * is ready.
+ *
+ * The cluck daemon uses the wall clock to synchronize the locks
+ * between servers so it requests the clock status from the communicator
+ * daemon. Once known to be stable, it's ready to start accepting locks.
+ *
  * \param[in,out] msg  The READY message.
  */
 void messenger::ready(ed::message & msg)
 {
     fluid_settings_connection::ready(msg);
     f_cluckd->set_my_ip_address(get_my_address());
+
+    // request the status of the system clock
+    //
+    ed::message clock_status;
+    clock_status.reply_to(msg);
+    clock_status.set_command(communicatord::g_name_communicatord_cmd_clock_status);
+    clock_status.add_parameter(
+              communicatord::g_name_communicatord_param_cache
+            , communicatord::g_name_communicatord_value_no);
+    send_message(clock_status);
 }
 
 

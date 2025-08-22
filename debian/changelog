@@ -1,3 +1,9 @@
+cluck (1.0.1.0~noble) noble; urgency=high
+
+  * Wait for the CLOCK_STABLE message to make sure clocks are in sync.
+
+ -- Alexis Wilke <alexis@m2osw.com>  Sun, 17 Aug 2025 08:55:06 -0700
+
 cluck (1.0.0.1~noble) noble; urgency=high
 
   * Bumped build version to rebuild on Launchpad.

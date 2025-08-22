@@ -484,6 +484,14 @@ bool cluckd::is_daemon_ready() const
         return false;
     }
 
+    // we need a stable clock otherwise we cannot guarantee that the time
+    // between servers is going to be sufficiently close
+    //
+    if(!f_stable_clock)
+    {
+        return false;
+    }
+
     // without at least one leader we are definitely not ready
     //
     if(f_leaders.empty())
@@ -2444,6 +2452,30 @@ void cluckd::msg_add_ticket(ed::message & msg)
     ticket_added_message.add_parameter(cluck::g_name_cluck_param_key, key);
     ticket_added_message.add_parameter(cluck::g_name_cluck_param_tag, tag);
     f_messenger->send_message(ticket_added_message);
+}
+
+
+/** \brief Message telling us whether the clock is stable.
+ *
+ * When rebooting, the NTP system takes a little time to get started. The
+ * communicator daemon checks the state of that NTP and sends messages
+ * to other services about the current state.
+ *
+ * Once the clock is considered stable, the function sets the f_stable_clock
+ * flag to true and it remains true forever. This is done that way because
+ * at the moment I really don't have the time to consider changing the
+ * implementation to support a drop of the clock when it pretty much never
+ * happens.
+ *
+ * \param[in,out] msg  The CLOCK_STABLE message.
+ */
+void cluckd::msg_clock_stable(ed::message & msg)
+{
+    if(!f_stable_clock)
+    {
+        f_stable_clock = msg.get_parameter(communicatord::g_name_communicatord_param_clock_resolution)
+                                        == communicatord::g_name_communicatord_value_verified;
+    }
 }
 
 

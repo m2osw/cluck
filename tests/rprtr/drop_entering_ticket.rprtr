@@ -28,6 +28,7 @@ set_variable(name: cluckd_status, value: "up")
 call(label: func_send_status) // "random" location as if the other cluckd just became available
 call(label: func_expect_service_status)
 call(label: func_reply_to_service_status)
+call(label: func_expect_clock_status)
 //call(label: func_expect_fluid_settings_listen) -- this does not happen here because we used the --server-name ... on the command line
 call(label: func_expect_cluster_status)
 call(label: func_send_cluster_up)
@@ -141,6 +142,14 @@ label(name: func_expect_service_status)
 print(message: "--- expect SERVICE_STATUS ---")
 call(label: func_wait_message)
 call(label: func_verify_service_status)
+return()
+
+// Function: expect CLOCK_STATUS
+label(name: func_expect_clock_status)
+print(message: "--- expect CLOCK_STATUS ---")
+call(label: func_wait_message)
+call(label: func_verify_clock_status)
+call(label: func_reply_to_clock_status)
 return()
 
 // Function: expect FLUID_SETTINGS_LISTEN
@@ -347,7 +356,7 @@ label(name: func_verify_commands)
 verify_message(
 	command: COMMANDS,
 	required_parameters: {
-		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_ENTERED,LOCK_ENTERING,LOCK_EXITING,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
+		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLOCK_STABLE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_ENTERED,LOCK_ENTERING,LOCK_EXITING,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
 	})
 return()
 
@@ -357,6 +366,15 @@ verify_message(
 	command: SERVICE_STATUS,
 	required_parameters: {
 		service: 'fluid_settings'
+	})
+return()
+
+// Function: verify a t_CLOCK_STATUS reply
+label(name: func_verify_clock_status)
+verify_message(
+	command: CLOCK_STATUS,
+	required_parameters: {
+		cache: "no"
 	})
 return()
 
@@ -778,6 +796,18 @@ send_message(
 		server: two,
 		status: ${cluckd_status},
 		up_since: ${now} // TODO: when the status is "down", we need to use "down_since: ..." instead
+	})
+return()
+
+// Function: send CLOCK_STABLE
+label(name: func_reply_to_clock_status)
+send_message(
+	command: CLOCK_STABLE,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		clock_resolution: "verified",
+		cache: no
 	})
 return()
 

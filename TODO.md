@@ -29,6 +29,11 @@
   that the communicatord system will send the message to all cluckd even
   though both `A` computers do not yet know about each other.
 
+* The tests assume that the communicatord does not set the "sent from,"
+  which it now does. We should update the tests to verify that we indeed
+  send that data to better simulate the communicatord service (that's for
+  messages like the `HELP`, `CLOCK_STABLE`, etc.
+
 * The `TRANSMISSION_REPORT` message from the communicator does not include
   any serial number or tag to recognize the cluck that sent the message.
   (i.e. this is not a problem if an app. requests only one lock at a time,

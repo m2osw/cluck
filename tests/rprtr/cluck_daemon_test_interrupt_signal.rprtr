@@ -15,6 +15,9 @@ call(label: func_expect_commands)
 call(label: func_expect_service_status)
 call(label: func_send_status_of_fluid_settings)
 
+call(label: func_expect_clock_status)
+call(label: func_send_clock_stable)
+
 call(label: func_expect_fluid_settings_listen)
 call(label: func_send_fluid_settings_registered)
 call(label: func_send_fluid_settings_value_updated)
@@ -95,6 +98,13 @@ label(name: func_expect_service_status)
 print(message: "--- expect SERVICE_STATUS ---")
 call(label: func_wait_message)
 call(label: func_verify_service_status)
+return()
+
+// Function: expect CLOCK_STATUS
+label(name: func_expect_clock_status)
+print(message: "--- expect CLOCK_STATUS ---")
+call(label: func_wait_message)
+call(label: func_verify_clock_status)
 return()
 
 // Function: expect FLUID_SETTINGS_LISTEN
@@ -258,7 +268,7 @@ label(name: func_verify_commands)
 verify_message(
 	command: COMMANDS,
 	required_parameters: {
-		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_ENTERED,LOCK_ENTERING,LOCK_EXITING,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
+		list: "ABSOLUTELY,ACTIVATE_LOCK,ADD_TICKET,ALIVE,CLOCK_STABLE,CLUSTER_DOWN,CLUSTER_UP,DISCONNECTED,DROP_TICKET,FLUID_SETTINGS_DEFAULT_VALUE,FLUID_SETTINGS_DELETED,FLUID_SETTINGS_OPTIONS,FLUID_SETTINGS_READY,FLUID_SETTINGS_REGISTERED,FLUID_SETTINGS_UPDATED,FLUID_SETTINGS_VALUE,FLUID_SETTINGS_VALUE_UPDATED,GET_MAX_TICKET,HANGUP,HELP,INFO,INVALID,LEAK,LIST_TICKETS,LOCK,LOCK_ACTIVATED,LOCK_ENTERED,LOCK_ENTERING,LOCK_EXITING,LOCK_FAILED,LOCK_LEADERS,LOCK_STARTED,LOCK_STATUS,LOCK_TICKETS,LOG_ROTATE,MAX_TICKET,QUITTING,READY,RESTART,SERVICE_UNAVAILABLE,STATUS,STOP,TICKET_ADDED,TICKET_READY,UNKNOWN,UNLOCK"
 	})
 return()
 
@@ -268,6 +278,15 @@ verify_message(
 	command: SERVICE_STATUS,
 	required_parameters: {
 		service: 'fluid_settings'
+	})
+return()
+
+// Function: verify a CLOCK_STATUS
+label(name: func_verify_clock_status)
+verify_message(
+	command: CLOCK_STATUS,
+	required_parameters: {
+		cache: "no"
 	})
 return()
 
@@ -596,6 +615,18 @@ send_message(
 		server: ${hostname},
 		status: "up",
 		up_since: ${now}
+	})
+return()
+
+// Function: send CLOCK_STABLE
+label(name: func_send_clock_stable)
+send_message(
+	command: CLOCK_STABLE,
+	server: ${hostname},
+	service: cluckd,
+	parameters: {
+		clock_resolution: "verified",
+		cache: no
 	})
 return()
 

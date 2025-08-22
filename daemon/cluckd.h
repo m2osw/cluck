@@ -83,8 +83,9 @@ public:
     void                        msg_absolutely(ed::message & msg);
     void                        msg_activate_lock(ed::message & msg);
     void                        msg_add_ticket(ed::message & msg);
-    void                        msg_cluster_up(ed::message & msg);
+    void                        msg_clock_stable(ed::message & msg);
     void                        msg_cluster_down(ed::message & msg);
+    void                        msg_cluster_up(ed::message & msg);
     void                        msg_drop_ticket(ed::message & msg);
     void                        msg_get_max_ticket(ed::message & msg);
     void                        msg_info(ed::message & msg);
@@ -133,6 +134,7 @@ private:
     std::string                         f_my_id = std::string();
     addr::addr                          f_my_ip_address = addr::addr();
     bool                                f_lock_status = false;                  // not ready
+    bool                                f_stable_clock = false;
     computer::map_t                     f_computers = computer::map_t();        // key is the computer name
     computer::vector_t                  f_leaders = computer::vector_t();
     int                                 f_next_leader = 0;
