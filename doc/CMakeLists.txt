@@ -20,6 +20,8 @@
 ##
 ## Documentation
 ##
+project(cluck-documentation)
+
 find_package(SnapDoxygen)
 AddDoxygenTarget(
     cluck
