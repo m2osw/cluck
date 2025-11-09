@@ -158,6 +158,7 @@ public:
     timeout_t           get_unlock_timeout() const;
     void                set_unlock_timeout(timeout_t timeout);
 
+    std::string const & get_object_name() const;
     mode_t              get_mode() const;
     type_t              get_type() const;
     void                set_type(type_t type);

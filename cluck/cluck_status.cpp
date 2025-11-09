@@ -22,27 +22,9 @@
 #include    "cluck/names.h"
 
 
-// eventdispatcher
-//
-//#include    <eventdispatcher/names.h>
-
-
 // communicatord
 //
-//#include    <communicatord/communicator.h>
 #include    <communicatord/names.h>
-
-
-// cppthread
-//
-//#include    <cppthread/guard.h>
-//#include    <cppthread/mutex.h>
-//#include    <cppthread/thread.h>
-
-
-// snapdev
-//
-//#include    <snapdev/not_reached.h>
 
 
 // last include
@@ -52,12 +34,12 @@
 
 
 /** \file
- * \brief Implements a the cluck status signal.
+ * \brief Implements the cluck status signal.
  *
  * When the cluck daemon is ready to receive LOCK messages, it sends a
  * LOCK_READY to the local services. Until that message is received by
- * clients, the cluck daemon will be unresponsive. This means trying
- * to obtain a lock may just time out.
+ * clients, the cluck daemon is unresponsive or not even running. This
+ * means trying to obtain a lock may just time out.
  *
  * The cluck status functions allow you to get notified once the lock
  * system is ready. It does the following:
@@ -75,12 +57,13 @@
  *
  * Usage:
  *
- * To initialize the lock status listener, call listen_to_cluck_status().
+ * To initialize the lock status listener, call cluck::listen_to_cluck_status().
  * It expects a pointer to your messenger, dispatcher, and a callback.
- * The callback gets called each time the status changes.
+ * The callback gets called each time the status changes. It is optional
+ * and can be set to a null pointer.
  *
- * To know the current status, call the is_lock_ready() function. If it
- * returns false, then the cluck daemon is not yet ready. If it returns
+ * To know the current status, call the cluck::is_lock_ready() function. If
+ * it returns false, then the cluck daemon is not yet ready. If it returns
  * true, a LOCK will work as expected.
  */
 
@@ -163,17 +146,17 @@ void msg_lock_status(
  * This function adds two commands to the \p dispatcher:
  *
  * \li LOCK_READY -- the cluck daemon is ready to receive LOCK messages
- * \li NO_LOCK -- the cluck daemon is no ready, LOCK messages will be
+ * \li NO_LOCK -- the cluck daemon is no ready, LOCK messages are
  * cached and may timeout before the daemon becomes ready
  *
  * When called, the function also emits a LOCK_STATUS command to the
- * locak cluck daemon. This ensures that we receive a status from the
+ * local cluck daemon. This ensures that we receive a status from the
  * cluck daemon (i.e. if we missed the last change, it could take a
  * very long time before the status of the cluck daemon changes again).
  *
  * \param[in] messenger  Your messenger to send and receive commands.
- * \param[in] dispatcher  Your dispatcher to list for LOCK_READY and NO_LOCK
- * messages.
+ * \param[in] dispatcher  Your dispatcher to listen to the LOCK_READY and
+ * NO_LOCK messages.
  * \param[in] callback  A callback that gets called each time the cluck
  * daemon status changes.
  */

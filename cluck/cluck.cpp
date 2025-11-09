@@ -259,7 +259,7 @@ void set_unlock_timeout(timeout_t timeout)
  * the lock and you are expected to not run any additional cluster safe
  * code since it may become unsafe at any moment.
  *
- * Keep in mind that the object is used 100% asynchroneously. If you want
+ * Keep in mind that the object is used 100% asynchronously. If you want
  * to execute code after the lock was released, make sure to also define
  * a set of finally callbacks.
  *
@@ -273,7 +273,11 @@ void set_unlock_timeout(timeout_t timeout)
  *     {
  *         // code before lock...
  *
- *         cluck::pointer_t my_lock(std::make_shared<cluck>("my-lock", f_messenger, f_messenger);
+ *         cluck::cluck::pointer_t my_lock(std::make_shared<cluck::cluck>(
+ *               "my-lock"
+ *             , f_messenger
+ *             , f_messenger->get_dispatcher()
+ *             , cluck::mode_t::CLUCK_MODE_EXTENDED)); // by default mode is SIMPLE
  *         f_communicator->add_connection(my_lock);
  *         my_lock->add_lock_obtained_callback(func_success);
  *         my_lock->add_lock_failed_callback(func_failure);
@@ -635,7 +639,7 @@ timeout_t cluck::get_unlock_timeout() const
  * a lock time out) in microseconds.
  *
  * For example, to allow your application to take up to 5 minutes to
- * acknowldege a timed out lock, set this value to 300'000'000.
+ * acknowledge a timed out lock, set this value to 300'000'000.
  *
  * \param[in] timeout  The number of microseconds before timing out on unlock.
  */
@@ -649,6 +653,19 @@ void cluck::set_unlock_timeout(timeout_t timeout)
     {
         f_unlock_timeout = std::clamp(timeout, CLUCK_UNLOCK_MINIMUM_TIMEOUT, CLUCK_MAXIMUM_TIMEOUT);
     }
+}
+
+
+/** \brief Retrieve the object name.
+ *
+ * When creating a lock object, you give it a name. This function returns
+ * that name.
+ *
+ * \return The name of this lock object.
+ */
+std::string const & cluck::get_object_name() const
+{
+    return f_object_name;
 }
 
 
@@ -1002,7 +1019,7 @@ void cluck::unlock()
     f_lock_timeout_date = timeout_t();
 
     // explicitly send the UNLOCK message and then make sure to unregister
-    // from snapcommunicator; note that we do not wait for a reply to the
+    // from the communicator; note that we do not wait for a reply to the
     // UNLOCK message, since to us it does not matter much as long as the
     // message was sent...
     //
@@ -1085,16 +1102,16 @@ timeout_t cluck::get_timeout_date() const
  * the lock is still valid using the current time and the time at which
  * the LOCKED message said the lock would time out.
  *
- * If you want to know whether snaplock decided that the lock timed out
+ * If you want to know whether cluck decided that the lock timed out
  * then you need to consider calling the lock_timedout() function instead.
  *
- * If you want to know how my time you have left on this lock, use the
+ * If you want to know how much time you have left on this lock, use the
  * get_timeout_date() instead and subtract time(nullptr). If positive,
  * that's the number of seconds you have left.
  *
  * \note
  * The function returns false if there is no lock connection, which
- * means that there is no a lock in effect at this time.
+ * means that there is no lock in effect at this time.
  *
  * \return true if the lock is still in effect.
  *
@@ -1116,7 +1133,7 @@ bool cluck::is_locked() const
  *
  * \note
  * This means the object cannot immediately be reused after an unlock().
- * This is because we need to get the cluck service acknowledgement
+ * This is because we need to get the cluck service acknowledgment
  * before we can send a new LOCK message to the cluck service from the
  * same process (TBD: I think that with are serialization we can avoid
  * the UNLOCKING state).
@@ -1129,7 +1146,7 @@ bool cluck::is_busy() const
 }
 
 
-/** \brief Verify a messag we received.
+/** \brief Verify a message we received.
  *
  * Many of the messages we receive have the exact same set of parameters.
  * This function makes sure that these parameters are valid.
