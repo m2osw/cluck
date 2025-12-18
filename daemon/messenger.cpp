@@ -291,7 +291,7 @@ void messenger::fluid_settings_changed(
     , std::string const & name
     , std::string const & value)
 {
-    snapdev::NOT_USED(name, value);
+    fluid_settings_connection::fluid_settings_changed(status, name, value);
 
     if(status == fluid_settings::fluid_settings_status_t::FLUID_SETTINGS_STATUS_READY)
     {
