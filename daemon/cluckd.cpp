@@ -30,10 +30,10 @@
 #include    <cluck/version.h>
 
 
-// communicatord
+// communicator
 //
-#include    <communicatord/flags.h>
-#include    <communicatord/names.h>
+#include    <communicator/flags.h>
+#include    <communicator/names.h>
 
 
 // as2js
@@ -901,7 +901,7 @@ void cluckd::msg_info(ed::message & msg)
     ed::message reply_message;
     reply_message.set_command(cluck::g_name_cluck_cmd_cluckd_status);
     reply_message.reply_to(msg);
-    reply_message.add_parameter(communicatord::g_name_communicatord_param_status, result->to_string());
+    reply_message.add_parameter(communicator::g_name_communicator_param_status, result->to_string());
     f_messenger->send_message(reply_message);
 }
 
@@ -1116,7 +1116,7 @@ void cluckd::election_status()
             // this is something that breaks the entire system so someone
             // needs to fix it and thus it has a really high priority
             //
-            communicatord::flag::pointer_t flag(COMMUNICATORD_FLAG_UP(
+            communicator::flag::pointer_t flag(COMMUNICATOR_FLAG_UP(
                           "cluckd"
                         , "election"
                         , "instances-off"
@@ -1151,7 +1151,7 @@ void cluckd::election_status()
     //
     ed::message lock_leaders_message;
     lock_leaders_message.set_command(cluck::g_name_cluck_cmd_lock_leaders);
-    lock_leaders_message.set_service(communicatord::g_name_communicatord_server_any);
+    lock_leaders_message.set_service(communicator::g_name_communicator_server_any);
     f_leaders.clear();
     f_election_date = snapdev::now();
     lock_leaders_message.add_parameter(cluck::g_name_cluck_param_election_date, f_election_date);
@@ -1197,8 +1197,8 @@ void cluckd::check_lock_status()
     status_message.set_command(f_lock_status
                     ? cluck::g_name_cluck_cmd_lock_ready
                     : cluck::g_name_cluck_cmd_no_lock);
-    status_message.set_service(communicatord::g_name_communicatord_server_me);
-    status_message.add_parameter(communicatord::g_name_communicatord_param_cache, communicatord::g_name_communicatord_value_no);
+    status_message.set_service(communicator::g_name_communicator_server_me);
+    status_message.add_parameter(communicator::g_name_communicator_param_cache, communicator::g_name_communicator_value_no);
     f_messenger->send_message(status_message);
 
     if(lock_status
@@ -1232,13 +1232,13 @@ void cluckd::send_lock_started(ed::message const * msg)
     lock_started_message.set_command(cluck::g_name_cluck_cmd_lock_started);
     if(msg == nullptr)
     {
-        lock_started_message.set_service(communicatord::g_name_communicatord_service_public_broadcast);
+        lock_started_message.set_service(communicator::g_name_communicator_service_public_broadcast);
 
         // unfortunately, the following does NOT work as expected...
         // (i.e. the following ends up sending the message to ourselves only
         // and does not forward to any remote communicators).
         //
-        //lock_started_message.set_server(communicatord::g_name_communicatord_server_any);
+        //lock_started_message.set_server(communicator::g_name_communicator_server_any);
         //lock_started_message.set_service(cluck::g_name_cluck_service_name);
     }
     else
@@ -1248,7 +1248,7 @@ void cluckd::send_lock_started(ed::message const * msg)
 
     // our info: server name and id
     //
-    lock_started_message.add_parameter(communicatord::g_name_communicatord_param_server_name, f_server_name);
+    lock_started_message.add_parameter(communicator::g_name_communicator_param_server_name, f_server_name);
     lock_started_message.add_parameter(cluck::g_name_cluck_param_lock_id, f_my_id);
     lock_started_message.add_parameter(cluck::g_name_cluck_param_start_time, f_start_time);
 
@@ -2292,7 +2292,7 @@ void cluckd::msg_add_ticket(ed::message & msg)
 #endif
             f_messenger->send_message(lock_failed_message);
 
-            communicatord::flag::pointer_t flag(COMMUNICATORD_FLAG_UP(
+            communicator::flag::pointer_t flag(COMMUNICATOR_FLAG_UP(
                           "cluckd"
                         , "ticket"
                         , "invalid-algorithm"
@@ -2473,8 +2473,8 @@ void cluckd::msg_clock_stable(ed::message & msg)
 {
     if(!f_stable_clock)
     {
-        f_stable_clock = msg.get_parameter(communicatord::g_name_communicatord_param_clock_resolution)
-                                        == communicatord::g_name_communicatord_value_verified;
+        f_stable_clock = msg.get_parameter(communicator::g_name_communicator_param_clock_resolution)
+                                        == communicator::g_name_communicator_value_verified;
     }
 }
 
@@ -3655,7 +3655,7 @@ void cluckd::msg_lock_started(ed::message & msg)
     // I do not think we would ever message ourselves, but in case it happens
     // the rest of the function does not support that case
     //
-    std::string const server_name(msg.get_parameter(communicatord::g_name_communicatord_param_server_name));
+    std::string const server_name(msg.get_parameter(communicator::g_name_communicator_param_server_name));
     if(server_name == f_server_name)
     {
         return;
@@ -3804,7 +3804,7 @@ void cluckd::msg_lock_status(ed::message & msg)
             : cluck::g_name_cluck_cmd_no_lock);
 
     status_message.reply_to(msg);
-    status_message.add_parameter(communicatord::g_name_communicatord_param_cache, communicatord::g_name_communicatord_value_no);
+    status_message.add_parameter(communicator::g_name_communicator_param_cache, communicator::g_name_communicator_value_no);
     f_messenger->send_message(status_message);
 }
 
@@ -4021,14 +4021,14 @@ void cluckd::msg_server_gone(ed::message & msg)
     // if the server is not defined, ignore that message
     // (already tested by the dispatcher)
     //
-    if(!msg.has_parameter(communicatord::g_name_communicatord_param_server_name))
+    if(!msg.has_parameter(communicator::g_name_communicator_param_server_name))
     {
         return; // LCOV_EXCL_LINE
     }
 
     // is it us?
     //
-    std::string const server_name(msg.get_parameter(communicatord::g_name_communicatord_param_server_name));
+    std::string const server_name(msg.get_parameter(communicator::g_name_communicator_param_server_name));
     if(server_name.empty()
     || server_name == f_server_name)
     {
@@ -4097,15 +4097,15 @@ void cluckd::msg_status(ed::message & msg)
     // check the service name, it has to be one that means it is a remote
     // connection with another communicator daemon
     //
-    std::string const service(msg.get_parameter(communicatord::g_name_communicatord_param_service));
+    std::string const service(msg.get_parameter(communicator::g_name_communicator_param_service));
 
-    if(service.starts_with(communicatord::g_name_communicatord_connection_remote_communicator_in)   // remote host connected to us
-    || service.starts_with(communicatord::g_name_communicatord_connection_remote_communicator_out)) // we connected to remote host
+    if(service.starts_with(communicator::g_name_communicator_connection_remote_communicator_in)   // remote host connected to us
+    || service.starts_with(communicator::g_name_communicator_connection_remote_communicator_out)) // we connected to remote host
     {
         // check what the status is now: "up" or "down"
         //
-        std::string const status(msg.get_parameter(communicatord::g_name_communicatord_param_status));
-        if(status == communicatord::g_name_communicatord_value_up)
+        std::string const status(msg.get_parameter(communicator::g_name_communicator_param_status));
+        if(status == communicator::g_name_communicator_value_up)
         {
             // we already broadcast a LOCK_STARTED from CLUSTER_UP
             // and that's enough

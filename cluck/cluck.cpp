@@ -27,10 +27,10 @@
 #include    <eventdispatcher/names.h>
 
 
-// communicatord
+// communicator
 //
-#include    <communicatord/communicator.h>
-#include    <communicatord/names.h>
+#include    <communicator/communicator.h>
+#include    <communicator/names.h>
 
 
 // cppthread
@@ -96,7 +96,6 @@ namespace
 
 
 cppthread::mutex            g_mutex = cppthread::mutex();
-ed::dispatcher_match::tag_t g_tag = ed::dispatcher_match::tag_t();
 cluck::serial_t             g_serial = cluck::serial_t();
 timeout_t                   g_lock_obtention_timeout = CLUCK_LOCK_OBTENTION_DEFAULT_TIMEOUT;
 timeout_t                   g_lock_duration_timeout = CLUCK_LOCK_DURATION_DEFAULT_TIMEOUT;
@@ -114,18 +113,6 @@ ed::match_t match_command_and_tag(ed::dispatcher_match const * m, ed::message & 
     }
 
     return ed::match_t::MATCH_FALSE;
-}
-
-
-ed::dispatcher_match::tag_t get_next_tag()
-{
-    cppthread::guard lock(g_mutex);
-    ++g_tag;
-    if(g_tag == ed::dispatcher_match::DISPATCHER_MATCH_NO_TAG)
-    {
-        g_tag = 1; // LCOV_EXCL_LINE
-    }
-    return g_tag;
 }
 
 
@@ -228,7 +215,7 @@ void set_unlock_timeout(timeout_t timeout)
  *
  * Second, the cluck object needs to send messages and for the purposes needs
  * to have access to a \p connection that has the send_message()
- * functionality implemented. In most likelihood, this is your communicatord
+ * functionality implemented. In most likelihood, this is your communicator
  * derived class (your messenger).
  *
  * Third, the function has to react to replies from the messages it sends.
@@ -394,7 +381,7 @@ cluck::cluck(
         , mode_t mode)
     : timer(0)
     , f_object_name(object_name)
-    , f_tag(get_next_tag())
+    , f_tag(ed::dispatcher_match::get_next_tag())
     , f_connection(messenger)
     , f_dispatcher(dispatcher)
     , f_mode(mode)
@@ -914,7 +901,7 @@ bool cluck::lock()
     lock_message.add_parameter(g_name_cluck_param_pid, cppthread::gettid());
     lock_message.add_parameter(ed::g_name_ed_param_serial, f_serial);
     lock_message.add_parameter(g_name_cluck_param_timeout, obtention_timeout_date);
-    communicatord::request_failure(lock_message);
+    communicator::request_failure(lock_message);
     if(f_lock_duration_timeout != CLUCK_DEFAULT_TIMEOUT)
     {
         lock_message.add_parameter(g_name_cluck_param_duration, f_lock_duration_timeout);
@@ -974,7 +961,7 @@ bool cluck::lock()
     f_dispatcher->add_match(unlocking);
 
     ed::dispatcher_match transmission_report(ed::define_match(
-              ed::Expression(communicatord::g_name_communicatord_cmd_transmission_report)
+              ed::Expression(communicator::g_name_communicator_cmd_transmission_report)
             , ed::Callback(std::bind(&cluck::msg_transmission_report, this, std::placeholders::_1))
             , ed::MatchFunc(&ed::one_to_one_callback_match)
             , ed::Tag(f_tag)
@@ -1462,14 +1449,14 @@ void cluck::msg_lock_failed(ed::message & msg)
  */
 void cluck::msg_transmission_report(ed::message & msg)
 {
-    std::string const status(msg.get_parameter(communicatord::g_name_communicatord_param_status));
-    if(msg.has_parameter(communicatord::g_name_communicatord_param_command)
-    && msg.get_parameter(communicatord::g_name_communicatord_param_command) == g_name_cluck_cmd_lock
-    && status == communicatord::g_name_communicatord_value_failed)
+    std::string const status(msg.get_parameter(communicator::g_name_communicator_param_status));
+    if(msg.has_parameter(communicator::g_name_communicator_param_command)
+    && msg.get_parameter(communicator::g_name_communicator_param_command) == g_name_cluck_cmd_lock
+    && status == communicator::g_name_communicator_value_failed)
     {
         SNAP_LOG_RECOVERABLE_ERROR
             << "the transmission of our \""
-            << msg.get_parameter(communicatord::g_name_communicatord_param_command)
+            << msg.get_parameter(communicator::g_name_communicator_param_command)
             << "\" message failed to travel to a cluckd service."
             << SNAP_LOG_SEND;
 

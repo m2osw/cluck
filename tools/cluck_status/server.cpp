@@ -28,11 +28,6 @@
 #include    <cluck/version.h>
 
 
-// communicatord
-//
-#include    <communicatord/names.h>
-
-
 // snapdev
 //
 #include    <snapdev/stringize.h>

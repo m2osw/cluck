@@ -34,9 +34,9 @@
 #include    <advgetopt/exception.h>
 
 
-// communicatord
+// communicator
 //
-#include    <communicatord/names.h>
+#include    <communicator/names.h>
 
 
 // snaplogger
@@ -98,7 +98,7 @@ messenger::messenger(server * s, advgetopt::getopt & opts)
             , ed::Callback(std::bind(&messenger::msg_ticket_list, this, std::placeholders::_1))
         ),
         ed::define_match(
-              ed::Expression(communicatord::g_name_communicatord_cmd_transmission_report)
+              ed::Expression(::communicator::g_name_communicator_cmd_transmission_report)
             , ed::Callback(std::bind(&messenger::msg_transmission_report, this, std::placeholders::_1))
         ),
     });
@@ -151,7 +151,7 @@ void messenger::fluid_settings_changed(
         list_message.set_service(cluck::g_name_cluck_service_name);
         list_message.set_server(f_server_name);
         list_message.add_parameter("cache", "no");
-        communicatord::request_failure(list_message);
+        ::communicator::request_failure(list_message);
         send_message(list_message);
     }
 }
@@ -215,8 +215,8 @@ void messenger::msg_ticket_list(ed::message & msg)
  */
 void messenger::msg_transmission_report(ed::message & msg)
 {
-    std::string const status(msg.get_parameter(communicatord::g_name_communicatord_param_status));
-    if(status == communicatord::g_name_communicatord_value_failed)
+    std::string const status(msg.get_parameter(::communicator::g_name_communicator_param_status));
+    if(status == ::communicator::g_name_communicator_value_failed)
     {
         SNAP_LOG_ERROR
             << "the transmission of our \""

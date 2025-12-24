@@ -22,9 +22,9 @@
 #include    "cluck/names.h"
 
 
-// communicatord
+// communicator
 //
-#include    <communicatord/names.h>
+#include    <communicator/names.h>
 
 
 // last include
@@ -181,7 +181,7 @@ void listen_to_cluck_status(
 
     ed::message lock_status_msg;
     lock_status_msg.set_command(g_name_cluck_cmd_lock_status);
-    lock_status_msg.add_parameter(communicatord::g_name_communicatord_param_cache, communicatord::g_name_communicatord_value_no);
+    lock_status_msg.add_parameter(communicator::g_name_communicator_param_cache, communicator::g_name_communicator_value_no);
     messenger->send_message(lock_status_msg);
 }
 

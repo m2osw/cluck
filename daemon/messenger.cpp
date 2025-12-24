@@ -34,9 +34,9 @@
 #include    <eventdispatcher/names.h>
 
 
-// communicatord
+// communicator
 //
-#include    <communicatord/names.h>
+#include    <communicator/names.h>
 
 
 // last include
@@ -89,30 +89,30 @@ messenger::messenger(cluckd * c, advgetopt::getopt & opts)
             , ed::Callback(std::bind(&cluckd::msg_absolutely, c, std::placeholders::_1))
         ),
 
-        // communicatord commands
+        // communicator commands
         //
         ed::define_match(
-              ed::Expression(communicatord::g_name_communicatord_cmd_clock_stable)
+              ed::Expression(::communicator::g_name_communicator_cmd_clock_stable)
             , ed::Callback(std::bind(&cluckd::msg_clock_stable, c, std::placeholders::_1))
         ),
         ed::define_match(
-              ed::Expression(communicatord::g_name_communicatord_cmd_cluster_down)
+              ed::Expression(::communicator::g_name_communicator_cmd_cluster_down)
             , ed::Callback(std::bind(&cluckd::msg_cluster_down, c, std::placeholders::_1))
         ),
         ed::define_match(
-              ed::Expression(communicatord::g_name_communicatord_cmd_cluster_up)
+              ed::Expression(::communicator::g_name_communicator_cmd_cluster_up)
             , ed::Callback(std::bind(&cluckd::msg_cluster_up, c, std::placeholders::_1))
         ),
         ed::define_match(
-              ed::Expression(communicatord::g_name_communicatord_cmd_disconnected)
+              ed::Expression(::communicator::g_name_communicator_cmd_disconnected)
             , ed::Callback(std::bind(&cluckd::msg_server_gone, c, std::placeholders::_1))
         ),
         ed::define_match(
-              ed::Expression(communicatord::g_name_communicatord_cmd_hangup)
+              ed::Expression(::communicator::g_name_communicator_cmd_hangup)
             , ed::Callback(std::bind(&cluckd::msg_server_gone, c, std::placeholders::_1))
         ),
         ed::define_match(
-              ed::Expression(communicatord::g_name_communicatord_cmd_status)
+              ed::Expression(::communicator::g_name_communicator_cmd_status)
             , ed::Callback(std::bind(&cluckd::msg_status, c, std::placeholders::_1))
             , ed::MatchFunc(&ed::one_to_one_callback_match)
             , ed::Priority(ed::dispatcher_match::DISPATCHER_MATCH_CALLBACK_PRIORITY)
@@ -252,10 +252,10 @@ void messenger::ready(ed::message & msg)
     //
     ed::message clock_status;
     clock_status.reply_to(msg);
-    clock_status.set_command(communicatord::g_name_communicatord_cmd_clock_status);
+    clock_status.set_command(::communicator::g_name_communicator_cmd_clock_status);
     clock_status.add_parameter(
-              communicatord::g_name_communicatord_param_cache
-            , communicatord::g_name_communicatord_value_no);
+              ::communicator::g_name_communicator_param_cache
+            , ::communicator::g_name_communicator_value_no);
     send_message(clock_status);
 }
 
@@ -298,8 +298,8 @@ void messenger::fluid_settings_changed(
         // now we're ready to start with cluckd
         //
         ed::message clusterstatus_message;
-        clusterstatus_message.set_command(communicatord::g_name_communicatord_cmd_cluster_status);
-        clusterstatus_message.set_service(communicatord::g_name_communicatord_service_communicatord);
+        clusterstatus_message.set_command(::communicator::g_name_communicator_cmd_cluster_status);
+        clusterstatus_message.set_service(::communicator::g_name_communicator_service_communicatord);
         send_message(clusterstatus_message);
     }
 }
