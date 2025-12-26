@@ -89,7 +89,7 @@ CATCH_TEST_CASE("cluck_daemon_one_computer", "[cluckd][daemon]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
 
@@ -182,7 +182,7 @@ CATCH_TEST_CASE("cluck_daemon_two_computers", "[cluckd][daemon]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
 
@@ -280,7 +280,7 @@ CATCH_TEST_CASE("cluck_daemon_three_computers", "[cluckd][daemon]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
 
@@ -373,7 +373,7 @@ CATCH_TEST_CASE("cluck_daemon_four_computers", "[cluckd][daemon]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
 
@@ -466,7 +466,7 @@ CATCH_TEST_CASE("cluck_daemon_ten_computers", "[cluckd][daemon]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--candidate-priority",
             "5",
@@ -561,7 +561,7 @@ CATCH_TEST_CASE("cluck_daemon_lock_tickets", "[cluckd][daemon]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--candidate-priority",
             "2",
@@ -656,7 +656,7 @@ CATCH_TEST_CASE("cluck_daemon_specialized_tests", "[cluckd][daemon]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
 
@@ -745,7 +745,7 @@ CATCH_TEST_CASE("cluck_daemon_specialized_tests", "[cluckd][daemon]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--candidate-priority",
             "off",
@@ -836,7 +836,7 @@ CATCH_TEST_CASE("cluck_daemon_specialized_tests", "[cluckd][daemon]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
 
@@ -929,7 +929,7 @@ CATCH_TEST_CASE("cluck_daemon_failures", "[cluckd][daemon][fail]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
 
@@ -1002,7 +1002,7 @@ CATCH_TEST_CASE("cluck_daemon_failures", "[cluckd][daemon][fail]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
 
@@ -1078,7 +1078,7 @@ CATCH_TEST_CASE("cluck_daemon_failures", "[cluckd][daemon][fail]")
 
         std::vector<std::string> const args = {
             "cluckd", // name of command
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--candidate-priority",
             "10",
@@ -1162,7 +1162,7 @@ CATCH_TEST_CASE("cluck_daemon_failures", "[cluckd][daemon][fail]")
             "cluckd", // name of command
             "--candidate-priority",
             "10",
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
 
@@ -1295,7 +1295,7 @@ CATCH_TEST_CASE("cluck_daemon_errors", "[cluckd][daemon][error]")
             "cluckd", // name of command
             "--candidate-priority",
             "10",
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
 
@@ -1401,7 +1401,7 @@ CATCH_TEST_CASE("cluck_daemon_errors", "[cluckd][daemon][error]")
                     "cluckd", // name of command
                     "--candidate-priority",
                     (version == 2 || (version == 4 && (off_mask & 0x04) != 0) ? "15" : "10"),
-                    "--communicatord-listen",
+                    "--communicator-listen",
                     "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
                     "--path-to-message-definitions",
 
@@ -1486,7 +1486,7 @@ CATCH_TEST_CASE("cluck_daemon_errors", "[cluckd][daemon][error]")
             "cluckd", // name of command
             "--candidate-priority",
             "10",
-            "--communicatord-listen",
+            "--communicator-listen",
             "cd://" + a.to_ipv4or6_string(addr::STRING_IP_ADDRESS_PORT),
             "--path-to-message-definitions",
 
