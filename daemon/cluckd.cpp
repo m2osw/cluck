@@ -334,7 +334,7 @@ cluckd::cluckd(int argc, char * argv[])
     f_opts.finish_parsing(argc, argv);
     if(!snaplogger::process_logger_options(f_opts, "/etc/cluck/logger"))
     {
-        throw advgetopt::getopt_exit("logger options generated an error.", 0);
+        throw advgetopt::getopt_exit("logger options generated an error.", 1);
     }
 
     // determine this server name
