@@ -16,6 +16,6 @@ conf/cluckd.conf                                  etc/cluck/
 conf/README.md                                    etc/cluck/cluck.d/
 conf/logger/cluckd.conf                           etc/cluck/logger/
 conf/logger/README.md                             etc/cluck/logger/cluckd.d/
-usr/share/communicatord
+usr/share/communicator
 usr/share/snaplogger
 usr/share/eventdispatcher
