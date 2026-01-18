@@ -76,12 +76,9 @@ namespace cluck_daemon
 messenger::messenger(cluckd * c, advgetopt::getopt & opts)
     : fluid_settings_connection(opts, "cluckd")
     , f_cluckd(c)
-    , f_dispatcher(std::make_shared<ed::dispatcher>(this))
 {
-    set_name("messenger");
-    set_dispatcher(f_dispatcher);
-    add_fluid_settings_commands();
-    f_dispatcher->add_matches({
+    set_name("cluck_messenger");
+    get_dispatcher()->add_matches({
         // eventdispatcher commands
         //
         ed::define_match(
@@ -201,14 +198,6 @@ messenger::messenger(cluckd * c, advgetopt::getopt & opts)
             , ed::Callback(std::bind(&cluckd::msg_unlock, c, std::placeholders::_1))
         ),
     });
-    f_dispatcher->add_communicator_commands();
-
-    // further dispatcher initialization
-    //
-#ifdef _DEBUG
-    f_dispatcher->set_trace();
-    f_dispatcher->set_show_matches();
-#endif
 }
 
 

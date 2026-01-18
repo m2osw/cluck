@@ -57,7 +57,6 @@ public:
 
 private:
     cluckd *                    f_cluckd = nullptr;
-    ed::dispatcher::pointer_t   f_dispatcher = ed::dispatcher::pointer_t();
 };
 
 

@@ -56,7 +56,6 @@ private:
     void                        msg_transmission_report(ed::message & msg);
 
     server *                    f_server = nullptr;
-    ed::dispatcher::pointer_t   f_dispatcher = ed::dispatcher::pointer_t();
     bool                        f_quiet = false;
     std::string                 f_server_name = std::string();
     std::string                 f_command = std::string();

@@ -127,17 +127,17 @@ public:
         set_name("test_messenger");    // connection name
         set_dispatcher(f_dispatcher);
 
+#ifdef _DEBUG
+        // further dispatcher initialization
+        //
+        f_dispatcher->set_trace();
+        f_dispatcher->set_show_matches();
+#endif
+
         f_dispatcher->add_matches({
             DISPATCHER_MATCH("DATA", &test_messenger::msg_data),
             DISPATCHER_CATCH_ALL(),
         });
-
-        // further dispatcher initialization
-        //
-#ifdef _DEBUG
-        f_dispatcher->set_trace();
-        f_dispatcher->set_show_matches();
-#endif
     }
 
     ed::dispatcher::pointer_t get_dispatcher() const

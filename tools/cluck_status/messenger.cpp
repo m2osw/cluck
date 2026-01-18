@@ -77,14 +77,11 @@ namespace lock_status
 messenger::messenger(server * s, advgetopt::getopt & opts)
     : fluid_settings_connection(opts, "cluckd")
     , f_server(s)
-    , f_dispatcher(std::make_shared<ed::dispatcher>(this))
     , f_quiet(opts.is_defined("quiet"))
     , f_server_name(opts.get_string("server-name"))
 {
     set_name("lock_status");
-    set_dispatcher(f_dispatcher);
-    f_dispatcher->add_communicator_commands();
-    f_dispatcher->add_matches({
+    get_dispatcher()->add_matches({
         ed::define_match(
               ed::Expression(cluck::g_name_cluck_cmd_lock_ready)
             , ed::Callback(std::bind(&messenger::msg_lock_ready, this, std::placeholders::_1))
@@ -115,13 +112,6 @@ messenger::messenger(server * s, advgetopt::getopt & opts)
     {
         throw advgetopt::getopt_exit("no command was specified.", 0);
     }
-
-    // further dispatcher initialization
-    //
-#ifdef _DEBUG
-    f_dispatcher->set_trace();
-    f_dispatcher->set_show_matches();
-#endif
 }
 
 
