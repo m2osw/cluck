@@ -27,6 +27,11 @@
 #include    <communicator/names.h>
 
 
+// eventdispatcher
+//
+#include    <eventdispatcher/names.h>
+
+
 // last include
 //
 #include    <snapdev/poison.h>
@@ -96,6 +101,39 @@ namespace
  * when reading/writing this value).
  */
 bool g_lock_ready = false;
+
+
+/** \brief Also register for the READY message.
+ *
+ * This function gets called whenever the client receives the READY message.
+ * It sends a LOCK_STATUS message to cluck to get the current status of
+ * the cluck service.
+ *
+ * \param[in] msg  The READY message.
+ * \param[in] messenger  The messenger used to send the LOCK_STATUS message.
+ */
+void msg_ready(
+      ed::message & msg
+    , ed::connection_with_send_message::weak_t messenger)
+{
+    snapdev::NOT_USED(msg);
+
+    // messenger still available?
+    //
+    ed::connection_with_send_message::pointer_t m(messenger.lock());
+    if(m == nullptr)
+    {
+        return;
+    }
+
+    ed::message lock_status_msg;
+    lock_status_msg.set_command(g_name_cluck_cmd_lock_status);
+    lock_status_msg.set_service(g_name_cluck_service_name);
+    lock_status_msg.add_parameter(
+              communicator::g_name_communicator_param_cache
+            , communicator::g_name_communicator_value_no);
+    m->send_message(lock_status_msg);
+}
 
 
 /** \brief Setup the lock status.
@@ -173,16 +211,22 @@ void listen_to_cluck_status(
     }
 
     {
-        ed::dispatcher_match lock_ready(ed::define_match(
+        ed::dispatcher_match no_lock(ed::define_match(
                   ed::Expression(g_name_cluck_cmd_no_lock)
                 , ed::Callback(std::bind(&msg_lock_status, std::placeholders::_1, callback))));
-        dispatcher->add_match(lock_ready);
+        dispatcher->add_match(no_lock);
     }
 
-    ed::message lock_status_msg;
-    lock_status_msg.set_command(g_name_cluck_cmd_lock_status);
-    lock_status_msg.add_parameter(communicator::g_name_communicator_param_cache, communicator::g_name_communicator_value_no);
-    messenger->send_message(lock_status_msg);
+    {
+        ed::connection_with_send_message::weak_t m(messenger);
+        ed::dispatcher_match ready(ed::define_match(
+                  ed::Expression(ed::g_name_ed_cmd_ready)
+                , ed::Callback(std::bind(&msg_ready, std::placeholders::_1, m))
+                , ed::MatchFunc(&ed::one_to_one_callback_match)
+                , ed::Priority(ed::dispatcher_match::DISPATCHER_MATCH_CALLBACK_PRIORITY)));
+        dispatcher->add_match(ready);
+    }
+
 }
 
 

@@ -2475,6 +2475,8 @@ void cluckd::msg_clock_stable(ed::message & msg)
     {
         f_stable_clock = msg.get_parameter(communicator::g_name_communicator_param_clock_resolution)
                                         == communicator::g_name_communicator_value_verified;
+
+        check_lock_status();
     }
 }
 
