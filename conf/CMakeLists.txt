@@ -37,5 +37,14 @@ install(
         ${COMMUNICATOR_SERVICES_INSTALL_DIR}
 )
 
+# definitions for fluid-settings
+install(
+    FILES
+        cluckd.ini
+
+    DESTINATION
+        ${FLUIDSETTINGS_DEFINITIONS_INSTALL_DIR}
+)
+
 
 # vim: ts=4 sw=4 et
